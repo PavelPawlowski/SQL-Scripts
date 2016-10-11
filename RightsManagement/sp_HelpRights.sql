@@ -12,7 +12,7 @@ Feedback: mailto:pavel.pawlowski@hotmail.cz
 License: 
     sp_HelpRights is free to download and use for personal, educational, and internal 
     corporate purposes, provided that this header is preserved. Redistribution or sale 
-    of fn_DateTable, in whole or in part, is prohibited without the author's express 
+    of sp_HelpRights, in whole or in part, is prohibited without the author's express 
     written consent.
 
 Description:
