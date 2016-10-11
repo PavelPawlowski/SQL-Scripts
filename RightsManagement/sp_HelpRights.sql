@@ -70,7 +70,42 @@ sp_HelpRights ''%%''                   -- Processes rights for all databases
 sp_HelpRights ''%%,-m%%''               -- Processes rights for all databases except databases starting with m
 sp_HelpRights ''DBA, User%%, -User1%%'' -- Processes rights for database [DBA] and all databases starting with User but not starting with User1
 sp_HelpRights @principals=''R%%''      -- Processes rights for current database and displaysrights for all database principals starting with R
-sp_HelpRights ''?''                   -- Prints this help', 0, 0) WITH NOWAIT;
+sp_HelpRights ''?''                   -- Prints this help
+
+', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'--Table Strcuture for output collection
+CREATE TABLE #rightsHelp (
+  	 [DatabaseName]                          nvarchar(128)   NULL       --Name of the database
+	,[PermissionOjectType]                   nvarchar(60)    NULL       --Type of the Permission object
+	,[DatabaseObjectType]                    nvarchar(60)    NOT NULL   --Type of the Database object with which the permission is associated
+	,[DatabaseObjectSchemaName]              sysname         NULL       --Schema name for schema bound database objectsd
+	,[DatbaseObjectName]                     sysname         NULL       --Datbase object to which the permission is related
+	,[ColumnID]                              int             NOT NULL   --ID of column in case the permission is related to a column
+	,[DatabasePrincipalName]                 sysname         NULL       --Name of the database principal to which the permission is associated. The one to which the permission is finally granted or revoked.
+	,[DatabasePrincipalTypeName]             nvarchar(60)    NULL       --Name of the database principal Type
+	,[PermissionName]                        nvarchar(128)   NULL       --Name of the permission
+	,[PermissionStateName]                   nvarchar(60)    NULL       --Name of the permission state GRANT,DENY,..
+	,[GranteePrincipalName]                  sysname         NULL       --Database principal to which the permission is originally granted/denied.', 0, 0) WITH NOWAIT;
+RAISERROR(N'	,[GranteePrincipalTypeName]              nvarchar(60)    NULL       --Type of the grantee principal
+	,[PermissionInheritancePath]             nvarchar(max)   NULL       --Thecomplete inheritance path from the Grantee to the DatabasePrincipal
+	,[ServerPrincipalName]                   sysname         NULL       --Name of Server principal corresponding to database principal if available
+	,[GrantedByDatabasePrincipalName]        sysname         NULL       --Name of the database principal which granted the permission to the grantee
+	,[GrantedByDatabasePrincipalTypeName]    nvarchar(60)    NULL       --Type of the datbase principal which granted the permission to the grantee
+	,[DatabaseID]                            smallint        NULL       --ID of the database
+	,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema boudn objects
+	,[DatabaseObjeectID]                     int             NOT NULL   --ID of the dtabase object with which the permission is associated
+	,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.Theone to which the permission is finally granted orrevoked.', 0, 0) WITH NOWAIT;
+RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principla
+	,[PermissionType]                        char(4)         NOT NULL   --Type of the permission
+	,[PermissionState]                       char(1)         NOT NULL   --State of the permission
+	,[GranteePrincipalID]                    int             NOT NULL   --ID of the grantee database principal
+	,[GranteePrincipalType]                  char(1)         NULL       --Type of the grantee database principal
+	,[ServerPrincipalID]                     int             NULL       --ID of the server principal associated with the database principal if available
+	,[GrantedByDatabasePrincipalID]          int             NOT NULL   --ID of the database principal by which the permission was granted/denied
+	,[GrantedByDatabasePrincipalType]        char(1)         NULL       --Type of the database principal by which the permission was granted/denied
+)
+', 0, 0) WITH NOWAIT;
 		RETURN;
 	END;
 
@@ -80,35 +115,35 @@ sp_HelpRights ''?''                   -- Prints this help', 0, 0) WITH NOWAIT;
 
 
     --Create temp table for storing the rights overview
-    CREATE TABLE #rightsHelp(
-	    [DatabaseID]                            smallint        NULL,
-	    [DatabaseName]                          nvarchar(128)   NULL,
-	    [PermissionOjectType]                   nvarchar(60)    NULL,
-	    [DatabaseObjectType]                    nvarchar(60)    NOT NULL,
-	    [DatabaseObjectSchemaName]              sysname         NULL,
-	    [DatbaseObjectName]                     sysname         NULL,
-	    [DatabaseObjectSchemaID]                int             NULL,
-	    [DatabaseObjeectID]                     int             NOT NULL,
-	    [ColumnID]                              int             NOT NULL,
-	    [GranteePrincipalID]                    int             NOT NULL,
-	    [GranteePrincipalName]                  sysname         NULL,
-	    [GranteePrincipalType]                  char(1)         NULL,
-	    [GranteePrincipalTypeName]              nvarchar(60)    NULL,
-	    [DatabasePrincipalID]                   int             NULL,
-	    [DatabasePrincipalName]                 sysname         NULL,
-	    [DatabasePrincipalType]                 char(1)         NULL,
-	    [DatabasePrincipalTypeName]             nvarchar(60)    NULL,
-	    [PermissionInheritancePath]             nvarchar(max)   NULL,
-	    [ServerPrincipalID]                     int             NULL,
-	    [ServerPrincipalName]                   sysname         NULL,
-	    [PermissionType]                        char(4)         NOT NULL,
-	    [PermissionName]                        nvarchar(128)   NULL,
-	    [PermissionState]                       char(1)         NOT NULL,
-	    [PermissionStateName]                   nvarchar(60)    NULL,
-	    [GrantedByDatabasePrincipalID]          int             NOT NULL,
-	    [GrantedByDatabasePrincipalName]        sysname         NULL,
-	    [GrantedByDatabasePrincipalType]        char(1)         NULL,
-	    [GrantedByDatabasePrincipalTypeName]    nvarchar(60)    NULL
+    CREATE TABLE #rightsHelp (
+  	     [DatabaseName]                          nvarchar(128)   NULL       --Name of the database
+	    ,[PermissionOjectType]                   nvarchar(60)    NULL       --Type of the Permission object
+	    ,[DatabaseObjectType]                    nvarchar(60)    NOT NULL   --Type of the Database object with which the permission is associated
+	    ,[DatabaseObjectSchemaName]              sysname         NULL       --Schema name for schema bound database objectsd
+	    ,[DatbaseObjectName]                     sysname         NULL       --Datbase object to which the permission is related
+	    ,[ColumnID]                              int             NOT NULL   --ID of column in case the permission is related to a column
+	    ,[DatabasePrincipalName]                 sysname         NULL       --Name of the database principal to which the permission is associated. The one to which the permission is finally granted or revoked.
+	    ,[DatabasePrincipalTypeName]             nvarchar(60)    NULL       --Name of the database principal Type
+	    ,[PermissionName]                        nvarchar(128)   NULL       --Name of the permission
+	    ,[PermissionStateName]                   nvarchar(60)    NULL       --Name of the permission state GRANT,DENY,..
+	    ,[GranteePrincipalName]                  sysname         NULL       --Database principal to which the permission is originally granted/denied.
+	    ,[GranteePrincipalTypeName]              nvarchar(60)    NULL       --Type of the grantee principal
+	    ,[PermissionInheritancePath]             nvarchar(max)   NULL       --Thecomplete inheritance path from the Grantee to the DatabasePrincipal
+	    ,[ServerPrincipalName]                   sysname         NULL       --Name of Server principal corresponding to database principal if available
+	    ,[GrantedByDatabasePrincipalName]        sysname         NULL       --Name of the database principal which granted the permission to the grantee
+	    ,[GrantedByDatabasePrincipalTypeName]    nvarchar(60)    NULL       --Type of the datbase principal which granted the permission to the grantee
+	    ,[DatabaseID]                            smallint        NULL       --ID of the database
+	    ,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema boudn objects
+	    ,[DatabaseObjeectID]                     int             NOT NULL   --ID of the dtabase object with which the permission is associated
+	    ,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.Theone to which the permission is finally granted orrevoked.
+	    ,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principla
+	    ,[PermissionType]                        char(4)         NOT NULL   --Type of the permission
+	    ,[PermissionState]                       char(1)         NOT NULL   --State of the permission
+	    ,[GranteePrincipalID]                    int             NOT NULL   --ID of the grantee database principal
+	    ,[GranteePrincipalType]                  char(1)         NULL       --Type of the grantee database principal
+	    ,[ServerPrincipalID]                     int             NULL       --ID of the server principal associated with the database principal if available
+	    ,[GrantedByDatabasePrincipalID]          int             NOT NULL   --ID of the database principal by which the permission was granted/denied
+	    ,[GrantedByDatabasePrincipalType]        char(1)         NULL       --Type of the database principal by which the permission was granted/denied
     )
 
     --Temp table to hold disticnt principal names wildcards
@@ -180,7 +215,36 @@ DPRecursion AS (
 		,dp.sid				AS sid
 	FROM sys.database_principals dp
 )
-INSERT INTO #rightsHelp
+INSERT INTO #rightsHelp (
+    [DatabaseID]                        
+    ,[DatabaseName]                      
+    ,[PermissionOjectType]               
+    ,[DatabaseObjectType]                
+    ,[DatabaseObjectSchemaName]          
+    ,[DatbaseObjectName]                 
+    ,[DatabaseObjectSchemaID]            
+    ,[DatabaseObjeectID]                 
+    ,[ColumnID]                          
+    ,[GranteePrincipalID]                
+    ,[GranteePrincipalName]              
+    ,[GranteePrincipalType]              
+    ,[GranteePrincipalTypeName]          
+    ,[DatabasePrincipalID]               
+    ,[DatabasePrincipalName]             
+    ,[DatabasePrincipalType]             
+    ,[DatabasePrincipalTypeName]         
+    ,[PermissionInheritancePath]         
+    ,[ServerPrincipalID]                 
+    ,[ServerPrincipalName]               
+    ,[PermissionType]                    
+    ,[PermissionName]                    
+    ,[PermissionState]                   
+    ,[PermissionStateName]               
+    ,[GrantedByDatabasePrincipalID]      
+    ,[GrantedByDatabasePrincipalName]    
+    ,[GrantedByDatabasePrincipalType]    
+    ,[GrantedByDatabasePrincipalTypeName]
+)
 SELECT
 	DB_ID()								AS DatabaseID
 	,DB_NAME()							AS DatabaseName
@@ -279,7 +343,7 @@ WHERE dp.DatabasePrincipalID IN (SELECT principal_id FROM FilteredPrincipals)
         ,[PermissionInheritancePath]         
         ,[ServerPrincipalName]               
         ,[GrantedByDatabasePrincipalName]    
-        ,[GrantedByDatabasePrincipalTypeName]    
+        ,[GrantedByDatabasePrincipalTypeName]
         ,[DatabaseID]                        
         ,[DatabaseObjectSchemaID]            
         ,[DatabaseObjeectID]                 
