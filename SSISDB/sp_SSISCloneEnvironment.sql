@@ -306,6 +306,7 @@ BEGIN
     ELSE
     BEGIN
         RAISERROR(N'', 0, 0) WITH NOWAIT;
+        RAISERROR(N'--Environment variables creation', 0, 0) WITH NOWAIT;
         RAISERROR(N'DECLARE @var sql_variant', 0, 0) WITH NOWAIT;
     END
 
