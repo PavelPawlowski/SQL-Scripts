@@ -185,7 +185,7 @@ BEGIN
                 IF NOT (@autoCreate = 1)
                 BEGIN
                     RAISERROR('Destination environment [%s]\[%s] does not exists and @autoCreate <> 1', 15, 4, @destinationFolder, @destinationEnvironment) WITH NOWAIT;
-                    SET @printHelp = 1;
+                    RETURN;
                 END
                 ELSE
                 BEGIN
@@ -276,6 +276,7 @@ BEGIN
             RETURN;
         END
     END
+    ELSE
     BEGIN
         RAISERROR(N'IF EXISTS (', 0, 0) WITH NOWAIT;
         RAISERROR(N'    SELECT 1', 0, 0) WITH NOWAIT;
