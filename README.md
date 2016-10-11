@@ -6,6 +6,9 @@ Righs management folder contains script usable for managing user rigts
 ###sp_CloneRights
 Stored procedure for scripting database objects rights granted to a database principal or to clone the database objects rights among principals
 
+###sp_HelpRights
+Stored procedure provides overview about rights assignments in database.
+
 ##SSISDB
 SSISDB folder contains scripts related to SSIS
 
