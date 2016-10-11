@@ -23,6 +23,10 @@ Parameters:
 											--Supports LIKE Wildcards
 											--names starting with [-] are removed form the list
 											--NULL represetns current database
+    @principals     nvarchar(max)   = NULL  --Comma separated list of database principal names for which the permissions should be retrieved
+                                            --Supports LIKE Wildcards
+                                            --Names starting with [-]are removed from the list
+                                            --NULL represetnts all grantees
 
 SAMPLE CALL:
 sp_HelpRights						-- Processes rights for current database
