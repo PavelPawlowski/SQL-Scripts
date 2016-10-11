@@ -67,8 +67,12 @@ BEGIN
         ,@dst_certificateName           nvarchar(256)           --Name of the certificate fo descryption of the destination symmetric key
         ,@decrypted_value               varbinary(max)          --Variable to store decrypted sensitive value
 
+    --If the needed input parameters are null, print help
+    IF @sourceFolder IS NULL OR @sourceEnvironment IS NULL OR  @destinationFolder IS NULL
+        SET @printHelp = 1
+
 	--Set and print the procedure output caption
-    IF (@printScript = 1)
+    IF (@printScript = 1 AND @printHelp = 0)
     BEGIN
         SET @captionBegin = N'RAISERROR(N''';
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
@@ -79,23 +83,22 @@ BEGIN
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
 
-    --If the needed input parameters are null, print help
-    IF @sourceFolder IS NULL OR @sourceEnvironment IS NULL OR  @destinationFolder IS NULL
-        SET @printHelp = 1
-       
+    --Set Destination ENvironment Name in case of NULL       
+    SET @destinationEnvironment = ISNULL(@destinationEnvironment, @sourceEnvironment)
+
     IF @printHelp = 0
     BEGIN 
         --get source folder_id
         SELECT
             @src_folder_id = folder_id
         FROM internal.folders f
-        WHERE f.name = @sourceFolder
+        WHERE f.name = @sourceFolder;
 
         --check source folder
         IF @src_folder_id IS NULL
         BEGIN
-            RAISERROR(N'Source Folder [%s] does not exists', 15, 1, @sourceFolder) WITH NOWAIT
-            SET @printHelp = 1;
+            RAISERROR(N'Source Folder [%s] does not exists', 15, 1, @sourceFolder) WITH NOWAIT;
+            RETURN;
         END
     END
 
@@ -108,25 +111,26 @@ BEGIN
         WHERE
             e.folder_id = @src_folder_id
             AND
-            e.name = @sourceEnvironment
+            e.name = @sourceEnvironment;
 
         --chek source environment
         IF @src_Environment_id IS NULL
         BEGIN
             RAISERROR(N'Source Environment [%s]\[%s] does not exists', 15, 2, @sourceFolder, @sourceEnvironment) WITH NOWAIT;
-            SET @printHelp = 1;
+            RETURN;
         END
     END
 
     IF @printHelp = 0
     BEGIN 
+
         IF @printScript = 0 --if not priting the script, get the folder ID check that the folder exists and eventually craete it
         BEGIN
             --get destination folder_id
             SELECT
                 @dst_folder_id = folder_id
             FROM internal.folders f
-            WHERE f.name = @destinationFolder
+            WHERE f.name = @destinationFolder;
 
             --check destination folder
             IF @dst_folder_id IS NULL
@@ -134,7 +138,7 @@ BEGIN
                 IF NOT (@autoCreate = 1)
                 BEGIN
                     RAISERROR(N'Destination Folder [%s] soes not exists @autoCreate <> 1', 15, 3, @destinationFolder) WITH NOWAIT;
-                    SET @printHelp = 1;
+                    RETURN;
                 END
                 ELSE
                 BEGIN        
@@ -145,14 +149,20 @@ BEGIN
                 END
             END
         END
-        ELSE IF @autoCreate = 1 --If printing script and @autoCrate = 1, generate check and eventual creation of the folder
+        ELSE
         BEGIN
-            RAISERROR(N'IF NOT EXISTS(SELECT 1 FROM [SSISDB].[catalog].[folders] WHERE [name] = N''%s'')', 0, 0, @destinationFolder) WITH NOWAIT;
-            RAISERROR(N'BEGIN', 0, 0 ) WITH NOWAIT;
-            RAISERROR(N'    RAISERROR(N''Creating missing Folder [%s]'', 0, 0) WITH NOWAIT;', 0, 0, @destinationFolder) WITH NOWAIT;                
-            RAISERROR(N'    EXEC [SSISDB].[catalog].[create_folder] @folder_name = N''%s''', 0, 0, @destinationFolder) WITH NOWAIT;
-            RAISERROR(N'END', 0, 0 ) WITH NOWAIT;
-            RAISERROR(N'GO', 0, 0 ) WITH NOWAIT;
+            RAISERROR(N'DECLARE @destinationFolder nvarchar(128) = N''%s'' --Specify Destination Folder Name', 0, 0, @destinationFolder) WITH NOWAIT;
+            RAISERROR(N'DECLARE @destinationEnvironment nvarchar(128) = N''%s'' --Specify Destination Environment Name', 0, 0, @destinationEnvironment) WITH NOWAIT;
+            RAISERROR(N'', 0, 0) WITH NOWAIT;
+
+            IF @autoCreate = 1 --If printing script and @autoCrate = 1, generate check and eventual creation of the folder
+            BEGIN
+                RAISERROR(N'IF NOT EXISTS(SELECT 1 FROM [SSISDB].[catalog].[folders] WHERE [name] = @destinationFolder)', 0, 0) WITH NOWAIT;
+                RAISERROR(N'BEGIN', 0, 0 ) WITH NOWAIT;
+                RAISERROR(N'    RAISERROR(N''Creating missing Folder [%%s]'', 0, 0, @destinationFolder) WITH NOWAIT;', 0, 0) WITH NOWAIT;                
+                RAISERROR(N'    EXEC [SSISDB].[catalog].[create_folder] @folder_name = @destinationFolder', 0, 0) WITH NOWAIT;
+                RAISERROR(N'END', 0, 0 ) WITH NOWAIT;
+            END
         END
     END
 
@@ -161,7 +171,6 @@ BEGIN
         IF @printScript = 0 --if not priting the script, get the environment ID check that the environment exists and eventually craete it
         BEGIN
             --Get the destination environment_id
-            SET @destinationEnvironment = ISNULL(@destinationEnvironment, @sourceEnvironment)
             SELECT
                 @dst_Environment_id = environment_id
             FROM [catalog].environments e
@@ -195,19 +204,34 @@ BEGIN
                 END
             END
         END
-        ELSE IF @autoCreate = 1 --If printing script and @autoCrate = 1, generate check and eventual creation of the environment
+        ELSE 
         BEGIN
-            RAISERROR(N'IF NOT EXISTS(', 0, 0) WITH NOWAIT;
-            RAISERROR(N'    SELECT 1', 0, 0) WITH NOWAIT;
-            RAISERROR(N'    FROM [SSISDB].[catalog].[environments] e', 0, 0) WITH NOWAIT;
-            RAISERROR(N'    INNER JOIN [SSISDB].[catalog].[folders] f ON f.folder_id = e.folder_id', 0, 0) WITH NOWAIT;
-            RAISERROR(N'    WHERE f.[name] = N''%s'' AND e.[name] = N''%s''', 0, 0, @destinationFolder, @destinationEnvironment) WITH NOWAIT;
-            RAISERROR(N')', 0, 0) WITH NOWAIT;
-            RAISERROR(N'BEGIN', 0, 0) WITH NOWAIT;
-            RAISERROR(N'    RAISERROR(N''Creating missing Environment [%s]\[%s]'', 0, 0) WITH NOWAIT', 0, 0, @destinationFolder, @destinationEnvironment) WITH NOWAIT;
-            RAISERROR(N'    EXEC [SSISDB].[catalog].[create_environment] @folder_name = N''%s'', @environment_name = N''%s'', @environment_description = N''''', 0, 0, @destinationFolder, @destinationEnvironment) WITH NOWAIT;
-            RAISERROR(N'END', 0, 0) WITH NOWAIT;
-            RAISERROR(N'GO', 0, 0) WITH NOWAIT;
+            IF @autoCreate = 1 --If printing script and @autoCrate = 1, generate check and eventual creation of the environment
+            BEGIN
+                RAISERROR(N'IF NOT EXISTS(', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    SELECT 1', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    FROM [SSISDB].[catalog].[environments] e', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    INNER JOIN [SSISDB].[catalog].[folders] f ON f.folder_id = e.folder_id', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    WHERE f.[name] = @destinationFolder AND e.[name] = @destinationEnvironment', 0, 0) WITH NOWAIT;
+                RAISERROR(N')', 0, 0) WITH NOWAIT;
+                RAISERROR(N'BEGIN', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    RAISERROR(N''Creating missing Environment [%%s]\[%%s]'', 0, 0, @destinationFolder, @destinationEnvironment) WITH NOWAIT', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    EXEC [SSISDB].[catalog].[create_environment] @folder_name = @destinationFolder, @environment_name = @destinationEnvironment, @environment_description = N''''', 0, 0) WITH NOWAIT;
+                RAISERROR(N'END', 0, 0) WITH NOWAIT;
+            END
+            ELSE
+            BEGIN
+                RAISERROR(N'IF NOT EXISTS(', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    SELECT 1', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    FROM [SSISDB].[catalog].[environments] e', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    INNER JOIN [SSISDB].[catalog].[folders] f ON f.folder_id = e.folder_id', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    WHERE f.[name] = @destinationFolder AND e.[name] = @destinationEnvironment', 0, 0) WITH NOWAIT;
+                RAISERROR(N')', 0, 0) WITH NOWAIT;
+                RAISERROR(N'BEGIN', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    RAISERROR(N''Destination environment [%%s]\[%%s] does not exist.'', 15, 0, @destinationFolder, @destinationEnvironment) WITH NOWAIT', 0, 0) WITH NOWAIT;
+                RAISERROR(N'    RETURN', 0, 0) WITH NOWAIT;
+                RAISERROR(N'END', 0, 0) WITH NOWAIT;
+            END
         END
     END
 
@@ -243,11 +267,29 @@ BEGIN
         RETURN;
     END
 
-
-    IF EXISTS(SELECT 1 FROM internal.environment_variables ev WHERE ev.environment_id = @dst_Environment_id)
+    --Check that desctination environment is empty
+    IF @printScript = 0
     BEGIN
-        RAISERROR('Destination environment [%s]\[%s] is not empty. Clear all variables prior clonning environment', 15, 5, @destinationFolder, @destinationEnvironment) WITH NOWAIT;
-        RETURN;
+        IF EXISTS(SELECT 1 FROM internal.environment_variables ev WHERE ev.environment_id = @dst_Environment_id)
+        BEGIN
+            RAISERROR('Destination environment [%s]\[%s] is not empty. Clear all variables prior clonning environment.', 15, 5, @destinationFolder, @destinationEnvironment) WITH NOWAIT;
+            RETURN;
+        END
+    END
+    BEGIN
+        RAISERROR(N'IF EXISTS (', 0, 0) WITH NOWAIT;
+        RAISERROR(N'    SELECT 1', 0, 0) WITH NOWAIT;
+        RAISERROR(N'    FROM [SSISDB].[catalog].[environment_variables] ev', 0, 0) WITH NOWAIT;
+        RAISERROR(N'    INNER JOIN [SSISDB].[catalog].[environments] e ON e.environment_id = ev.environment_id', 0, 0) WITH NOWAIT;
+        RAISERROR(N'    INNER JOIN [SSISDB].[catalog].[folders] f ON f.folder_id = e.folder_id', 0, 0) WITH NOWAIT;
+        RAISERROR(N'    WHERE', 0, 0) WITH NOWAIT;
+        RAISERROR(N'        f.name = @destinationFolder AND e.name = @destinationEnvironment', 0, 0) WITH NOWAIT;
+        RAISERROR(N')', 0, 0) WITH NOWAIT;
+        RAISERROR(N'BEGIN', 0, 0) WITH NOWAIT;
+        RAISERROR(N'    RAISERROR(N''Destination Environment [%%s]\[%%s] is not empty. Clear all variables prior clonning environment.'', 15, 1, @destinationFolder, @destinationEnvironment) WITH NOWAIT;', 0, 0) WITH NOWAIT;        
+        RAISERROR(N'    RETURN;', 0, 0) WITH NOWAIT;
+        RAISERROR(N'END', 0, 0) WITH NOWAIT;
+
     END
 
     --Set Source and Destiantion Environment keys and Certificates        
@@ -266,6 +308,11 @@ BEGIN
     IF @printScript = 0
     BEGIN
         RAISERROR(N'Clonning varaibles from Environment [%s]\[%s] to Environment [%s]\[%s]', 0, 0, @sourceFolder, @sourceEnvironment, @destinationFolder, @destinationEnvironment) WITH NOWAIT;        
+    END
+    ELSE
+    BEGIN
+        RAISERROR(N'', 0, 0) WITH NOWAIT;
+        RAISERROR(N'DECLARE @var sql_variant', 0, 0) WITH NOWAIT;
     END
 
     --Declare cursor for iteration over the environment variables
@@ -293,15 +340,15 @@ BEGIN
 
         IF @printScript = 1 --SCRIPT is being printed - Generate Script
         BEGIN
-            RAISERROR(N'RAISERROR(N''Creating variable [SSISDB]\[%s]\[%s]\[%s]'', 0, 0) WITH NOWAIT;', 0, 0, @destinationFolder, @destinationEnvironment, @name) WITH NOWAIT;
+            RAISERROR(N'RAISERROR(N''Creating variable [SSISDB]\[%%s]\[%%s]\[%s]'', 0, 0, @destinationFolder, @destinationEnvironment) WITH NOWAIT;', 0, 0, @name) WITH NOWAIT;
             
             --Print the variable for storing the value
-            SET @msg = 'DECLARE @var ' +
+            SET @msg = 'SET @var = CONVERT(' +
                 CASE @base_data_type
                     WHEN 'decimal' THEN 'decimal(28, 18)'
                     WHEN 'nvarchar' THEN 'sql_variant'
                     ELSE @base_data_type
-                END + N' = '
+                END + N', '
             
             IF @sensitive = 0  --Print Non-Sensitive value
             BEGIN
@@ -309,13 +356,13 @@ BEGIN
                     CASE 
                         WHEN @type = 'datetime' THEN CONVERT(nvarchar(max), @value, 126)
                         ELSE CONVERT(nvarchar(max), @value) 
-                    END + N'''';
+                    END + N''');';
             END
             ELSE
             BEGIN
                 IF @decryptSensitiveInScript = 0 --If Sensitive value and @descryptSensitiveInScript = 0 then print NULL and information about sensitive removal
                 BEGIN
-                    SET @msg = @msg + N'NULL --SENSITIVE REMOVED';
+                    SET @msg = @msg + N'NULL); --SENSITIVE REMOVED';
                 END
                 ELSE
                 BEGIN   --Print decrypted sensitive value
@@ -323,7 +370,7 @@ BEGIN
                         CASE 
                             WHEN @type = 'datetime' THEN CONVERT(nvarchar(max), [internal].[get_value_by_data_type](@decrypted_value, @type), 126)
                             ELSE CONVERT(nvarchar(max), [internal].[get_value_by_data_type](@decrypted_value, @type))
-                        END + N''' --SENSITIVE';
+                        END + N'''); --SENSITIVE';
                 END
             END
 
@@ -334,13 +381,12 @@ BEGIN
                   N'@variable_name=N''' + @name +N'''' +
                 N', @data_type=N''' + @type + N'''' +
                 N', @sensitive=' + CASE WHEN @sensitive = 1 THEN N'True' ELSE N'False' END + 
-                N', @folder_name=N''' + @destinationFolder + N'''' +
-                N', @environment_name=N''' + @destinationEnvironment + N'''' +
+                N', @folder_name=@destinationFolder' +
+                N', @environment_name=@destinationEnvironment' +
                 N', @value=@var' +
                 N', @description=N''' + @description + N'''';
         
             RAISERROR(@msg, 0, 0) WITH NOWAIT;
-            RAISERROR(N'GO', 0, 0) WITH NOWAIT;
 
         END
         ELSE --SCRIPT IS NOT BEING PRINTED - Clone the variables
