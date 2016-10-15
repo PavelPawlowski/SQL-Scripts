@@ -351,7 +351,7 @@ BEGIN
                 SET @msg = @msg + N'N''' + 
                     CASE 
                         WHEN @type = 'datetime' THEN CONVERT(nvarchar(max), @value, 126)
-                        ELSE CONVERT(nvarchar(max), @value) 
+                        ELSE ISNULL(CONVERT(nvarchar(max), @value), NULL)
                     END + N''');';
             END
             ELSE
@@ -362,11 +362,13 @@ BEGIN
                 END
                 ELSE
                 BEGIN   --Print decrypted sensitive value
-                    SET @msg = @msg + N'N''' + 
-                        CASE 
-                            WHEN @type = 'datetime' THEN CONVERT(nvarchar(max), [internal].[get_value_by_data_type](@decrypted_value, @type), 126)
-                            ELSE CONVERT(nvarchar(max), [internal].[get_value_by_data_type](@decrypted_value, @type))
-                        END + N'''); --SENSITIVE';
+                    SET @msg = @msg + ISNULL (N'N''' +                         
+                            CASE                            
+                                WHEN @type = 'datetime' THEN CONVERT(nvarchar(max), [internal].[get_value_by_data_type](@decrypted_value, @type), 126)
+                                ELSE CONVERT(nvarchar(max), [internal].[get_value_by_data_type](@decrypted_value, @type))
+                            END + N''''
+                            , N'NULL'
+                        ) + N'); --SENSITIVE' + CASE WHEN @decrypted_value IS NULL THEN N' - PROVIDE VALUE as sensite could not be decrypted' ELSE N'' END
                 END
             END
 
