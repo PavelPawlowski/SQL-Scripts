@@ -4,7 +4,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_HelpRights] AS BEGIN PRINT ''Container for sp_HelpRights (C) Pavel Pawlowski'' END');
 GO
 /* *********************************************************************************************************
-sp_HelpRights v0.5 (2016-03-31)
+sp_HelpRights v0.61 (2016-10-17)
 (C) 2015 - 2016 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -41,8 +41,8 @@ ALTER PROCEDURE [dbo].[sp_HelpRights]
 AS
 BEGIN
 	SET NOCOUNT ON;
-	RAISERROR(N'sp_HelpRights v0.6 (2016-10-11) (C) 2015-2016 Pavel Pawlowski', 0, 0) WITH NOWAIT;
-    RAISERROR(N'=============================================================', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_HelpRights v0.61 (2016-10-17) (C) 2015-2016 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+    RAISERROR(N'==============================================================', 0, 0) WITH NOWAIT;
 
 	IF @databases = '?'
 	BEGIN
@@ -69,7 +69,7 @@ sp_HelpRights                       -- Processes rights for current database
 sp_HelpRights ''%%''                   -- Processes rights for all databases
 sp_HelpRights ''%%,-m%%''               -- Processes rights for all databases except databases starting with m
 sp_HelpRights ''DBA, User%%, -User1%%'' -- Processes rights for database [DBA] and all databases starting with User but not starting with User1
-sp_HelpRights @principals=''R%%''      -- Processes rights for current database and displaysrights for all database principals starting with R
+sp_HelpRights @principals=''R%%''      -- Processes rights for current database and displays rights for all database principals starting with R
 sp_HelpRights ''?''                   -- Prints this help
 
 ', 0, 0) WITH NOWAIT;
@@ -80,7 +80,7 @@ CREATE TABLE #rightsHelp (
 	,[PermissionOjectType]                   nvarchar(60)    NULL       --Type of the Permission object
 	,[DatabaseObjectType]                    nvarchar(60)    NOT NULL   --Type of the Database object with which the permission is associated
 	,[DatabaseObjectSchemaName]              sysname         NULL       --Schema name for schema bound database objectsd
-	,[DatbaseObjectName]                     sysname         NULL       --Datbase object to which the permission is related
+	,[DatabaseObjectName]                    sysname         NULL       --Datbase object to which the permission is related
 	,[ColumnID]                              int             NOT NULL   --ID of column in case the permission is related to a column
 	,[DatabasePrincipalName]                 sysname         NULL       --Name of the database principal to which the permission is associated. The one to which the permission is finally granted or revoked.
 	,[DatabasePrincipalTypeName]             nvarchar(60)    NULL       --Name of the database principal Type
@@ -94,7 +94,7 @@ RAISERROR(N'	,[GranteePrincipalTypeName]              nvarchar(60)    NULL      
 	,[GrantedByDatabasePrincipalTypeName]    nvarchar(60)    NULL       --Type of the datbase principal which granted the permission to the grantee
 	,[DatabaseID]                            smallint        NULL       --ID of the database
 	,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema boudn objects
-	,[DatabaseObjeectID]                     int             NOT NULL   --ID of the dtabase object with which the permission is associated
+	,[DatabaseObjectID]                      int             NOT NULL   --ID of the dtabase object with which the permission is associated
 	,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.Theone to which the permission is finally granted orrevoked.', 0, 0) WITH NOWAIT;
 RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principla
 	,[PermissionType]                        char(4)         NOT NULL   --Type of the permission
@@ -104,7 +104,7 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
 	,[ServerPrincipalID]                     int             NULL       --ID of the server principal associated with the database principal if available
 	,[GrantedByDatabasePrincipalID]          int             NOT NULL   --ID of the database principal by which the permission was granted/denied
 	,[GrantedByDatabasePrincipalType]        char(1)         NULL       --Type of the database principal by which the permission was granted/denied
-)
+);
 ', 0, 0) WITH NOWAIT;
 		RETURN;
 	END;
@@ -120,7 +120,7 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
 	    ,[PermissionOjectType]                   nvarchar(60)    NULL       --Type of the Permission object
 	    ,[DatabaseObjectType]                    nvarchar(60)    NOT NULL   --Type of the Database object with which the permission is associated
 	    ,[DatabaseObjectSchemaName]              sysname         NULL       --Schema name for schema bound database objectsd
-	    ,[DatbaseObjectName]                     sysname         NULL       --Datbase object to which the permission is related
+	    ,[DatabaseObjectName]                    sysname         NULL       --Database object to which the permission is related
 	    ,[ColumnID]                              int             NOT NULL   --ID of column in case the permission is related to a column
 	    ,[DatabasePrincipalName]                 sysname         NULL       --Name of the database principal to which the permission is associated. The one to which the permission is finally granted or revoked.
 	    ,[DatabasePrincipalTypeName]             nvarchar(60)    NULL       --Name of the database principal Type
@@ -134,7 +134,7 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
 	    ,[GrantedByDatabasePrincipalTypeName]    nvarchar(60)    NULL       --Type of the datbase principal which granted the permission to the grantee
 	    ,[DatabaseID]                            smallint        NULL       --ID of the database
 	    ,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema boudn objects
-	    ,[DatabaseObjeectID]                     int             NOT NULL   --ID of the dtabase object with which the permission is associated
+	    ,[DatabaseObjectID]                      int             NOT NULL   --ID of the dtabase object with which the permission is associated
 	    ,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.Theone to which the permission is finally granted orrevoked.
 	    ,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principla
 	    ,[PermissionType]                        char(4)         NOT NULL   --Type of the permission
@@ -221,9 +221,9 @@ INSERT INTO #rightsHelp (
     ,[PermissionOjectType]               
     ,[DatabaseObjectType]                
     ,[DatabaseObjectSchemaName]          
-    ,[DatbaseObjectName]                 
+    ,[DatabaseObjectName]                 
     ,[DatabaseObjectSchemaID]            
-    ,[DatabaseObjeectID]                 
+    ,[DatabaseObjectID]                 
     ,[ColumnID]                          
     ,[GranteePrincipalID]                
     ,[GranteePrincipalName]              
@@ -251,9 +251,9 @@ SELECT
 	,dpp.class_desc						AS PermissionOjectType
 	,ISNULL(o.type_desc, ''DATABASE'')	AS DatabaseObjectType
 	,s.name								AS DatabaseObjectSchemaName
-	,o.name								AS DatbaseObjectName
+	,o.name								AS DatabaseObjectName
 	,s.schema_id						AS DatabaseObjectSchemaID
-	,dpp.major_id						AS DatabaseObjeectID
+	,dpp.major_id						AS DatabaseObjectID
 	,dpp.minor_id						AS ColumnID
 	,dpp.grantee_principal_id			AS GranteePrincipalID
 	,gdp.name							AS GranteePrincipalName
@@ -332,7 +332,7 @@ WHERE dp.DatabasePrincipalID IN (SELECT principal_id FROM FilteredPrincipals)
         ,[PermissionOjectType]               
         ,[DatabaseObjectType]                
         ,[DatabaseObjectSchemaName]          
-        ,[DatbaseObjectName]                 
+        ,[DatabaseObjectName]                 
         ,[ColumnID]                          
         ,[DatabasePrincipalName]             
         ,[DatabasePrincipalTypeName]         
@@ -346,7 +346,7 @@ WHERE dp.DatabasePrincipalID IN (SELECT principal_id FROM FilteredPrincipals)
         ,[GrantedByDatabasePrincipalTypeName]
         ,[DatabaseID]                        
         ,[DatabaseObjectSchemaID]            
-        ,[DatabaseObjeectID]                 
+        ,[DatabaseObjectID]                 
         ,[DatabasePrincipalID]               
         ,[DatabasePrincipalType]             
         ,[PermissionType]                    
