@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneEnvironment]''')
 GO
 /* ****************************************************
-usp_SSISCloneEnvironment v 0.20 (2016-10-11)
+usp_SSISCloneEnvironment v 0.21 (2016-11-17)
 (C) 2016 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -22,7 +22,7 @@ Description:
 Parameters:
      @sourceFolder              nvarchar(128)           --Name of the Source Folder from which the environment should be cloned
     ,@sourceEnvironment         nvarchar(128)           --Name of the Source Environemnt to be cloned
-    ,@destinationFolder         nvarchar(128)           --Name of the destination folder to which the Environment should be cloned
+    ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the Environment should be cloned. When NULL sourcefolder name is used.
     ,@destinationEnvironment    nvarchar(128)   = NULL  --Name of the desntination Environment to which the source environment should be cloned. 
                                                         --When NULL @sourceEnvironment is being used
     ,@autoCreate                bit             = 1     --Specifies whether the destination Folder/Environment should be auto-created if not exists
@@ -32,7 +32,7 @@ Parameters:
 ALTER PROCEDURE [dbo].[sp_SSISCloneEnvironment]
      @sourceFolder              nvarchar(128)   = NULL  --Name of the Source Folder from which the environment should be cloned
     ,@sourceEnvironment         nvarchar(128)   = NULL  --Name of the Source Environemnt to be cloned
-    ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the Environment should be cloned
+    ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the Environment should be cloned. When NULL sourcefolder name is used.
     ,@destinationEnvironment    nvarchar(128)   = NULL  --Name of the desntination Environment to which the source environment should be cloned. When NULL @sourceEnvironment is being used
     ,@autoCreate                bit             = 1     --Specifies whether the destination Folder/Environment should be auto-created if not exists
     ,@printScript               bit             = 0     --Specifies whether script for the variables should be generated
@@ -68,7 +68,7 @@ BEGIN
         ,@decrypted_value               varbinary(max)          --Variable to store decrypted sensitive value
 
     --If the needed input parameters are null, print help
-    IF @sourceFolder IS NULL OR @sourceEnvironment IS NULL OR  @destinationFolder IS NULL
+    IF @sourceFolder IS NULL OR @sourceEnvironment IS NULL
         SET @printHelp = 1
 
 	--Set and print the procedure output caption
@@ -78,7 +78,7 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneEnvironment v0.20 (2016-10-11) (C) 2016 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISCloneEnvironment v0.21 (2016-11-17) (C) 2016 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'===================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -98,11 +98,13 @@ BEGIN
                                                           Source folder is required and must exist
     ,@sourceEnvironment         nvarchar(128)   =       --Name of the Source Environemnt to be cloned
                                                           Source environment is required and must exist
-    ,@destinationFolder         nvarchar(128)   =       --Name of the destination folder to which the Environment should be cloned
-                                                          Destination folder is required, but may not exists if @autoCreate = 1
+    ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the Environment should be cloned
+                                                          When NULL sourcefolder name is used.
     ,@destinationEnvironment    nvarchar(128)   = NULL  --Name of the desntination Environment to which the source environment should be cloned. 
                                                           Destiantion Environment is not required and Source Environment name is used when not provided.
-                                                          If Destination Environment does not exists and @autoCreate = 1 then the environment is automatically created
+                                                          If Destination Environment does not exists and @autoCreate = 1 then the environment is automatically created.
+                                                          If both @destinationFolder and @destinationEnvironment are NULL or are matching source, @printScript is forced to 1.
+                                                          This is used to scrip out existing environment.
     ,@autoCreate                bit             = 1     --Specifies whether the destination Folder/Environment should be auto-created if not exists
     ,@printScript               bit             = 0     --Specifies whether script for the variables should be generated
     ,@decryptSensitiveInScript  bit             = 0     --Specifies whether sensitive data shuld be descrypted in script.
@@ -115,8 +117,14 @@ BEGIN
         RETURN;
     END
 
-    --Set Destination ENvironment Name in case of NULL       
-    SET @destinationEnvironment = ISNULL(@destinationEnvironment, @sourceEnvironment)
+    --Set Destination Folder and Environment Name in case of NULL       
+    SELECT
+         @destinationFolder         = ISNULL(@destinationFolder, @sourceFolder)
+        ,@destinationEnvironment    = ISNULL(@destinationEnvironment, @sourceEnvironment)
+        
+    --force @printScript = 1 in case source = destination
+    IF @sourceFolder = @destinationFolder AND @sourceEnvironment = @destinationEnvironment
+        SET @printScript = 1
 
     --get source folder_id
     SELECT
