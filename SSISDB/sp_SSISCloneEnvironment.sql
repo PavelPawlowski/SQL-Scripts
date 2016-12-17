@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneEnvironment]''')
 GO
 /* ****************************************************
-usp_SSISCloneEnvironment v 0.21 (2016-11-17)
+usp_SSISCloneEnvironment v 0.22 (2016-12-17)
 (C) 2016 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -71,6 +71,15 @@ BEGIN
     IF @sourceFolder IS NULL OR @sourceEnvironment IS NULL
         SET @printHelp = 1
 
+    --Set Destination Folder and Environment Name in case of NULL       
+    SELECT
+         @destinationFolder         = ISNULL(@destinationFolder, @sourceFolder)
+        ,@destinationEnvironment    = ISNULL(@destinationEnvironment, @sourceEnvironment)
+        
+    --force @printScript = 1 in case source = destination
+    IF @sourceFolder = @destinationFolder AND @sourceEnvironment = @destinationEnvironment
+        SET @printScript = 1
+
 	--Set and print the procedure output caption
     IF (@printScript = 1 AND @printHelp = 0)
     BEGIN
@@ -78,7 +87,7 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneEnvironment v0.21 (2016-11-17) (C) 2016 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISCloneEnvironment v0.22 (2016-12-17) (C) 2016 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'===================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -116,15 +125,6 @@ BEGIN
 
         RETURN;
     END
-
-    --Set Destination Folder and Environment Name in case of NULL       
-    SELECT
-         @destinationFolder         = ISNULL(@destinationFolder, @sourceFolder)
-        ,@destinationEnvironment    = ISNULL(@destinationEnvironment, @sourceEnvironment)
-        
-    --force @printScript = 1 in case source = destination
-    IF @sourceFolder = @destinationFolder AND @sourceEnvironment = @destinationEnvironment
-        SET @printScript = 1
 
     --get source folder_id
     SELECT
