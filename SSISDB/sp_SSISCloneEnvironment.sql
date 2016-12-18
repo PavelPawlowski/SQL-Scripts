@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneEnvironment]''')
 GO
 /* ****************************************************
-usp_SSISCloneEnvironment v 0.22 (2016-12-17)
+usp_SSISCloneEnvironment v 0.23 (2016-12-18)
 (C) 2016 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -17,11 +17,11 @@ License:
 
 Description:
     Clones SSIS environment variables from one environment to another.
-    Allows scripting of the environments to allow easy transfer among environments.
+    Allows scripting of the environments for easy transfer among environments.
 
 Parameters:
      @sourceFolder              nvarchar(128)           --Name of the Source Folder from which the environment should be cloned
-    ,@sourceEnvironment         nvarchar(128)           --Name of the Source Environemnt to be cloned
+    ,@sourceEnvironment         nvarchar(128)           --Name of the Source Environment to be cloned
     ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the Environment should be cloned. When NULL sourcefolder name is used.
     ,@destinationEnvironment    nvarchar(128)   = NULL  --Name of the desntination Environment to which the source environment should be cloned. 
                                                         --When NULL @sourceEnvironment is being used
@@ -31,7 +31,7 @@ Parameters:
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISCloneEnvironment]
      @sourceFolder              nvarchar(128)   = NULL  --Name of the Source Folder from which the environment should be cloned
-    ,@sourceEnvironment         nvarchar(128)   = NULL  --Name of the Source Environemnt to be cloned
+    ,@sourceEnvironment         nvarchar(128)   = NULL  --Name of the Source Environment to be cloned
     ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the Environment should be cloned. When NULL sourcefolder name is used.
     ,@destinationEnvironment    nvarchar(128)   = NULL  --Name of the desntination Environment to which the source environment should be cloned. When NULL @sourceEnvironment is being used
     ,@autoCreate                bit             = 1     --Specifies whether the destination Folder/Environment should be auto-created if not exists
@@ -87,7 +87,7 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneEnvironment v0.22 (2016-12-17) (C) 2016 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISCloneEnvironment v0.23 (2016-12-18) (C) 2016 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'===================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -103,21 +103,21 @@ BEGIN
         RAISERROR(N'[sp_SSISCloneEnvironment] parameters', 0, 0) WITH NOWAIT; 
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
         SET @msg = N'Parameters:
-     @sourceFolder              nvarchar(128)   =       --Name of the Source Folder from which the environment should be cloned
-                                                          Source folder is required and must exist
-    ,@sourceEnvironment         nvarchar(128)   =       --Name of the Source Environemnt to be cloned
-                                                          Source environment is required and must exist
-    ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the Environment should be cloned
+     @sourceFolder              nvarchar(128)   =       --Name of the Source Folder from which the environment should be cloned.
+                                                          Source folder is required and must exist.
+    ,@sourceEnvironment         nvarchar(128)   =       --Name of the Source Environment to be cloned.
+                                                          Source environment is required and must exist.
+    ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the Environment should be cloned.
                                                           When NULL sourcefolder name is used.
-    ,@destinationEnvironment    nvarchar(128)   = NULL  --Name of the desntination Environment to which the source environment should be cloned. 
-                                                          Destiantion Environment is not required and Source Environment name is used when not provided.
+    ,@destinationEnvironment    nvarchar(128)   = NULL  --Name of the destination Environment to which the source environment should be cloned. 
+                                                          Destination Environment is not required and Source Environment name is used when not provided.
                                                           If Destination Environment does not exists and @autoCreate = 1 then the environment is automatically created.
                                                           If both @destinationFolder and @destinationEnvironment are NULL or are matching source, @printScript is forced to 1.
                                                           This is used to scrip out existing environment.
-    ,@autoCreate                bit             = 1     --Specifies whether the destination Folder/Environment should be auto-created if not exists
-    ,@printScript               bit             = 0     --Specifies whether script for the variables should be generated
-    ,@decryptSensitiveInScript  bit             = 0     --Specifies whether sensitive data shuld be descrypted in script.
-                                                          Otherwise it extracts NULLs for the sensitive data in Script and data needs to be provided manually
+    ,@autoCreate                bit             = 1     --Specifies whether the destination Folder/Environment should be auto-created if not exists.
+    ,@printScript               bit             = 0     --Specifies whether script for the variables should be generated.
+    ,@decryptSensitiveInScript  bit             = 0     --Specifies whether sensitive data should be descrypted in script.
+                                                          Otherwise it extracts NULLs for the sensitive data in Script and data needs to be provided manually.
     '
         RAISERROR(@msg, 0, 0) WITH NOWAIT;
 
@@ -135,7 +135,7 @@ BEGIN
     --check source folder
     IF @src_folder_id IS NULL
     BEGIN
-        RAISERROR(N'Source Folder [%s] does not exists', 15, 1, @sourceFolder) WITH NOWAIT;
+        RAISERROR(N'Source Folder [%s] does not exists.', 15, 1, @sourceFolder) WITH NOWAIT;
         RETURN;
     END
 
@@ -151,7 +151,7 @@ BEGIN
     --chek source environment
     IF @src_Environment_id IS NULL
     BEGIN
-        RAISERROR(N'Source Environment [%s]\[%s] does not exists', 15, 2, @sourceFolder, @sourceEnvironment) WITH NOWAIT;
+        RAISERROR(N'Source Environment [%s]\[%s] does not exists.', 15, 2, @sourceFolder, @sourceEnvironment) WITH NOWAIT;
         RETURN;
     END
 
@@ -168,7 +168,7 @@ BEGIN
         BEGIN
             IF NOT (@autoCreate = 1)
             BEGIN
-                RAISERROR(N'Destination Folder [%s] soes not exists @autoCreate <> 1', 15, 3, @destinationFolder) WITH NOWAIT;
+                RAISERROR(N'Destination Folder [%s] does not exists @autoCreate <> 1.', 15, 3, @destinationFolder) WITH NOWAIT;
                 RETURN;
             END
             ELSE
