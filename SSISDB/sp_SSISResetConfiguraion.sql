@@ -30,7 +30,7 @@ ALTER PROCEDURE [dbo].[sp_SSISResetConfiguration]
     ,@project       nvarchar(128)   = NULL  --Name of the Project to reset configuration
 	,@object        nvarchar(260)   = NULL	--Comma separated list of objects which parametes should be cleared. Supports LIKE wildcards
     ,@parameter     nvarchar(max)   = NULL  --Comma separated list of parameters to be cleared. Supports LIKE wildcards
-    ,@listOnly      bit             = 1     --specifies whether only list of parameters to be reset will be printed. No actual reset will happen
+    ,@listOnly      bit             = 0     --specifies whether only list of parameters to be reset will be printed. No actual reset will happen
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 BEGIN
