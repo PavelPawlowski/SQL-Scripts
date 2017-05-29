@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISResetConfiguration] AS PRINT ''Placeholder for [dbo].[sp_SSISResetConfiguration]''')
 GO
 /* ****************************************************
-sp_SSISResetConfiguration v 0.10 (2016-12-18)
+sp_SSISResetConfiguration v 0.20 (2017-05-29)
 (C) 2016 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -21,16 +21,16 @@ Description:
 Parameters:
      @folder        nvarchar(128)   =       --Name of the Folder of the project to reset configuraions
     ,@project       nvarchar(128)   =       --Name of the Project to reset configuration
-	,@object        nvarchar(260)   = NULL	--Name of the Object to reset configuration
-    ,@parameter     nvarchar(128)   = NULL  --name of the Parameter to reset configuration
+	,@object        nvarchar(260)   = NULL	--Comma separated list of objects which parametes should be cleared. Supports LIKE wildcards
+    ,@parameter     nvarchar(max)   = NULL  --Comma separated list of parameters to be cleared. Supports LIKE wildcards
     ,@listOnly      bit             = 0     --specifies whether only list of parameters to be reset will be printed. No actual reset will happen
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISResetConfiguration]
      @folder        nvarchar(128)   = NULL  --Name of the Folder of the project to reset configuraions
     ,@project       nvarchar(128)   = NULL  --Name of the Project to reset configuration
-	,@object        nvarchar(260)   = NULL	--Name of the Object to reset configuration
-    ,@parameter     nvarchar(128)   = NULL  --name of the Parameter to reset configuration
-    ,@listOnly      bit             = 0     --specifies whether only list of parameters to be reset will be printed. No actual reset will happen
+	,@object        nvarchar(260)   = NULL	--Comma separated list of objects which parametes should be cleared. Supports LIKE wildcards
+    ,@parameter     nvarchar(max)   = NULL  --Comma separated list of parameters to be cleared. Supports LIKE wildcards
+    ,@listOnly      bit             = 1     --specifies whether only list of parameters to be reset will be printed. No actual reset will happen
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 BEGIN
@@ -49,13 +49,23 @@ BEGIN
         ,@parameter_name                nvarchar(128)           --name of the parameter being reset
         ,@preview                       nvarchar(128)           --variable to hold preview message
         ,@cnt                           int             = 0     --count of parameters which were reset
+		,@xmlObj						xml						--variable for holding xml for parsing input parameters
+		,@xmlPar						xml						--variable for holding xml for parsing input parameters
+
+
+	--Table for holding list of paramters to be dropped
+	CREATE TABLE #parametersToClear (
+		parameter_id	bigint			NOT NULL	PRIMARY KEY CLUSTERED
+		,object_name	nvarchar(128)
+		,parameter_name	nvarchar(128)
+	)
 
     --If the required input parameters are null, print help
     IF @folder IS NULL OR @project IS NULL 
         SET @printHelp = 1
 
 
-	RAISERROR(N'sp_SSISResetConfiguration v0.10 (2016-12-18) (C) 2016 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_SSISResetConfiguration v0.20 (2017-05-29) (C) 2016 Pavel Pawlowski', 0, 0) WITH NOWAIT;
     RAISERROR(N'=====================================================================', 0, 0) WITH NOWAIT;
 
     --PRINT HELP
@@ -71,9 +81,9 @@ BEGIN
                                               Folder is required and must exist.
     ,@project       nvarchar(128)   =       --Name of the Project to reset configuration.
                                               Project is required and must exists.
-	,@object        nvarchar(260)   = NULL	--Name of the Object within project to reset configuration.
-                                              Object is optional and if provided then only configuration for that prticular object are reset.
-    ,@parameter     nvarchar(128)   = NULL  --Name of the parameter wihin project to reset configuration.
+	,@object        nvarchar(260)   = NULL	--Comma separated list of object names within project to reset configuration. Support LIKE wildcards
+                                              Object is optional and if provided then only configuration for that prticular objects will be reset.
+    ,@parameter     nvarchar(128)   = NULL  --Comma separated list of parameter names within project to reset configuration. Support LIKE wildcards
                                               Parameter is optional and if provided then only configuration for that parameter are reset
                                               When @parameter is provided and @object not, then all parameters with that particular name
                                               are reset within the project configurations.
@@ -118,50 +128,44 @@ BEGIN
         RETURN;
     END
 
-    --check Source Object in case is does not equals to project
-    if @object IS NOT NULL AND @object <> @project
-    BEGIN
-        IF NOT EXISTS(
-            SELECT
-            1
-            FROM [internal].[object_parameters] op
-            WHERE 
-                op.project_id = @src_project_id
-                AND
-                op.project_version_lsn = @src_project_lsn
-                AND
-                op.object_name = @object
-        )
-        BEGIN
-            RAISERROR(N'Object [%s]\[%s]\[%s] does not exists in configurations.', 15, 3, @folder, @project, @object) WITH NOWAIT;
-            RETURN;
-        END            
-    END
+	SET @xmlObj = N'<i>' + REPLACE(ISNULL(@object, N'%'), N',', N'</i><i>') + N'</i>';
+	SET @xmlPar = N'<i>' + REPLACE(ISNULL(@parameter, N'%'), N',', N'</i><i>') + N'</i>';
 
-    IF (@parameter IS NOT NULL)
-    BEGIN
-        IF NOT EXISTS(
-            SELECT
-            1
-            FROM [internal].[object_parameters] op
-            WHERE 
-                op.project_id = @src_project_id
-                AND
-                op.project_version_lsn = @src_project_lsn
-                AND
-                (op.object_name = @object OR @object IS NULL)
-                AND
-                (op.parameter_name = @parameter)
-        )
-        BEGIN
-            IF (@object IS NULL)
-                RAISERROR('Parameter [%s] does not exists in the [%s]\[%s] project configurations.', 15, 4, @parameter, @folder, @project) WITH NOWAIT;
-            ELSE
-                RAISERROR(N'Parameter [%s]\[%s]\[%s]\[%s] does not exists in configuraions.', 15, 5, @folder, @project, @object, @parameter) WITH NOWAIT;
+	WITH ObjNames AS (
+		SELECT DISTINCT
+			LTRIM(RTRIM(n.value(N'.', N'nvarchar(128)'))) AS ObjectName
+		FROM @xmlObj.nodes(N'i') T(N)
+	),
+	ParamNames AS (
+		SELECT DISTINCT
+			LTRIM(RTRIM(n.value(N'.', N'nvarchar(128)'))) AS ParamName
+		FROM @xmlPar.nodes(N'i') T(N)
+	)
+	INSERT INTO #parametersToClear (
+		parameter_id
+        ,object_name
+        ,parameter_name
+	)
+	SELECT DISTINCT
+        parameter_id
+        ,object_name
+        ,parameter_name
+    FROM [internal].[object_parameters] op
+	INNER JOIN ObjNames o ON op.object_name LIKE o.ObjectName
+	INNER JOIN ParamNames p ON op.parameter_name LIKE p.ParamName
+    WHERE 
+        op.project_id = @src_project_id
+        AND
+        op.project_version_lsn = @src_project_lsn
+		AND
+		op.value_set = 1
 
-            RETURN;
-        END
-    END
+	IF NOT EXISTS(SELECT 1 FROM #parametersToClear)
+	BEGIN
+		RAISERROR(N'No parameters configuration exists for input parameters provided...', 0, 0) WITH NOWAIT;
+		RETURN;
+	END
+
 
     RAISERROR(N'', 0, 0) WITH NOWAIT;
     RAISERROR( N'Reseting configurations for project [%s]\[%s]', 0, 0, @folder, @project) WITH NOWAIT;
@@ -177,23 +181,12 @@ BEGIN
     SET TRANSACTION ISOLATION LEVEL SERIALIZABLE;
     BEGIN TRAN
 
-
     DECLARE cr CURSOR FAST_FORWARD FOR
-    SELECT
+	SELECT
         parameter_id
         ,object_name
         ,parameter_name
-    FROM [internal].[object_parameters] op
-    WHERE
-        op.project_id = @src_project_id
-        AND
-        op.project_version_lsn = @src_project_lsn
-        AND
-        (op.object_name = @object OR @object IS NULL)
-        AND
-        (op.parameter_name = @parameter OR @parameter IS NULL)
-        AND
-        op.value_set = 1
+    FROM #parametersToClear
 
     OPEN cr;
 
