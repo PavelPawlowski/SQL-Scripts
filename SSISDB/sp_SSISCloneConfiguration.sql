@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneConfiguration] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneConfiguration]''')
 GO
 /* ****************************************************
-sp_SSISCloneConfiguration v 0.10 (2016-12-18)
+sp_SSISCloneConfiguration v 0.20 (2017-06-08)
 (C) 2016 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -22,8 +22,8 @@ Description:
 Parameters:
      @sourceFolder              nvarchar(128)   =       --Name of the Source Folder from which the project configuraiont should be cloned
     ,@sourceProject             nvarchar(128)   =       --Name of the Source Project to clone configurations
-	,@sourceObject              nvarchar(260)	= NULL  --Name of the Source Object to clone configurations
-
+	,@sourceObject              nvarchar(max)	= NULL	--Comma separated list of source objects which parameter configuration should be clonned. Supports LIKE Wildcards. Default NULL means all objects
+    ,@parameter                 nvarchar(max)   = NULL  --Comma separated list of parameter names which configuration should be clonned. Supports LIKE wildcards. Default NULL means all paramaters
     ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the project configuration
     ,@destinationProject		nvarchar(128)   = NULL  --Name of the desntination project to which the source project configuraiont should be cloned.
 
@@ -33,8 +33,8 @@ Parameters:
 ALTER PROCEDURE [dbo].[sp_SSISCloneConfiguration]
      @sourceFolder              nvarchar(128)   = NULL  --Name of the Source Folder from which the project configuraiont should be cloned
     ,@sourceProject             nvarchar(128)   = NULL  --Name of the Source Project to clone configurations
-	,@sourceObject              nvarchar(260)	= NULL	--Name of the Source Object to clone configurations
-
+	,@sourceObject              nvarchar(max)	= NULL	--Comma separated list of source objects which parameter configuration should be clonned. Supports LIKE Wildcards. Default NULL means all objects
+    ,@parameter                 nvarchar(max)   = NULL  --Comma separated list of parameter names which configuration should be clonned. Supports LIKE wildcards. Default NULL means all paramaters
     ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the project configuration
     ,@destinationProject		nvarchar(128)   = NULL  --Name of the desntination project to which the source project configuraiont should be cloned.
 
@@ -78,6 +78,15 @@ BEGIN
         ,@src_certificateName           nvarchar(256)           --Name of the certificate for decryption of the source symmetric key
         ,@decrypted_value               varbinary(max)          --Variable to store decrypted sensitive value
         ,@references_count              int             = 0     --Count of configurations using References
+        ,@xml                           xml                     --variable for parsing input parameters
+
+
+    CREATE TABLE #objects (
+        ObjectName nvarchar(260) NOT NULL PRIMARY KEY CLUSTERED
+    )
+    CREATE TABLE #params (
+        ParamName nvarchar(128) NOT NULL PRIMARY KEY CLUSTERED
+    )
 
     --If the needed input parameters are null, print help
     IF @sourceFolder IS NULL OR @sourceProject IS NULL 
@@ -100,7 +109,7 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.10 (2016-12-18) (C) 2016 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.20 (2017-06-08) (C) 2016 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'=====================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -117,11 +126,15 @@ BEGIN
         SET @msg = N'Parameters:
      @sourceFolder              nvarchar(128)   =       --Name of the Source Folder from which the project configuration should be cloned.
                                                           Source folder is required and must exist.
-    ,@sourceEnvironment         nvarchar(128)   =       --Name of the Source project which configurations should be clonned.
+    ,@sourceProject             nvarchar(128)   =       --Name of the Source project which configurations should be clonned.
                                                           Source project is required and must exist.
-	,@sourceObject              nvarchar(260)	= NULL  --Name of the Source Object to clone configurations.
+	,@sourceObject              nvarchar(max)	= NULL	--Comma separated list of source objects which parameter configuration should be clonned. 
+                                                          Supports LIKE Wildcards. 
+                                                          Default NULL means all objects.
                                                           It can point to Project name or concrete package name.
-                                                          When provided, then only configurations for that particular object are being clonned.
+    ,@parameter                 nvarchar(max)   = NULL  --Comma separated list of parameter names which configuration should be clonned. 
+                                                          Supports LIKE wildcards. 
+                                                          Default NULL means all paramaters
     ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the project configuration should be cloned.
                                                           Destination folder is optional and if not provided @sourceFolder is being used.
     ,@destinationProject        nvarchar(128)   = NULL  --Name of the destination project to which the source project configuraions should be cloned. 
@@ -170,25 +183,74 @@ BEGIN
         RETURN;
     END
 
-    --check Source Object in case is does not equals to project
-    if @sourceObject IS NOT NULL AND @sourceObject <> @sourceProject
+    --Parse and find object names to clone
+    SET @xml = N'<i>' + ISNULL(REPLACE(@sourceObject, N',', N'</i><i>'), N'%') + N'</i>';
+    WITH ObjectNames AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(T.N.value(N'.', N'nvarchar(260)'))) AS ObjectName
+        FROM @xml.nodes(N'i') T(N)
+    )
+    INSERT INTO #objects (
+        ObjectName
+   )
+    SELECT DISTINCT
+        object_name
+    FROM [internal].[object_parameters] op
+    INNER JOIN ObjectNames n ON op.object_name LIKE n.ObjectName
+    WHERE
+        op.project_id = @src_project_id
+        AND
+        op.project_version_lsn = @src_project_lsn
+
+    --Parse and find param names to clone
+    SET @xml = N'<i>' + ISNULL(REPLACE(@parameter, N',', N'</i><i>'), N'%') + N'</i>';
+    WITH ParamNames AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(T.N.value(N'.', N'nvarchar(128)'))) AS ParamName
+        FROM @xml.nodes(N'i') T(N)
+    )
+    INSERT INTO #params (
+        ParamName
+   )
+    SELECT DISTINCT
+        parameter_name
+    FROM [internal].[object_parameters] op
+    INNER JOIN ParamNames n ON op.parameter_name LIKE n.ParamName
+    WHERE
+        op.project_id = @src_project_id
+        AND
+        op.project_version_lsn = @src_project_lsn
+
+
+    IF NOT EXISTS(SELECT 1 FROM #objects)
     BEGIN
-        IF NOT EXISTS(
-            SELECT
-            1
-            FROM [internal].[object_parameters] op
-            WHERE 
-                op.project_id = @src_project_id
-                AND
-                op.project_version_lsn = @src_project_lsn
-                AND
-                op.object_name = @sourceObject
-        )
-        BEGIN
-            RAISERROR(N'Source Object [%s]\[%s]\[%s] does not exists in configurations.', 15, 3, @sourceFolder, @sourceProject, @sourceObject) WITH NOWAIT;
-            RETURN;
-        END            
+        RAISERROR(N'No Source object configuration exists in [%s]\[%s] project matching input criteria "%s"', 15, 3, @sourceFolder, @sourceProject, @sourceObject) WITH NOWAIT;
+        RETURN
     END
+
+    IF NOT EXISTS(SELECT 1 FROM #params)
+    BEGIN
+        RAISERROR(N'No parameter configuration exists in [%s]\[%s] project matching input criteria "%s"', 15, 4, @sourceFolder, @sourceProject, @parameter) WITH NOWAIT;
+        RETURN
+    END
+
+    IF NOT EXISTS(
+        SELECT 1
+        FROM [internal].[object_parameters] op
+        INNER JOIN #objects o ON op.object_name COLLATE database_default = o.ObjectName COLLATE database_default
+        INNER JOIN #params p ON op.parameter_name COLLATE database_default = p.ParamName COLLATE database_default
+        WHERE
+            op.project_id = @src_project_id
+            AND
+            op.project_version_lsn = @src_project_lsn
+            AND
+            op.value_set = 1
+    )
+    BEGIN
+        RAISERROR(N'No parameter configuration exists in [%s]\[%s] project matching input criteria for Source Object Name and Parameter Name', 15, 4, @sourceFolder, @sourceProject) WITH NOWAIT;
+        RETURN
+    END
+
 
 
     IF @printScript = 0 --if not priting the script, check that the destination folder and project exists
@@ -265,7 +327,7 @@ BEGIN
 
     --Declare cursor for iteration over the environment variables
     DECLARE cr CURSOR FAST_FORWARD FOR
-    SELECT
+    SELECT DISTINCT
         object_type
         ,object_name
         ,parameter_name
@@ -276,12 +338,12 @@ BEGIN
         ,value_type
         ,referenced_variable_name
     FROM [internal].[object_parameters] op
+    INNER JOIN #objects o ON op.object_name COLLATE database_default = o.ObjectName COLLATE database_default
+    INNER JOIN #params p ON op.parameter_name COLLATE database_default = p.ParamName COLLATE database_default
     WHERE
         op.project_id = @src_project_id
         AND
         op.project_version_lsn = @src_project_lsn
-        AND
-        (op.object_name = @sourceObject OR @sourceObject IS NULL)
         AND
         op.value_set = 1
 
