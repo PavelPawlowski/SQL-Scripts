@@ -19,12 +19,16 @@ Description:
     Clones rights and/or group membership for specified user(s)
 
 Parameters:
-     @user                      sysname         = NULL - Comma separated list of user names to sciprt rights. Supports wildcards when eg ''%%'' means all users
-    ,@newUser                   sysname         = NULL - New user to which copy rights. If New users is provided, @Old user must return exactly one record
-    ,@database                  nvarchar(max)   = NULL - Comma separated listof databases to be iterated and permissions scripted. Supports Like wildcards. NULL means current database
-    ,@scriptClass               nvarchar(max)   = NULL - Comma separated list of permission classes to script. NULL = ALL
-    ,@printOnly                 bit             = 1    - When 1 then only script is printed on screen, when 0 then also script is executed, when NULL, script is only executed and not printed
-                                                       - When @newUser is not provided then it is always 1'
+     @user                      sysname         = NULL  - Comma separated list of user names to sciprt rights. 
+                                                        - Supports wildcards when eg ''%%'' means all users
+                                                        - [-] prefix means except
+    ,@newUser                   sysname         = NULL  - New user to which copy rights. If New users is provided, @Old user must return exactly one record
+    ,@database                  nvarchar(max)   = NULL  - Comma separated listof databases to be iterated and permissions scripted. 
+                                                        - Supports Like wildcards. NULL means current database
+                                                        - [-] prefix means except
+    ,@scriptClass               nvarchar(max)   = NULL  - Comma separated list of permission classes to script. NULL = ALL
+    ,@printOnly                 bit             = 1     - When 1 then only script is printed on screen, when 0 then also script is executed, when NULL, script is only executed and not printed
+                                                        - When @newUser is not provided then it is always 1'
 
 
 * ***************************************************** */ 
@@ -82,7 +86,7 @@ DECLARE @allowedClasses TABLE (
 
 --table for storing output
 CREATE TABLE #output (
-    command nvarchar(4000)
+    command nvarchar(max)
 );
 
 
@@ -149,7 +153,7 @@ VALUES
         ,(N'FULLTEXT_STOPLIST'              , 'Scripts permissions on all fulltext stoplists')
 
         ,(N''                               ,'')
-        ,(N'ENCRYP{TION'                    , 'Scripts permissions on all encryptions related objects')
+        ,(N'ENCRYPTION'                     , 'Scripts permissions on all encryptions related objects')
         ,(N'SYMMETRIC_KEY'                  , 'Scripts permissions on all symmetric keys')
         ,(N'ASYMMETRIC_KEY'                 , 'Scripts permissions on all asymmetric keys')
         ,(N'CERTIFICATE'                    , 'Scripts permissions on all certificates')
@@ -157,14 +161,31 @@ VALUES
 
 --Get Databases list to iterate through
 SET @xml = CONVERT(xml, N'<db>' + REPLACE(ISNULL(@database, DB_NAME()), N',', N'</db><db>') + N'</db>');
+
+WITH DBNames AS (
+	SELECT
+		LTRIM(RTRIM(N.value('.', 'nvarchar(128)'))) AS DBName
+	FROM @xml.nodes('/db') R(N)
+)
 INSERT INTO @databases(DBName)
-SELECT
+SELECT DISTINCT
     QUOTENAME(d.name)
 FROM sys.databases d
-INNER JOIN @xml.nodes(N'db') AS T(n) ON d.name COLLATE database_default LIKE LTRIM(RTRIM(T.n.value(N'.', N'sysname'))) COLLATE database_default
+INNER JOIN DBNames dn ON  d.name LIKE dn.DBName
+WHERE Left(dn.DBName, 1) <> '-'
+
+EXCEPT
+
+SELECT DISTINCT
+	QUOTENAME(d.name) AS DBName
+FROM sys.databases d
+INNER JOIN DBNames dn ON  d.name LIKE RIGHT(dn.DBName, LEN(dn.DBName) - 1)
+WHERE Left(dn.DBName, 1) = '-'
+
 
 --Parse the source users list
 SET @xml = CONVERT(xml, N'<usr>' + REPLACE(@user, N',', N'</usr><usr>') + N'</usr>');
+
 INSERT INTO #userList(UserName)
 SELECT DISTINCT
     LTRIM(RTRIM(n.value(N'.', N'sysname')))
@@ -215,9 +236,13 @@ BEGIN
     RAISERROR(N'[sp_CloneRights] parameters', 0, 0)
     RAISERROR(N'', 0, 0)
     SET @msg = N'Parameters:
-     @user          sysname         = NULL  - Comma separated list of user names to sciprt rights. Supports wildcards when eg ''%%'' means all users
+     @user          sysname         = NULL  - Comma separated list of user names to sciprt rights.
+                                            - Supports wildcards when eg ''%%'' means all users
+                                            - [-] prefix means except
     ,@newUser       sysname         = NULL  - New user to which copy rights. If New users is provided, @Old user must return exactly one record
-    ,@database      nvarchar(max)   = NULL  - Comma separated listof databases to be iterated and permissions scripted. Supports Like wildcards. NULL means current database
+    ,@database      nvarchar(max)   = NULL  - Comma separated listof databases to be iterated and permissions scripted. 
+                                            - Supports Like wildcards. NULL means current database
+                                            - [-] prefix means except
     ,@scriptClass   nvarchar(max)   = NULL  - Comma separated list of permission classes to script. NULL = ALL
     ,@printOnly     bit             = 1     - When 1 then only script is printed on screen, when 0 then also script is executed, when NULL, script is only executed and not printed
                                             - When @newUser is not provided then it is always 1'
@@ -268,10 +293,19 @@ BEGIN
     TRUNCATE TABLE #users;
 
     SET @userSql = N'USE ' + @dbName + N';
-    SELECT
+    SELECT DISTINCT
         dp.name COLLATE database_default
     FROM sys.database_principals dp
     INNER JOIN #userList u ON dp.name COLLATE database_default LIKE u.UserName COLLATE database_default
+    WHERE LEFT(u.UserName,1) <> ''-''
+
+    EXCEPT 
+
+    SELECT DISTINCT
+        dp.name COLLATE database_default
+    FROM sys.database_principals dp
+    INNER JOIN #userList u ON dp.name COLLATE database_default LIKE RIGHT(u.UserName, LEN(u.UserName) -1) COLLATE database_default
+    WHERE LEFT(u.UserName,1) = ''-''
     '
     INSERT INTO #users
     EXEC (@userSql);
@@ -280,9 +314,13 @@ BEGIN
     IF NOT EXISTS(SELECT 1 FROM #users)
     BEGIN
         RAISERROR(N'--Database %s: No users matching pattern: "%s"', 0, 0, @dbName, @user) WITH NOWAIT;
+        FETCH NEXT FROM dbs INTO @dbName
+        CONTINUE;
     END
     ELSE
     BEGIN
+        TRUNCATE TABLE #output;
+
         --Cursor for users
         DECLARE usr CURSOR FAST_FORWARD FOR
             SELECT
@@ -1086,7 +1124,7 @@ BEGIN
         WHILE @@FETCH_STATUS = 0
         BEGIN
             IF (@printOnly IS NOT NULL)
-                PRINT @command;
+                RAISERROR(@command, 0, 0) WITH NOWAIT;
 
             SET @sql = @sql + @command + CHAR(13) + CHAR(10);
             FETCH NEXT FROM cr INTO @command;
@@ -1094,9 +1132,12 @@ BEGIN
 
         CLOSE cr;
         DEALLOCATE cr;
-    END --IF NOT EXISTS(SELECT 1 FROM #users)
 
-    FETCH NEXT FROM dbs INTO @dbName
+        IF (@printOnly IS NULL OR @printOnly = 0) AND @newUser IS NOT NULL
+            EXEC (@sql);
+
+        FETCH NEXT FROM dbs INTO @dbName
+    END --IF NOT EXISTS(SELECT 1 FROM #users)    
 END
 
 
@@ -1104,8 +1145,6 @@ CLOSE dbs;
 DEALLOCATE dbs;
 
     
-IF (@printOnly IS NULL OR @printOnly = 0) AND @newUser IS NOT NULL
-    EXEC (@sql);
 
 DROP TABLE #output;
 
