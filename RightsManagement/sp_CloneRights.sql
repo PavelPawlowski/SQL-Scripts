@@ -19,38 +19,38 @@ Description:
     Clones rights and/or group membership for specified user(s)
 
 Parameters:
-    @user                        sysname          = NULL - Comma separated list of user names to sciprt rights. Supports wildcards when eg ''%%'' means all users
-    ,@newUser                    sysname          = NULL - New user to which copy rights. If New users is provided, @Old user must return exactly one record
-    ,@database                  nvarchar(max) = NULL - Comma separated listof databases to be iterated and permissions scripted. Supports Like wildcards. NULL means current database
-    ,@scriptClass                nvarchar(max) = NULL - Comma separated list of permission classes to script. NULL = ALL
-    ,@printOnly                    bit           = 1    - When 1 then only script is printed on screen, when 0 then also script is executed, when NULL, script is only executed and not printed
-                                                        - When @newUser is not provided then it is always 1'
+     @user                      sysname         = NULL - Comma separated list of user names to sciprt rights. Supports wildcards when eg ''%%'' means all users
+    ,@newUser                   sysname         = NULL - New user to which copy rights. If New users is provided, @Old user must return exactly one record
+    ,@database                  nvarchar(max)   = NULL - Comma separated listof databases to be iterated and permissions scripted. Supports Like wildcards. NULL means current database
+    ,@scriptClass               nvarchar(max)   = NULL - Comma separated list of permission classes to script. NULL = ALL
+    ,@printOnly                 bit             = 1    - When 1 then only script is printed on screen, when 0 then also script is executed, when NULL, script is only executed and not printed
+                                                       - When @newUser is not provided then it is always 1'
 
 
 * ***************************************************** */ 
 ALTER PROCEDURE [dbo].[sp_CloneRights] 
-    @user                        sysname            = NULL,    --Old user from which to copy right 
-    @newUser                    sysname            = NULL,    --New user to which copy rights
+    @user                       sysname         = NULL, --Old user from which to copy right 
+    @newUser                    sysname         = NULL, --New user to which copy rights
     @database                   nvarchar(max)   = NULL, --Comma separated listof databases to be iterated and permissions scripted. Supports Like wildcards
-    @scriptClass                nvarchar(max)    = NULL, --Comma separated list of permission classes to script. NULL = ALL
-    @printOnly                    bit                = 1        --When 1 then only script is printed on screen, when 0 then also script is executed, when NULL, script is only executed and not printed
+    @scriptClass                nvarchar(max)   = NULL, --Comma separated list of permission classes to script. NULL = ALL
+    @printOnly                  bit             = 1     --When 1 then only script is printed on screen, when 0 then also script is executed, when NULL, script is only executed and not printed
 AS
 BEGIN
 
 SET NOCOUNT ON;
 
 DECLARE
-    @printHelp        bit = 0
-    ,@msg            nvarchar(max)
-    ,@command        nvarchar(4000)
-    ,@sql            nvarchar(max)
+    @printHelp      bit = 0
+    ,@msg           nvarchar(max)
+    ,@command       nvarchar(4000)
+    ,@sql           nvarchar(max)
     ,@userSql       nvarchar(max)       --for storing query to fetch users list
     ,@dbName        nvarchar(128)
-    ,@xml            xml                    --for XML storing purposes
-    ,@userName        sysname
+    ,@xml           xml                 --for XML storing purposes
+    ,@userName      sysname
     ,@newUserName   sysname
-    ,@usersCnt        int                    --count of matching users
-    ,@wrongClasses  nvarchar(max)        --list of wrong class names
+    ,@usersCnt      int                 --count of matching users
+    ,@wrongClasses  nvarchar(max)       --list of wrong class names
 
 
 CREATE TABLE #userList (
