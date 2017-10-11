@@ -360,5 +360,5 @@ BEGIN
 END
 GO
 --GRANT EXECUTE permission on the stored procedure to [ssis_admin] role
-GRANT EXECUTE ON [dbo].[sp_SSISCloneConfiguration] TO [ssis_admin]
+GRANT EXECUTE ON [dbo].[sp_SSISMapEnvironment] TO [ssis_admin]
 GO
