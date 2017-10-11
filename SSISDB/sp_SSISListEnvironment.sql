@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISListEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISListEnvironment]''')
 GO
 /* ****************************************************
-sp_SSISListEnvironment v 0.3 (2017-10-06)
+sp_SSISListEnvironment v 0.31 (2017-10-11)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -24,6 +24,7 @@ Parameters:
     ,@environment           nvarchar(max)    = NULL --comma separated lists of environments.  support wildcards
     ,@variables             nvarchar(max)    = NULL --Comma separated lists of environment varaibles to list. Supports wildcards
     ,@value                 nvarchar(max)    = NULL --Comma separated list of envirnment variable values. Supports wildcards
+    ,@exactValue            nvarchar(max)    = NULL --Exact value of variables to be matched. Have priority above value
     ,@decryptSensitive      bit              = 0    --Specifies whether sensitive data shuld be descrypted.
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISListEnvironment]
@@ -31,6 +32,7 @@ ALTER PROCEDURE [dbo].[sp_SSISListEnvironment]
     ,@environment           nvarchar(max)    = NULL --comma separated lists of environments.  support wildcards
     ,@variables             nvarchar(max)    = NULL --Comma separated lists of environment varaibles to list. Supports wildcards
     ,@value                 nvarchar(max)    = NULL --Comma separated list of envirnment variable values. Supports wildcards
+    ,@exactValue            nvarchar(max)    = NULL --Exact value of variables to be matched. Have priority above value
     ,@decryptSensitive      bit              = 0    --Specifies whether sensitive data shuld be descrypted.
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
@@ -100,14 +102,22 @@ BEGIN
     IF @folder IS NULL OR @environment IS NULL
         SET @printHelp = 1
 
-	RAISERROR(N'sp_SSISListEnvironment v0.3 (2017-10-06) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
-	RAISERROR(N'=================================================================' , 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_SSISListEnvironment v0.31 (2017-10-11) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'==================================================================' , 0, 0) WITH NOWAIT;
+
+    IF @value IS NOT NULL AND @exactValue IS NOT NULL
+    BEGIN
+        RAISERROR(N'Only @value or @exactValue can be specified at a time', 11, 0) WITH NOWAIT;
+        SET @printHelp = 1
+    END
+
 
 
     --PRINT HELP
     IF @printHelp = 1
     BEGIN
-        RAISERROR(N'List SSIS environment variables and allows seeing encrypted invormation', 0, 0) WITH NOWAIT; 
+        RAISERROR(N'', 0, 0) WITH NOWAIT; 
+        RAISERROR(N'Lists SSIS environment variables and allows seeing encrypted invormation', 0, 0) WITH NOWAIT; 
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
         RAISERROR(N'Usage:', 0, 0) WITH NOWAIT; 
         RAISERROR(N'[sp_SSISListEnvironment] parameters', 0, 0) WITH NOWAIT; 
@@ -121,15 +131,25 @@ BEGIN
                                                       Only variables matching provided pattern are returned
     ,@value                 nvarchar(max)    = NULL - Comma separated list of envirnment variable values. Supports wildcards.
                                                       Only variables wich value in string representaion matches provided pattern are listed.
-    ,@decryptSensitive      bit              = 0    - Specifies whether sensitive data shuld be descrypted.
-
+                                                      Ideal when need to find all environments and variables using particular value.
+                                                      Eg. Updating to new password.
+    ,@exactValue            nvarchar(max)    = NULL - Exact value of variables to be matched. Only one of @exactvalue and @value can be specified at a time
+    ,@decryptSensitive      bit              = 0    - Specifies whether sensitive data shuld be descrypted.'
+RAISERROR(N'
 Wildcards:
     Wildcards are standard wildcards for the LIKE statement
     Entries prefixed with [-] (minus) symbol are excluded form results.
 
     Samples:
-    @folder = N''TEST%%,DEV%%,-%%Backup'' = List all folders starting with ''TEST'' or ''DEV'' but exclude all folder names ending with ''Backup''
-    '
+    sp_SSISListEnvironment @folder = N''TEST%%,DEV%%,-%%Backup'' = List all environment varaibles from folders starting with ''TEST'' or ''DEV'' but exclude all folder names ending with ''Backup''
+
+    List varaibles from all folders and evironments starting with OLEDB_ and ending with _Password and containing value "AAA" or "BBB"
+    sp_SSISListEnvironment
+        @folder         = ''%%''
+        ,@environment   = ''%%''
+        ,@variables     = ''OLEDB_%%_Password''
+        ,@value         = ''AAA,BBB''
+    ', 0, 0) WITH NOWAIT;
         RAISERROR(@msg, 0, 0) WITH NOWAIT;
 
         RAISERROR(N'',0, 0) WITH NOWAIT; 
@@ -305,13 +325,15 @@ Wildcards:
                 @stringval = CASE
                                 WHEN @type = 'datetime' THEN CONVERT(nvarchar(50), @valueInternal, 126)
                                 ELSE CONVERT(nvarchar(4000), @valueInternal)
-                            END
+                            END            
 
-            IF @value IS NULL OR @value = N'%' OR EXISTS (
+            IF ((@value IS NULL OR @value = N'%') AND @exactValue IS NULL) OR (@exactValue IS NOT NULL AND @stringval = @exactValue)  OR EXISTS (
                 SELECT
                     Value
                 FROM @values v
                 WHERE
+                    @exactValue IS NULL
+                    AND
                     LEFT(v.Value, 1) <> '-'
                     AND
                     @stringval LIKE v.Value
