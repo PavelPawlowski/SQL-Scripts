@@ -16,8 +16,8 @@ License:
     written consent.
 
 Description:
-    Generates script to envronment variables to corresponding project/package parameter names.
-    Matching is done on name and data type.
+    Stored procedure maps Project/Object configuraiton parameters to corresponding Environment variables
+    Mapping is done on parameter and variable name as well as data type.
 
 Parameters:
      @folder            nvarchar(128)   = NULL  --Name of the Folder of the project to reset configuraions
