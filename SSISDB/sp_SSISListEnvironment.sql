@@ -16,7 +16,7 @@ License:
     written consent.
 
 Description:
-    List Environmetn variables and their values for environments specified by paramters.
+    List Environment variables and their values for environments specified by paramters.
     Allows decryption of encrypted variable values
 
 Parameters:

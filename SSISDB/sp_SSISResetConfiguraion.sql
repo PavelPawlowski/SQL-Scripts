@@ -16,7 +16,7 @@ License:
     written consent.
 
 Description:
-    Resets configured value for project, object or individual parameter int he project configuraiont
+    Resets configured value for project, object or individual parameter in the project configuration
 
 Parameters:
      @folder        nvarchar(128)   =       --Name of the Folder of the project to reset configuraions
