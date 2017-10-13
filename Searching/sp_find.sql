@@ -4,8 +4,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_find] AS BEGIN PRINT ''Container for sp_find (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_find v 0.90 (2015-12-13)
-(C) 2014 - 2015 Pavel Pawlowski
+sp_find v 0.91 (2017-10-13)
+(C) 2014 - 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -93,7 +93,7 @@ DECLARE
     ,@lastAtGroup tinyint = 0                           -- Last Allowed Types group for helpprinting purposes
 
 --Set and print the procedure output caption
-SET @caption =  N'sp_find v0.90 (2015-12-13) (C) 2014-2015 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+SET @caption =  N'sp_find v0.91 (2017-10-13) (C) 2014-2017 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
                 N'========================================================' + NCHAR(13) + NCHAR(10);
 RAISERROR(@caption, 0, 0) WITH NOWAIT;
 
@@ -600,7 +600,7 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'User Tables', @noPoFieldsSql +
 N'
         ,@basePath +N''\Tables\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT 
                 [object].*
                 ,[table].*
@@ -611,7 +611,7 @@ N'
                         (SELECT 
                             N'' '' + x.value(N''local-name(.)'', N''nvarchar(max)'') + N''="'' + x.value(N''.'', N''nvarchar(max)'') + N''"''
                         FROM
-                        (SELECT CONVERT(xml, (SELECT * from sys.computed_columns [computedColumn] WHERE object_id = [object].object_id AND column_id = [column].column_id FOR XML AUTO)) AS XmlData) M
+                        (SELECT (SELECT * from sys.computed_columns [computedColumn] WHERE object_id = [object].object_id AND column_id = [column].column_id FOR XML AUTO, TYPE) AS XmlData) M
                         CROSS APPLY XmlData.nodes(N''/*/@*'') a(x)
                         WHERE x.value(N''local-name(.)'', N''nvarchar(max)'') <> N''definition''
                         FOR XML PATH(N'''')), 1, 1, N''<computedColumn '') + N''/>'') 
@@ -625,9 +625,8 @@ N'
             FROM sys.objects [object]
             INNER JOIN sys.tables [table] ON [table].object_id = [object].object_id
             WHERE [object].object_id = o.object_id 
-            FOR XML AUTO
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     WHERE
         o.type COLLATE Latin1_General_CI_AS = N''U'' COLLATE Latin1_General_CI_AS
@@ -643,11 +642,11 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Views', @noPoFieldsSql +
 N'
         ,@basePath + N''\Views\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
                 ,[view].*
-                ,CONVERT(xml, (SELECT * FROM sys.columns [column] WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns'')))
+                ,(SELECT * FROM sys.columns [column] WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns''), TYPE)
                 ,CONVERT(xml, STUFF(
                 (SELECT 
                     N'' '' + x.value(N''local-name(.)'', N''nvarchar(max)'') + N''="'' + x.value(N''.'', N''nvarchar(max)'') + N''"''
@@ -661,9 +660,8 @@ N'
             INNER JOIN sys.views [view] ON [view].object_id = [object].object_id
             INNER JOIN sys.sql_modules  [module] ON [module].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     LEFT JOIN sys.sql_modules m ON m.object_id = o.object_id
     WHERE
@@ -688,7 +686,7 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Check Constraints', @fieldsSql +
 N'
         ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Constraints'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
                     SELECT
                         [object].*
                         ,CONVERT(xml, STUFF(
@@ -703,9 +701,8 @@ N'
                     FROM sys.objects [object]
                     INNER JOIN sys.check_constraints  [constraint] ON [constraint].object_id = [object].object_id
                     WHERE [object].object_id = o.object_id
-                    FOR XML AUTO							
-			)
-        )                    AS [ObjectDetails]
+                    FOR XML AUTO, TYPE
+			)                   AS [ObjectDetails]
     FROM sys.objects o
     INNER JOIN sys.objects po ON po.object_id = o.parent_object_id
     WHERE
@@ -722,7 +719,7 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Default Constraints', @fieldsSql +
 N'
         ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Constraints'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
                 ,CONVERT(xml, STUFF(
@@ -737,9 +734,8 @@ N'
             FROM sys.objects [object]
             INNER JOIN sys.default_constraints  [constraint] ON [constraint].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     INNER JOIN sys.objects po ON po.object_id = o.parent_object_id
     WHERE
@@ -756,7 +752,7 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Foreign Key Constraints', @fieldsSql +
 N'
         ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Keys'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
                 ,[foreignKey].*
@@ -779,9 +775,8 @@ N'
             FROM sys.objects [object]
             INNER JOIN sys.foreign_keys [foreignKey] ON [foreignKey].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     INNER JOIN sys.objects po ON po.object_id = o.parent_object_id
     WHERE
@@ -798,11 +793,11 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'SQL Inline And Table Valued Functions', @noPoFieldsSql +
 N'
         ,@basePath + N''\Programmability\Functions\Table-valued Functions\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
-                ,CONVERT(xml, (SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters'')))
-                ,CONVERT(xml, (SELECT * FROM sys.columns [column] WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns'')))
+                ,(SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters''), TYPE)
+                ,(SELECT * FROM sys.columns [column] WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns''), TYPE)
                 ,CONVERT(xml, STUFF(
                 (SELECT 
                     N'' '' + x.value(N''local-name(.)'', N''nvarchar(max)'') + N''="'' + x.value(N''.'', N''nvarchar(max)'') + N''"''
@@ -815,9 +810,8 @@ N'
             FROM sys.objects [object]
             INNER JOIN sys.sql_modules  [module] ON [module].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE							
+            )               AS [ObjectDetails]
     FROM sys.objects o
     LEFT JOIN sys.sql_modules m ON m.object_id = o.object_id
     WHERE
@@ -842,10 +836,10 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'SQL Scalar Functions', @noPoFieldsSql +
 N'
         ,@basePath + N''\Programmability\Functions\Scalar-valued Functions\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
-                ,CONVERT(xml, (SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters'')))
+                ,(SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters''), TYPE)
                 ,CONVERT(xml, STUFF(
                 (SELECT 
                     N'' '' + x.value(N''local-name(.)'', N''nvarchar(max)'') + N''="'' + x.value(N''.'', N''nvarchar(max)'') + N''"''
@@ -858,9 +852,8 @@ N'
             FROM sys.objects [object]
             INNER JOIN sys.sql_modules  [module] ON [module].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE							
+            )               AS [ObjectDetails]
     FROM sys.objects o
     LEFT JOIN sys.sql_modules m ON m.object_id = o.object_id
     WHERE
@@ -887,7 +880,7 @@ N'
         ,@basePath
             + N''\Programmability\Functions\'' + CASE WHEN o.[type] = N''AF'' THEN N''Aggregate Functions\'' ELSE N''Scalar-valued Functions\'' END
             + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
                 ,[assemblyModule].*
@@ -895,9 +888,8 @@ N'
             FROM sys.objects [object]
             INNER JOIN sys.assembly_modules  [assemblyModule] ON [assemblyModule].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE							
+            )               AS [ObjectDetails]
     FROM sys.objects o
     LEFT JOIN sys.assembly_modules am ON am.object_id = o.object_id
     WHERE
@@ -926,18 +918,17 @@ N'
         ,@basePath
             + N''\Programmability\Functions\Table-valued Functions\'' 
             + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
                 ,[assemblyModule].*
-                ,CONVERT(xml, (SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters'')))
-                ,CONVERT(xml, (SELECT * FROM sys.columns [column] WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns'')))
+                ,(SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters''), TYPE)
+                ,(SELECT * FROM sys.columns [column] WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns''), TYPE)
             FROM sys.objects [object]
             INNER JOIN sys.assembly_modules  [assemblyModule] ON [assemblyModule].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     LEFT JOIN sys.assembly_modules am ON am.object_id = o.object_id
     WHERE
@@ -966,19 +957,18 @@ N'
         ,@basePath
             + N''\Programmability\Stored Procedures\'' + CASE WHEN o.is_ms_shipped = 1 THEN N''\System Stored Procedures\'' ELSE N'''' END
             + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
                 ,[procedure].*
                 ,[assemblyModule].*
-                ,CONVERT(xml, (SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters'')))
+                ,(SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters''), TYPE)
             FROM sys.objects [object]
             LEFT JOIN sys.procedures [procedure] ON [procedure].object_id = [object].object_id
             INNER JOIN sys.assembly_modules  [assemblyModule] ON [assemblyModule].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE							
+            )               AS [ObjectDetails]
     FROM sys.objects o
     LEFT JOIN sys.assembly_modules am ON am.object_id = o.object_id
     WHERE
@@ -1012,7 +1002,7 @@ N'
                 WHEN po.type = ''V'' THEN N''\Views\'' 
                END + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) +  N''\Triggers''         
             AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
                 ,[trigger].*
@@ -1021,9 +1011,8 @@ N'
             LEFT JOIN sys.triggers [trigger] ON [trigger].object_id = [object].object_id
             INNER JOIN sys.assembly_modules  [assemblyModule] ON [assemblyModule].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE							
+            )               AS [ObjectDetails]
     FROM sys.objects o
     INNER JOIN sys.objects po ON po.object_id = o.parent_object_id
     LEFT JOIN sys.assembly_modules am ON am.object_id = o.object_id
@@ -1053,11 +1042,11 @@ N'
     ,@basePath
         + N''\Programmability\Stored Procedures\'' + CASE WHEN o.is_ms_shipped = 1 THEN N''\System Stored Procedures\'' ELSE N'''' END
         + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
             SELECT
                 [object].*
                 ,[procedure].*
-                ,CONVERT(xml, (SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters'')))
+                ,(SELECT * FROM sys.parameters [parameter] WHERE [parameter].object_id = [object].[object_id] ORDER BY parameter_id FOR XML AUTO, ROOT(N''parameters''), TYPE)
                 ,CONVERT(xml, STUFF(
                 (SELECT 
                     N'' '' + x.value(N''local-name(.)'', N''nvarchar(max)'') + N''="'' + x.value(N''.'', N''nvarchar(max)'') + N''"''
@@ -1071,9 +1060,8 @@ N'
             INNER JOIN sys.procedures [procedure] ON [procedure].object_id = [object].object_id
             INNER JOIN sys.sql_modules  [module] ON [module].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE							
+            )               AS [ObjectDetails]
     FROM sys.objects o
     LEFT JOIN sys.sql_modules m ON m.object_id = o.object_id
     WHERE
@@ -1110,27 +1098,25 @@ N'SELECT --Schema Bound Objects
         ,o.create_date                                                      AS [ObjectCreationDate]
         ,o.modify_date                                                      AS [ObjectModifyDate]
         ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Keys'' AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT
                 [object].*
                 ,[keyConstraint].*
                 ,[index].*
-                ,CONVERT(xml, 
+                , 
                     (SELECT 
                         *
                     FROM sys.index_columns [indexColumn] 
                     INNER JOIN sys.columns [column] ON [column].object_id = [indexColumn].object_id AND [column].column_id = [indexColumn].column_id
                     WHERE [indexColumn].object_id = [index].[object_id] AND [indexColumn].index_id = [index].index_id
                     ORDER BY [indexColumn].index_column_id 
-                    FOR XML AUTO, ROOT(''indexColumns''))
-                )
+                    FOR XML AUTO, ROOT(''indexColumns''), TYPE)
             FROM sys.objects [object]
             INNER JOIN sys.key_constraints [keyConstraint] ON [keyConstraint].object_id = [object].object_id
             INNER JOIN sys.indexes [index] ON [index].object_id = [object].parent_object_id AND [index].index_id = [keyConstraint].unique_index_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE							
+            )               AS [ObjectDetails]
     FROM sys.objects o
     INNER JOIN sys.objects po ON po.object_id = o.parent_object_id
     WHERE
@@ -1147,14 +1133,13 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Rules', @noPoFieldsSql +
 N'
     ,@basePath + N''\Programmability\Rules\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
             SELECT
                 [object].*
             FROM sys.objects [object]
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     WHERE
         o.[type] COLLATE Latin1_General_CI_AS = ''R'' COLLATE Latin1_General_CI_AS
@@ -1168,16 +1153,15 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Synonyms', @noPoFieldsSql +
 N'
     ,@basePath + N''\Synonyms\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
             SELECT
                 [object].*
                 ,[synonym].*
             FROM sys.objects [object]
             INNER JOIN sys.synonyms [synonym] ON [synonym].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     WHERE
         o.[type] COLLATE Latin1_General_CI_AS = ''SN'' COLLATE Latin1_General_CI_AS
@@ -1203,12 +1187,12 @@ N'SELECT --Table Type
     ,NULL                                                   AS [ObjectCreationDate]
     ,NULL                                                   AS [ObjectModifyDate]	
     ,@basePath + N''\Programmability\Types\User-Defined Table Types\'' + QUOTENAME(SCHEMA_NAME(t.schema_id))  AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT 
                  [type].*
                 ,[tableType].*
                 ,[object].*
-                ,CONVERT(xml, 
+                , 
                     (SELECT 
                         [column].* 
                         ,CONVERT(xml, STUFF(
@@ -1224,15 +1208,14 @@ N'SELECT --Table Type
 
                         FROM sys.columns [column] 
                         LEFT JOIN sys.computed_columns cc ON cc.object_id = [column].object_id AND cc.column_id = [column].column_id
-                        WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns''))
+                        WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns''), TYPE
                     )
             FROM sys.objects [object]
             INNER JOIN sys.table_types [tableType] ON [tableType].type_table_object_id = [object].object_id
             INNER JOIN sys.types [type] ON [type].user_type_id = [tableType].user_type_id
             WHERE [object].object_id = tt.type_table_object_id
-            FOR XML AUTO
-            )
-          )                                                 AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )                                               AS [ObjectDetails]
 
 FROM sys.types t
 INNER JOIN sys.table_types tt ON t.user_type_id = tt.user_type_id
@@ -1250,14 +1233,13 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Extended Stored Procedures', @noPoFieldsSql +
 N'
     ,@basePath + N''\Programmability\Stored Procedures\System Stored Procedures\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
             SELECT
                 [object].*
             FROM sys.all_objects [object]
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.all_objects o
     WHERE
         DB_NAME() = ''master''
@@ -1273,16 +1255,15 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Service Queues', @noPoFieldsSql +
 N'
     ,@basePath + N''\Service Broker\Queues'' + CASE WHEN o.is_ms_shipped = 1 THEN N''\System Queues'' ELSE N'''' END AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
             SELECT
                 [object].*
                 ,[serviceQueue].*
             FROM sys.objects [object]
             INNER JOIN sys.service_queues [serviceQueue] ON [serviceQueue].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     WHERE
         o.[type] COLLATE Latin1_General_CI_AS = ''SQ'' COLLATE Latin1_General_CI_AS
@@ -1296,16 +1277,15 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Sequences', @noPoFieldsSql +
 N'
     ,@basePath + N''\Programmability\Sequences\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
             SELECT
                 [object].*
                 ,[sequence].*
             FROM sys.objects [object]
             INNER JOIN sys.sequences [sequence] ON [sequence].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     WHERE
         o.[type] COLLATE Latin1_General_CI_AS = ''SO'' COLLATE Latin1_General_CI_AS
@@ -1320,18 +1300,18 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Internal Tables', @fieldsSql +
 N'
         ,N''''                                                              AS [ObjectPath]
-        ,CONVERT(xml, (
+        ,(
             SELECT 
                 [object].*
                 ,[iternalTable].*
-                ,CONVERT(xml, 
+                ,
                     (SELECT 
                         [column].* 
                         ,CONVERT(xml, STUFF(
                         (SELECT 
                             N'' '' + x.value(N''local-name(.)'', N''nvarchar(max)'') + N''="'' + x.value(N''.'', N''nvarchar(max)'') + N''"''
                     FROM
-                    (SELECT CONVERT(xml, (SELECT * from sys.computed_columns [computedColumn] WHERE object_id = [object].object_id AND column_id = [column].column_id FOR XML AUTO)) AS XmlData) M
+                    (SELECT (SELECT * from sys.computed_columns [computedColumn] WHERE object_id = [object].object_id AND column_id = [column].column_id FOR XML AUTO, TYPE) AS XmlData) M
                     CROSS APPLY XmlData.nodes(N''/*/@*'') a(x)
                     WHERE x.value(N''local-name(.)'', N''nvarchar(max)'') <> N''definition''
                     FOR XML PATH(N'''')), 1, 1, N''<computedColumn '') + N''/>'') 
@@ -1339,14 +1319,12 @@ N'
                     ,CONVERT(xml, N''<?definition --'' + REPLACE(REPLACE(definition, N''<?'', N''''), N''?>'', N'''') + N''--?>'')
                     FROM sys.columns [column] 
                     LEFT JOIN sys.computed_columns cc ON cc.object_id = [column].object_id AND cc.column_id = [column].column_id
-                    WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(''columns''))
-                )
+                    WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(''columns''), TYPE)
             FROM sys.objects [object]
             INNER JOIN sys.internal_tables [iternalTable] ON [iternalTable].object_id = [object].object_id
             WHERE [object].object_id = o.object_id 
-            FOR XML AUTO
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.all_objects o
     LEFT JOIN sys.all_objects po on po.object_id = o.parent_object_id
     WHERE
@@ -1362,30 +1340,28 @@ INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'System Tables', @noPoFieldsSql +
 N'
     ,@basePath + N''\Tables\System Tables\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
             SELECT 
                 [object].*
-                ,CONVERT(xml, 
+                ,
                     (SELECT 
                         [column].* 
                         ,CONVERT(xml, STUFF(
                         (SELECT 
                             N'' '' + x.value(N''local-name(.)'', N''nvarchar(max)'') + N''="'' + x.value(N''.'', N''nvarchar(max)'') + N''"''
                         FROM
-                        (SELECT CONVERT(xml, (SELECT * from sys.computed_columns [computedColumn] WHERE object_id = [object].object_id AND column_id = [column].column_id FOR XML AUTO)) AS XmlData) M
+                        (SELECT (SELECT * from sys.computed_columns [computedColumn] WHERE object_id = [object].object_id AND column_id = [column].column_id FOR XML AUTO, TYPE) AS XmlData) M
                         CROSS APPLY XmlData.nodes(N''/*/@*'') a(x)
                         WHERE x.value(N''local-name(.)'', N''nvarchar(max)'') <> N''definition''
                         FOR XML PATH(N'''')), 1, 1, N''<computedColumn '') + N''/>'') 
                         ,CONVERT(xml, N''<?definition --'' + REPLACE(REPLACE(definition, N''<?'', N''''), N''?>'', N'''') + N''--?>'') -- computed column definition
                         FROM sys.all_columns [column] 
                         LEFT JOIN sys.computed_columns cc ON cc.object_id = [column].object_id AND cc.column_id = [column].column_id
-                        WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns''))
-                    )
+                        WHERE [column].object_id = [object].[object_id] ORDER BY column_id FOR XML AUTO, ROOT(N''columns''), TYPE)
             FROM sys.objects [object]
             WHERE [object].object_id = o.object_id 
-            FOR XML AUTO
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.all_objects o
     WHERE
         o.[type] COLLATE Latin1_General_CI_AS = ''S'' COLLATE Latin1_General_CI_AS
@@ -1418,7 +1394,7 @@ N'SELECT --Schema Bound Objects
             WHEN po.type = ''V'' THEN N''\Views\'' 
            END + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) +  N''\Triggers''         
         AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
             SELECT
                 [object].*
                 ,[trigger].*
@@ -1435,9 +1411,8 @@ N'SELECT --Schema Bound Objects
             INNER JOIN sys.triggers [trigger] ON [trigger].object_id = [object].object_id
             INNER JOIN sys.sql_modules  [module] ON [module].object_id = [object].object_id
             WHERE [object].object_id = o.object_id
-            FOR XML AUTO							
-            )
-        )                    AS [ObjectDetails]
+            FOR XML AUTO, TYPE
+            )               AS [ObjectDetails]
     FROM sys.objects o
     INNER JOIN sys.objects po ON po.object_id = o.parent_object_id
     LEFT JOIN sys.sql_modules m ON m.object_id = o.object_id
@@ -1457,6 +1432,7 @@ N'SELECT --Schema Bound Objects
         )
 ');
 
+--Columns
 IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (N'COLUMN', N'SYSTEM_COLUMN', N'SYSTEM_OBJECT'))
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Columns',
@@ -1482,20 +1458,21 @@ N'SELECT --Columns
             WHEN o.type IN (''IF'', ''TF'', ''FT'') THEN N''\Programmability\Functions\Table-valued Functions\''
            END + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' + QUOTENAME(o.name) +  N''\Columns''         
         AS [ObjectPath]
-    ,CONVERT(xml, (SELECT 
+    ,(SELECT 
         [column].* 
         ,CONVERT(xml, STUFF(
         (SELECT 
             N'' '' + x.value(N''local-name(.)'', N''nvarchar(max)'') + N''="'' + x.value(N''.'', N''nvarchar(max)'') + N''"''
         FROM
-        (SELECT CONVERT(xml, (SELECT * from sys.computed_columns [computedColumn] WHERE object_id = [column].object_id AND column_id = [column].column_id FOR XML AUTO)) AS XmlData) M
+        (SELECT (SELECT * from sys.computed_columns [computedColumn] WHERE object_id = [column].object_id AND column_id = [column].column_id FOR XML AUTO, TYPE) AS XmlData) M
         CROSS APPLY XmlData.nodes(N''/*/@*'') a(x)
         WHERE x.value(N''local-name(.)'', N''nvarchar(max)'') <> N''definition''
         FOR XML PATH(N'''')), 1, 1, N''<computedColumn '') + N''/>'') 
         ,CONVERT(xml, N''<?definition --'' + REPLACE(REPLACE(definition, N''<?'', N''''), N''?>'', N'''') +  N''--?>'') -- computed column definition
         FROM sys.columns [column] 
         LEFT JOIN sys.computed_columns cc ON cc.object_id = [column].object_id AND cc.column_id = [column].column_id
-        WHERE [column].object_id = c.[object_id] AND [column].column_id = c.column_id ORDER BY column_id FOR XML AUTO))
+        WHERE [column].object_id = c.[object_id] AND [column].column_id = c.column_id ORDER BY column_id 
+        FOR XML AUTO, TYPE)
                                         AS [ObjectDetails]
 FROM sys.all_columns c
 INNER JOIN sys.all_objects o ON o.object_id = c.object_id
@@ -1532,22 +1509,21 @@ N'SELECT --Indexes
     ,NULL                                               AS [ObjectCreationDate]
     ,NULL                                               AS [ObjectModifyDate]
     ,@basePath + CASE WHEN o.type = ''V'' THEN N''\Views\'' ELSE N''\Tables\'' END + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' + QUOTENAME(o.name) +  N''\Indexes'' AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
         SELECT
             [index].*
-            ,CONVERT(xml, 
+            ,
                 (SELECT 
                     *
                 FROM sys.index_columns [indexColumn] 
                 INNER JOIN sys.columns [column] ON [column].object_id = [indexColumn].object_id AND [column].column_id = [indexColumn].column_id
                 WHERE [indexColumn].object_id = [index].[object_id] AND [indexColumn].index_id = [index].index_id
                 ORDER BY [indexColumn].index_column_id 
-                FOR XML AUTO, ROOT(''indexColumns''))
-            )
+                FOR XML AUTO, ROOT(''indexColumns''), TYPE)
         FROM sys.indexes [index]
         WHERE [index].object_id = i.object_id AND [index].index_id = i.index_id
-        FOR XML AUTO)
-    )                                   AS [ObjectDetails]
+        FOR XML AUTO, TYPE)
+                                       AS [ObjectDetails]
 FROM sys.indexes i
 LEFT JOIN sys.objects o ON o.object_id = i.object_id
 WHERE
@@ -1588,7 +1564,7 @@ N'SELECT --Schemas
     ,NULL                               AS [ObjectCreationDate]
     ,NULL                               AS [ObjectModifyDate]
     ,@basePath + N''\Security\Schemas'' AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.schemas [schema] WHERE schema_id = s.schema_id FOR XML AUTO))
+    ,(SELECT * FROM sys.schemas [schema] WHERE schema_id = s.schema_id FOR XML AUTO, TYPE)
                                         AS [ObjectDetails]
 FROM sys.schemas s
 WHERE
@@ -1613,22 +1589,22 @@ N'SELECT --database_principals
     ,dp.create_date                     AS [ObjectCreationDate]
     ,dp.modify_date                     AS [ObjectModifyDate]
     ,@basePath + N''\Security\'' + CASE dp.type WHEN ''R'' THEN N''Roles\Database Roles'' WHEN ''A'' THEN N''Roles\Application Roles'' ELSE N''Users'' END AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
             [databasePrincipal].* 
-            ,CONVERT(xml, (
+            ,(
                 SELECT 
                     *
                 FROM sys.database_role_members [roleMember] 
                 INNER JOIN sys.database_principals [memberPrincipal] ON [memberPrincipal].principal_id = [roleMember].member_principal_id
                 WHERE [roleMember].role_principal_id = [databasePrincipal].[principal_id]
-                FOR XML AUTO, ROOT(''roleMembers''), BINARY BASE64)
+                FOR XML AUTO, ROOT(''roleMembers''), BINARY BASE64, TYPE
             )
         FROM sys.database_principals [databasePrincipal] 
-    WHERE principal_id = 16384
-    FOR XML AUTO, BINARY BASE64)
+    WHERE [databasePrincipal].principal_id = dp.principal_id
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
-                                        AS [ObjectDetails]
+                    AS [ObjectDetails]
 FROM sys.database_principals dp
 WHERE
     dp.type COLLATE Latin1_General_CI_AS IN (SELECT [Type] COLLATE Latin1_General_CI_AS FROM #objTypes WHERE ObjectType IN (SELECT ObjectType FROM #typesMapping WHERE ParentObjectType = N''DATABASE_PRINCIPAL''))
@@ -1654,7 +1630,7 @@ N'SELECT --Types
     ,NULL                                               AS [ObjectCreationDate]
     ,NULL                                               AS [ObjectModifyDate]	
     ,@basePath + N''\Programmability\Types\'' + CASE WHEN t.is_assembly_type = 1 THEN N''User-Defined Types\'' ELSE N''User-Defined Data Types\'' END + QUOTENAME(SCHEMA_NAME(t.schema_id)) AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.types [type] WHERE user_type_id = t.user_type_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.types [type] WHERE user_type_id = t.user_type_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                         AS [ObjectDetails]
 FROM sys.types t
 LEFT JOIN sys.types st ON st.user_type_id = t.system_type_id
@@ -1684,15 +1660,15 @@ N'SELECT --Assemblies
     ,a.create_date                                  AS [ObjectCreationDate]
     ,a.modify_date                                  AS [ObjectModifyDate]
     ,@basePath + N''\Programmability\Assemblies''   AS [ObjectPath]
-    ,CONVERT(xml,(
+    ,(
     SELECT
         [assembly].*
-        ,CONVERT(xml, (SELECT assembly_id, name, file_id FROM sys.assembly_files [file] WHERE [file].assembly_id = [assembly].assembly_id FOR XML AUTO, ROOT(N''aseemblyFiles'')))
-        ,CONVERT(xml, (SELECT * FROM sys.assembly_modules [module] WHERE [module].assembly_id = [assembly].assembly_id FOR XML AUTO, ROOT(N''assemblyModules'')))
+        ,(SELECT assembly_id, name, file_id FROM sys.assembly_files [file] WHERE [file].assembly_id = [assembly].assembly_id FOR XML AUTO, ROOT(N''aseemblyFiles''), TYPE)
+        ,(SELECT * FROM sys.assembly_modules [module] WHERE [module].assembly_id = [assembly].assembly_id FOR XML AUTO, ROOT(N''assemblyModules''), TYPE)
     FROM sys.assemblies [assembly] 
     WHERE assembly_id = a.assembly_id 
-    FOR XML AUTO)
-    )                                               AS [ObjectDetails]
+    FOR XML AUTO, TYPE
+    )                           AS [ObjectDetails]
 FROM sys.assemblies a
 WHERE
     (
@@ -1746,15 +1722,14 @@ N'SELECT --sys.xml_schema_collections
     ,x.create_date                                                  AS [ObjectCreationDate]
     ,x.modify_date                                                  AS [ObjectModifyDate]
     ,@basePath + N''\Programmability\Types\XML Schema Collections'' AS [ObjectPath]
-    ,CONVERT(xml, (
+    ,(
     SELECT
         [xmlSchemaCollection].*
-        ,CONVERT(xml, (SELECT * FROM sys.xml_schema_namespaces [namespace] WHERE [namespace].xml_collection_id = [xmlSchemaCollection].xml_collection_id FOR XML AUTO, ROOT(N''namespaces'')))
-        ,CONVERT(xml, (SELECT * FROM sys.xml_schema_attributes [attribute] WHERE [attribute].xml_collection_id = [xmlSchemaCollection].xml_collection_id FOR XML AUTO, ROOT(N''attributes'')))
+        ,(SELECT * FROM sys.xml_schema_namespaces [namespace] WHERE [namespace].xml_collection_id = [xmlSchemaCollection].xml_collection_id FOR XML AUTO, ROOT(N''namespaces''), TYPE)
+        ,(SELECT * FROM sys.xml_schema_attributes [attribute] WHERE [attribute].xml_collection_id = [xmlSchemaCollection].xml_collection_id FOR XML AUTO, ROOT(N''attributes''), TYPE)
     FROM sys.xml_schema_collections [xmlSchemaCollection] 
     WHERE xml_collection_id = 1
-    FOR XML AUTO)
-    )                                                               AS [ObjectDetails]
+    FOR XML AUTO, TYPE)                           AS [ObjectDetails]
 FROM sys.xml_schema_collections x
 WHERE
     x.name COLLATE database_default LIKE @searchStr COLLATE database_default
@@ -1779,7 +1754,7 @@ N'SELECT --sys.service_message_types
     ,NULL                               AS [ObjectModifyDate]
     ,@basePath + N''\Service Broker\Message Types'' 
         + CASE WHEN sm.message_type_id  <= 65535 THEN N''\System Message Types'' ELSE N'''' END AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.service_message_types [serviceMessageType] WHERE [serviceMessageType].message_type_id = sm.message_type_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.service_message_types [serviceMessageType] WHERE [serviceMessageType].message_type_id = sm.message_type_id FOR XML AUTO, BINARY BASE64, TYPE)
                                         AS [ObjectDetails]
 FROM sys.service_message_types sm
 WHERE
@@ -1805,7 +1780,7 @@ N'SELECT --sys.service_contracts
     ,NULL                               AS [ObjectModifyDate]
     ,@basePath + N''\Service Broker\Contracts'' 
         + CASE WHEN sc.service_contract_id <= 65535 THEN N''\System Contracts'' ELSE '''' END AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.service_contracts [serviceContract] WHERE [serviceContract].service_contract_id = sc.service_contract_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.service_contracts [serviceContract] WHERE [serviceContract].service_contract_id = sc.service_contract_id FOR XML AUTO, BINARY BASE64, TYPE)
                                         AS [ObjectDetails]
 FROM sys.service_contracts sc
 WHERE
@@ -1831,7 +1806,7 @@ N'SELECT --sys.services
     ,NULL                               AS [ObjectModifyDate]
     ,@basePath + N''\Service Broker\Services'' 
         + CASE WHEN s.service_id <= 65535 THEN N''\System Services'' ELSE '''' END AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.services [service] WHERE [service].service_id = s.service_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.services [service] WHERE [service].service_id = s.service_id FOR XML AUTO, BINARY BASE64, TYPE)
                                         AS [ObjectDetails]
 FROM sys.services s
 WHERE
@@ -1856,7 +1831,7 @@ N'SELECT --sys.remote_service_bindings
     ,NULL                               AS [ObjectCreationDate]
     ,NULL                               AS [ObjectModifyDate]
     ,@basePath + N''\Service Broker\Remote Service Binding'' AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.remote_service_bindings [remoteServiceBinding] WHERE [remoteServiceBinding].remote_service_binding_id = rsb.remote_service_binding_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.remote_service_bindings [remoteServiceBinding] WHERE [remoteServiceBinding].remote_service_binding_id = rsb.remote_service_binding_id FOR XML AUTO, BINARY BASE64, TYPE)
                                         AS [ObjectDetails]
 FROM sys.remote_service_bindings rsb
 WHERE
@@ -1881,7 +1856,7 @@ N'SELECT --sys.routes
     ,NULL                                       AS [ObjectCreationDate]
     ,NULL                                       AS [ObjectModifyDate]
     ,@basePath + N''\Service Broker\Routes''    AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.routes [route] WHERE [route].route_id = r.route_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.routes [route] WHERE [route].route_id = r.route_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                 AS [ObjectDetails]
 FROM sys.routes r
 WHERE
@@ -1906,7 +1881,7 @@ N'SELECT --sys.fulltext_catalogs
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
     ,@basePath + N''\Storage\Full Text Catalogs''   AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.fulltext_catalogs [fulltextCatalog] WHERE [fulltextCatalog].fulltext_catalog_id = fc.fulltext_catalog_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.fulltext_catalogs [fulltextCatalog] WHERE [fulltextCatalog].fulltext_catalog_id = fc.fulltext_catalog_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                     AS [ObjectDetails]
 FROM sys.fulltext_catalogs fc
 WHERE
@@ -1931,7 +1906,7 @@ N'SELECT --sys.symmetric_keys
     ,sc.create_date                             AS [ObjectCreationDate]
     ,sc.modify_date                             AS [ObjectModifyDate]
     ,@basePath + N''\Security\Symmetric Keys''  AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.symmetric_keys [symmetricKey] WHERE [symmetricKey].symmetric_key_id = sc.symmetric_key_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.symmetric_keys [symmetricKey] WHERE [symmetricKey].symmetric_key_id = sc.symmetric_key_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                 AS [ObjectDetails]
 FROM sys.symmetric_keys sc
 WHERE
@@ -1956,7 +1931,7 @@ N'SELECT --sys.asymmetric_keys
     ,NULL                                       AS [ObjectCreationDate]
     ,NULL                                       AS [ObjectModifyDate]
     ,@basePath + N''\Security\Asymmetric Keys'' AS [ObjectPath]
-,CONVERT(xml,(SELECT * FROM sys.asymmetric_keys [asymmetricKey] WHERE [asymmetricKey].asymmetric_key_id = ac.asymmetric_key_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.asymmetric_keys [asymmetricKey] WHERE [asymmetricKey].asymmetric_key_id = ac.asymmetric_key_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                 AS [ObjectDetails]
 FROM sys.asymmetric_keys ac
 WHERE
@@ -1981,7 +1956,7 @@ N'SELECT --sys.certificates
     ,NULL                                       AS [ObjectCreationDate]
     ,NULL                                       AS [ObjectModifyDate]
     ,@basePath + N''\Security\Certificates''    AS [ObjectPath]
-    ,CONVERT(xml,(SELECT * FROM sys.certificates [certificate] WHERE [certificate].certificate_id = c.certificate_id FOR XML AUTO, BINARY BASE64))
+    ,(SELECT * FROM sys.certificates [certificate] WHERE [certificate].certificate_id = c.certificate_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                 AS [ObjectDetails]
 FROM sys.certificates c
 WHERE
@@ -2006,9 +1981,9 @@ N'SELECT --sys.partition_schemes
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
     ,@basePath + N''\Storage\Partition Schemes''    AS [ObjectPath]
-    ,CONVERT(xml, (SELECT
+    ,(SELECT
         [partitionScheme].*
-        ,CONVERT(xml,(
+        ,(
             SELECT
                 [destinationDataSpace].*
                 ,[fileGroup].*
@@ -2016,12 +1991,11 @@ N'SELECT --sys.partition_schemes
             INNER JOIN sys.filegroups [fileGroup] ON [fileGroup].data_space_id = [destinationDataSpace].data_space_id
             WHERE [destinationDataSpace].partition_scheme_id = [partitionScheme].data_space_id 
             ORDER BY destination_id
-            FOR XML AUTO, ROOT(''destinationDataSpaces'')
-            )
+            FOR XML AUTO, ROOT(''destinationDataSpaces''), TYPE
         )	
     FROM sys.partition_schemes [partitionScheme] WHERE data_space_id = ps.data_space_id
-    FOR XML AUTO)
-    )                                   AS [ObjectDetails]
+    FOR XML AUTO, TYPE
+    )               AS [ObjectDetails]
 FROM sys.partition_schemes ps
 WHERE
     ps.name COLLATE database_default LIKE @searchStr COLLATE database_default
@@ -2045,21 +2019,20 @@ N'SELECT --sys.partition_functions
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
     ,@basePath + N''\Storage\Partition Functions''  AS [ObjectPath]
-    ,CONVERT(xml, 
+    ,
         (SELECT
 	       [partitionFunction].*
-	       ,CONVERT(xml,(
+	       ,(
 		      SELECT
 				    [rangeValue].*
 		      FROM sys.partition_range_values [rangeValue]
 		      WHERE [rangeValue].function_id = [partitionFunction].function_id 
 		      ORDER BY boundary_id
-		      FOR XML AUTO, ROOT(''boundaryValues'')
-		      )
+		      FOR XML AUTO, ROOT(''boundaryValues''), TYPE
 	       )	
         FROM sys.partition_functions [partitionFunction] WHERE function_id = pf.function_id
-        FOR XML AUTO)
-    )                                   AS [ObjectDetails]
+        FOR XML AUTO, TYPE
+        )                   AS [ObjectDetails]
 FROM sys.partition_functions pf
 WHERE
     (
@@ -2098,7 +2071,7 @@ N'SELECT --sys.triggers
     ,NULL                                                   AS [ObjectCreationDate]
     ,NULL                                                   AS [ObjectModifyDate]
     ,@basePath + N''\Programmability\Database Triggers''    AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT
             [trigger].*
             ,CONVERT(xml, STUFF(
@@ -2113,7 +2086,7 @@ N'SELECT --sys.triggers
         FROM sys.triggers [trigger] 
         INNER JOIN sys.sql_modules  [module] ON [module].object_id = [trigger].object_id
         WHERE [trigger].object_id = tr.object_id
-        FOR XML AUTO)
+        FOR XML AUTO, TYPE
     )							AS [ObjectDetails]
 FROM sys.triggers tr
 LEFT JOIN sys.sql_modules m ON m.object_id = tr.object_id
@@ -2161,14 +2134,14 @@ N'SELECT --sys.seerver_triggers
     ,NULL                                   AS [ObjectCreationDate]
     ,NULL                                   AS [ObjectModifyDate]
     ,N''Server Objects\Triggers''           AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT
             [trigger].*
             ,CONVERT(xml, STUFF(
             (SELECT 
                 N'' '' + x.value(N''local-name(.)'', N''nvarchar(max)'') + N''="'' + x.value(N''.'', N''nvarchar(max)'') + N''"''
             FROM
-            (SELECT CONVERT(xml, (SELECT * from sys.server_sql_modules [module] WHERE object_id = [trigger].object_id FOR XML AUTO)) AS XmlData) M
+            (SELECT (SELECT * from sys.server_sql_modules [module] WHERE object_id = [trigger].object_id FOR XML AUTO, TYPE) AS XmlData) M
             CROSS APPLY XmlData.nodes(''/*/@*'') a(x)
             WHERE x.value(N''local-name(.)'', N''nvarchar(max)'') <> N''definition''
             FOR XML PATH(N'''')), 1, 1, N''<module '') + N''/>'')
@@ -2179,7 +2152,7 @@ N'SELECT --sys.seerver_triggers
         LEFT JOIN sys.server_assembly_modules [assemblyModule] ON [assemblyModule].object_id = [trigger].object_id
         LEFT JOIN master.sys.assemblies [assembly] ON [assembly].assembly_id = [assemblyModule].assembly_id
         WHERE [trigger].object_id = tr.object_id
-        FOR XML AUTO)
+        FOR XML AUTO, TYPE
     )                                   AS [ObjectDetails]
 FROM sys.server_triggers tr
 LEFT JOIN sys.server_sql_modules m ON m.object_id = tr.object_id
@@ -2223,26 +2196,26 @@ N'SELECT --server_principals
     ,sp.create_date                         AS [ObjectCreationDate]
     ,sp.modify_date                         AS [ObjectModifyDate]
     ,N''Security\'' + CASE WHEN sp.type_desc = N''SERVER_ROLE'' THEN N''Server Roles'' ELSE N''Logins'' END  AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
             [serverPrincipal].* 
-            ,CONVERT(xml, (
+            ,(
                 SELECT 
                     *
                 FROM sys.server_principal_credentials [principalCredential] 
                 INNER JOIN sys.credentials [credential] ON [credential].credential_id = [principalCredential].credential_id
                 WHERE [principalCredential].principal_id = [serverPrincipal].[principal_id]
-                FOR XML AUTO, ROOT(N''principalCredentials''), BINARY BASE64))
-            ,CONVERT(xml, (
+                FOR XML AUTO, ROOT(N''principalCredentials''), BINARY BASE64, TYPE)
+            ,(
                 SELECT 
                     *
                 FROM sys.server_role_members [roleMember] 
                 INNER JOIN sys.server_principals [memberPrincipal] ON [memberPrincipal].principal_id = [roleMember].member_principal_id
                 WHERE [roleMember].role_principal_id = [serverPrincipal].[principal_id]
-                FOR XML AUTO, ROOT(N''roleMembers''), BINARY BASE64))
+                FOR XML AUTO, ROOT(N''roleMembers''), BINARY BASE64, TYPE)
         FROM sys.server_principals [serverPrincipal] 
     WHERE principal_id = sp.principal_id
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                         AS [ObjectDetails]
 FROM sys.server_principals sp
@@ -2270,20 +2243,20 @@ N'SELECT --sys.credentials
     ,cr.create_date                         AS [ObjectCreationDate]
     ,cr.modify_date                         AS [ObjectModifyDate]
     ,N''Security\Credentials''              AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
         [credential].* 
-        ,CONVERT(xml, (
+        ,(
             SELECT 
                 *
             FROM sys.server_principal_credentials [credentialPrincipal] 
             INNER JOIN sys.server_principals [serverPrincipal] ON [serverPrincipal].principal_id = [credentialPrincipal].principal_id
             WHERE [credentialPrincipal].credential_id = [credential].credential_id
-            FOR XML AUTO, ROOT(N''credentialPrincipals''), BINARY BASE64)
+            FOR XML AUTO, ROOT(N''credentialPrincipals''), BINARY BASE64, TYPE
         )
         FROM sys.credentials [credential] 
     WHERE [credential].credential_id = cr.credential_id
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                 AS [ObjectDetails]
 FROM sys.credentials cr
@@ -2309,21 +2282,21 @@ N'SELECT --sys.servers
     ,NULL                                   AS [ObjectCreationDate]
     ,s.modify_date                          AS [ObjectModifyDate]
     ,N''ServerObjects\Linked Servers''      AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
             [server].* 
-            ,CONVERT(xml, (
+            ,(
                 SELECT 
                     [linkedLogin].*
                     ,[serverPrincipal].*
                 FROM sys.linked_logins [linkedLogin]
                 LEFT JOIN sys.server_principals [serverPrincipal] ON [serverPrincipal].principal_id = [linkedLogin].local_principal_id
                 WHERE [linkedLogin].server_id = [server].server_id
-                FOR XML AUTO, ROOT(N''linkedLogins''), BINARY BASE64)
+                FOR XML AUTO, ROOT(N''linkedLogins''), BINARY BASE64, TYPE
             )
         FROM sys.servers [server] 
     WHERE [server].server_id = s.server_id
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                         AS [ObjectDetails]
 FROM sys.servers s
@@ -2363,14 +2336,14 @@ N'SELECT
     ,e.created_time                                             AS [ObjectCreationDate]
     ,NULL                                                       AS [ObjectModifyDate]
     ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Environments''    AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
             [environment].* 
             ,folder.*
         FROM internal.environments [environment] 
         INNER JOIN internal.folders folder ON folder.folder_id = environment.environment_id
     WHERE [environment].environment_id = e.environment_id
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                                                 AS [ObjectDetails]
 FROM internal.environments e
@@ -2397,12 +2370,12 @@ N'SELECT
     ,f.created_time                                 AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
     ,N''[SSISDB]''                                  AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
             folder.* 
         FROM internal.folders folder 
     WHERE folder.folder_id = f.folder_id
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                                     AS [ObjectDetails]
 FROM internal.folders f
@@ -2428,7 +2401,7 @@ N'SELECT
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
     ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Environments\'' + QUOTENAME(e.environment_name)        AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
             variable.*
             ,environment.*
@@ -2437,7 +2410,7 @@ N'SELECT
         INNER JOIN internal.environments environment on environment.environment_id = variable.environment_id
         INNER JOIN internal.folders folder ON folder.folder_id = environment.environment_id
     WHERE variable.variable_id = v.variable_id    
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                                     AS [ObjectDetails]
 FROM internal.environment_variables v
@@ -2475,14 +2448,14 @@ N'SELECT
     ,p.created_time                                 AS [ObjectCreationDate]
     ,p.last_deployed_time                           AS [ObjectModifyDate]
     ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Projects''             AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
             project.*
             ,folder.*
         FROM internal.projects project
         INNER JOIN internal.folders folder ON folder.folder_id = project.folder_id
     WHERE project.project_id = p.project_id
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                                     AS [ObjectDetails]
 FROM internal.projects p
@@ -2517,7 +2490,7 @@ N'SELECT
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
     ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Projects\'' + QUOTENAME(pr.name) + N''\Packages''  AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
              package.*
             ,project.*
@@ -2526,7 +2499,7 @@ N'SELECT
         INNER JOIN internal.projects project ON project.project_id = package.project_id
         INNER JOIN internal.folders folder ON folder.folder_id = project.folder_id
     WHERE package.package_id = p.package_id
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                                     AS [ObjectDetails]
 FROM internal.packages p
@@ -2585,12 +2558,12 @@ SELECT
     ,NULL                                               AS [ObjectCreationDate]
     ,NULL                                               AS [ObjectModifyDate]
     ,F.FolderPath COLLATE database_default              AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
             folder.* 
         FROM [Folders] folder 
     WHERE folder.FolderID = f.FolderID
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                                         AS [ObjectDetails]
 FROM [Folders] f
@@ -2636,7 +2609,7 @@ SELECT
     ,P.createdate                                       AS [ObjectCreationDate]
     ,NULL                                               AS [ObjectModifyDate]
     ,F.FolderPath + N''\'' + QUOTENAME(F.FolderName) COLLATE database_default   AS [ObjectPath]
-    ,CONVERT(xml,
+    ,
         (SELECT 
               package.name
             , package.id
@@ -2654,11 +2627,11 @@ SELECT
             , package.isencrypted
             , package.readrolesid
             , package.writerolesid
-            ,CONVERT(xml, (SELECT * FROM [Folders] [folder] WHERE [folder].FolderID = package.folderid FOR XML AUTO))
+            ,(SELECT * FROM [Folders] [folder] WHERE [folder].FolderID = package.folderid FOR XML AUTO, TYPE)
             ,CONVERT(xml, CASE WHEN isencrypted = 0 THEN CONVERT(varbinary(max), packagedata) ELSE NULL END) AS packageData
         FROM [dbo].[sysssispackages] package
     WHERE package.id = P.id
-    FOR XML AUTO, BINARY BASE64)
+    FOR XML AUTO, BINARY BASE64, TYPE
     )
                                                         AS [ObjectDetails]
 FROM [dbo].[sysssispackages] P
