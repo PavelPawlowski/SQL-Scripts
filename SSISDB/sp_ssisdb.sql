@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.41 (2017-10-11)
+sp_ssisdb v 0.45 (2017-10-13)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -93,13 +93,15 @@ DECLARE
     ,@taskFilter                        bit             = 0     --Identifies whether apply task filter
     ,@eventFilter                       bit             = 0     --Identifies whether apply event filter
     ,@subcomponentFilter                bit             = 0     --Identifies whether apply sub-component filter
-    ,@includeAngetReferences            bit            = 0     --Identifies whether to include Agent Job referencing packages
+    ,@includeAngetReferences            bit             = 0     --Identifies whether to include Agent Job referencing packages
     ,@includeAgentJob                   bit             = 0     --Identifies whetehr to include information about agent job which executed the package
-
+    ,@decryptSensitive                  bit             = 0     --Identifies whether Decryption of sensitive values in verbose mode should be handled
+    ,@certName                          nvarchar(128)   = NULL  --Name of the cetificate to decrypt symmetric kye
+    ,@keyName                           nvarchar(128)   = NULL  --Name of the symmetric key to decrypt sensitive data
     ,@debugLevel                        smallint        = 0
 
 
-RAISERROR(N'sp_ssisdb v0.41 (2017-10-11) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.45 (2017-10-13) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -157,6 +159,8 @@ VALUES
     ,('AGR'     ,'AGENT_REFERENCES'     ,NULL)      --Include details about SQL Server Agent Jobs referencing package
     ,('AGT'     ,'AGT'                  ,NULL)      --Include details about agent job which initiated the execution
     ,('AGT'     ,'AGENT_JOB'            ,NULL)      --Include details about agent job which initiated the execution
+    ,('DS'      ,'DS'                   ,NULL)      --Decrypt sensitive
+    ,('DS'      ,'DECRYPT_SENSITIVE'    ,NULL)      --Decrypt sensitive
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -267,7 +271,7 @@ SELECT
             ELSE NULL
             END AS DateVal
         ,CASE 
-            WHEN VM.LeftChars IS NOT NULL THEN TRY_CONVERT(int, RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))
+            WHEN VM.LeftChars IS NOT NULL THEN TRY_CONVERT(bigint, RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))
             ELSE TRY_CONVERT(int, OP.Modifier) 
         END AS IntVal
         ,CASE 
@@ -335,20 +339,33 @@ BEGIN
         RAISERROR(N'Retrieving...', 0, 0) WITH NOWAIT;
 
         IF @id IS NOT NULL OR EXISTS(SELECT 1 FROM @opVal WHERE Val = 'V')
-        BEGIN   /*Verbose params processing */            
+        BEGIN   /*Verbose params processing */      
             SET @id = (SELECT MaxIntVal FROM @opVal WHERE Val = 'V')
             IF @id <= 1
                 SET @id = (SELECT MAX(execution_id) FROM internal.executions)
 
-            SET @msg = N' - Verbose information for execution_id = ' + CONVERT(nvarchar(20), @id);
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
+            RAISERROR(N' - Verbose information for execution_id = %I64d', 0, 0, @id)
 
             IF @id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM internal.operations WHERE operation_id = @id)
             BEGIN
-                SET @msg = N'   << No Executable statistics were found for execution_id = ' + CONVERT(nvarchar(20), @id) + N' >>';
-                RAISERROR(@msg, 0, 0) WITH NOWAIT;
+                RAISERROR(N'   << No Executable statistics were found for execution_id = %I64d >>' , 0, 0, @id) WITH NOWAIT;
                 RETURN;
             END
+
+            --Decrypting sensitive - open the symmetric key
+            IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'DS')
+            BEGIN
+                SET @decryptSensitive = 1;
+                RAISERROR(N' - Decrypting sensitive data', 0, 0) WITH NOWAIT;
+                SET @certName = N'MS_Cert_Exec_' + CONVERT(nvarchar(20), @id)
+                SET @keyName = N'MS_Enckey_Exec_' + CONVERT(nvarchar(20), @id)
+
+                SET @sql = N'OPEN SYMMETRIC KEY ' + QUOTENAME(@keyName) + N' DECRYPTION BY CERTIFICATE ' + QUOTENAME(@certName);
+                EXECUTE sp_executesql @sql;
+                SET @sql = N'';
+
+            END
+
 
             /*Get EVENT MESSAGES param */
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'EM')
@@ -394,7 +411,6 @@ BEGIN
                     SET @execRows = 1000;
 
             END
-
         END 
         ELSE 
         BEGIN /*Non Verbose Params processing */
@@ -459,11 +475,9 @@ BEGIN
             BEGIN
                 
                 IF @maxInt = @minInt
-                    SET @msg = '   - From execution_id ' + CONVERT(nvarchar(20), @minInt)
+                    RAISERROR('   - From execution_id @I64d', 0, 0, @minInt) WITH NOWAIT;
                 ELSE
-                    SET @msg = '   - Execution_id(s) Between ' + CONVERT(nvarchar(20), @minInt) + N' and ' + CONVERT(nvarchar(20), @maxInt)
-
-                RAISERROR(@msg, 0, 0) WITH NOWAIT;
+                    RAISERROR('   - Execution_id(s) Between %I64d and %I64d', 0, 0, @minInt, @maxInt) WITH NOWAIT;
             END
 
             IF EXISTS(SELECT Val FROM @opVal WHERE Val IN (N'P', N'FLD',  N'E'))
@@ -744,8 +758,6 @@ BEGIN
     RAISERROR('Usage: sp_ssisdb [params]', 0, 0) WITH NOWAIT;
     RAISERROR('-------------------------', 0, 0) WITH NOWAIT;
     RAISERROR('', 0, 0) WITH NOWAIT;
-    --RAISERROR('sp_ssisdb [params]', 0, 0) WITH NOWAIT;	
-    --RAISERROR('', 0, 0) WITH NOWAIT;
 
     RAISERROR(N'Parametes:
      @op                    nvarchar(max)   = NULL  --Operator parameter - universal operator for setting large range of condidions and filters
@@ -783,6 +795,7 @@ RAISERROR(N'
   (P)ROJECT                 - Optional keyword which specifeis the result will be grouped by FOLDER, PROJECT. Number of last records is per project
   (E)XECUTABLE              - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
   EXECUTED_PACKAGES (EP)    - Include information about executed packages per reult in the overview list. (Slow-downs the retrieval)
+  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information in VERBOSE mode. If specified, sensitive execution paramters will be decrypted and the values provided
   AGENT_REFERENCES (AGR)    - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval)
   AGENT_JOB (AGT)           - If available, Retrieve information aboutagent Job which executed the execution. (Slow-down the retrieval).
   MA(X)iiiii                - Optional keyword which specifies that when the LAST rows are returned per FOLDER, PROJECT, EXECUTABLE, then maximum of LAST iiiii rows
@@ -1307,6 +1320,63 @@ N'
             WHERE os.operation_id = d.execution_id
             FOR XML PATH(''os_info''), TYPE
         ))                          ''Execution''
+
+        ,(SELECT 
+             [execution_parameter_id]     ''@id''
+            ,CASE [object_type]
+                WHEN 20 THEN N''Project''
+                WHEN 30 THEN N''Package''
+                WHEN 50 THEN N''Execution''
+                ELSE N''Unknown''
+            END                           ''@type''
+            ,[parameter_name]             ''@name''
+
+            ,[sensitive]                  ''@sensitive''
+            ,[parameter_data_type]        ''@data_type''
+            ,[base_data_type]             ''@base_data_type''
+            ,[required]                   ''@required''
+            ,[value_set]                  ''@value_set''
+            ,[object_type]                ''@object_type''
+            ,[runtime_override]           ''@runtime_override''
+            ,CASE
+                WHEN sensitive = 1 AND @decryptSensitive = 1 THEN 
+                    (SELECT
+                    CASE [parameter_data_type]
+                        WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEY([sensitive_parameter_value]), [parameter_data_type]), 126)
+                        ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEY([sensitive_parameter_value]), [parameter_data_type]))
+                    END ''processing-instruction(sensitive-value)''
+                    FOR XML PATH(''''), TYPE
+                    ) 
+                    
+                ELSE 
+                    (SELECT [parameter_value]  ''processing-instruction(value)'' FOR XML PATH(''''), TYPE)
+            END
+        FROM [internal].[execution_parameter_values] epv
+        WHERE epv.execution_id = d.execution_id
+        ORDER BY [object_type], [parameter_name]
+        FOR XML PATH(''Parameter''), ROOT(''Parameters''), TYPE)
+
+
+        ,(SELECT 
+               [property_id]        ''@id''
+              ,[property_path]      ''@property_path''
+              ,[sensitive]          ''@sensitive''
+            ,CASE
+                WHEN sensitive = 1 AND @decryptSensitive = 1 THEN 
+                    (SELECT
+                        CONVERT(nvarchar(4000), DECRYPTBYKEY([sensitive_property_value])) 
+                        ''processing-instruction(sensitive-value)''
+                    FOR XML PATH(''''), TYPE
+                    )                     
+                ELSE 
+                    (SELECT [property_value]  ''processing-instruction(value)'' FOR XML PATH(''''), TYPE)
+            END
+        FROM [internal].[execution_property_override_values] epo
+        WHERE epo.execution_id = d.execution_id
+        ORDER BY [property_path]
+        FOR XML PATH(''PropertyOverride''), ROOT(''PropertyOverrides''), TYPE)
+
+
     FOR XML PATH(''execution_details''), TYPE
     ) AS execution_details
 
@@ -1626,7 +1696,8 @@ END
 
 
 /* EXECUTION OF THE MAIN QUERY */
-EXEC sp_executesql @sql, N'@opLastCnt int, @messages_inrow int, @fromTZ datetimeoffset, @toTZ datetimeoffset, @minInt bigint, @maxInt bigint, @id bigint, @totalMaxRows int', @opLastCnt, @max_messages, @opFromTZ, @opToTZ, @minInt, @maxInt, @id, @totalMaxRows
+EXEC sp_executesql @sql, N'@opLastCnt int, @messages_inrow int, @fromTZ datetimeoffset, @toTZ datetimeoffset, @minInt bigint, @maxInt bigint, @id bigint, @totalMaxRows int, @decryptSensitive bit', 
+    @opLastCnt, @max_messages, @opFromTZ, @opToTZ, @minInt, @maxInt, @id, @totalMaxRows, @decryptSensitive
 
 
 
@@ -2260,28 +2331,31 @@ BEGIN
         RAISERROR(@msg, 0, 0) WITH NOWAIT;
         IF @phaseFilter = 1
         BEGIN
-            SET @msg = N'   - Using Phase Filter(s): ' + @phase_filter
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
+            RAISERROR(N'   - Using Phase Filter(s): %s', 0, 0, @phase_filter) WITH NOWAIT;
         END
         IF @taskFilter = 1
         BEGIN
-            SET @msg = N'   - Using Task Filter(s): ' + @task_filter
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
+            RAISERROR(N'   - Using Task Filter(s): %s', 0, 0, @task_filter) WITH NOWAIT;
         END
         IF @subcomponentFilter = 1
         BEGIN
-            SET @msg = N'   - Using SubComponent Filter(s): ' + @subcomponent_filter
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
+            RAISERROR(N'   - Using SubComponent Filter(s): %s', 0, 0, @subcomponent_filter) WITH NOWAIT;
         END
         
         EXEC sp_executesql @sql, N'@id bigint, @ecpRows int, @package_path nvarchar(max), @execution_path nvarchar(max)', @id, @ecpRows, @package_path, @execution_path
     END --IF @includeECP = 1 AND EXISTS(SELECT 1 FROM internal.execution_component_phases WHERE execution_id = @id)
     ELSE IF @includeECP = 1
     BEGIN
-        SET @msg = N' - No Execution Component Phases were found for execution_id = ' + CONVERT(nvarchar(20), @id);
-        RAISERROR(@msg, 0, 0) WITH NOWAIT;
+        RAISERROR(N' - No Execution Component Phases were found for execution_id = %I64d', 0, 0, @id) WITH NOWAIT;
     END --ELSE IF @includeECP = 1
 
+    --close symmetric key if we were decryptin sensitive
+    IF @decryptSensitive = 1
+    BEGIN
+        SET @sql = N'CLOSE SYMMETRIC KEY ' + QUOTENAME(@keyName);
+        EXECUTE sp_executesql @sql;
+        SET @sql = N'';
+    END
 END
 GO
 --GRANT EXECUTE permission on the stored procedure to [ssis_admin] role
