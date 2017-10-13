@@ -1,5 +1,12 @@
 # SQL-Scripts
 This project contain scripts for SQL Server in different Areas
+
+## Searching
+Scripts for simplifying searching of objects on SQL Server
+
+### sp_find
+Powerfull stored procedure for searching objects on SQL Server. Searching by name or by object definition. ALlows Searching Database scope objects, Server Scoped objects as well as searching SSIS packages stored in both SSISDB and msdb.
+
 ## Rights Management
 Righs management folder contains script usable for managing user rigts
 
