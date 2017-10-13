@@ -41,3 +41,10 @@ Allows decryption of encrypted variable values.
 
 ### sp_SSISResetConfiguration
 Stored procedure allows easy reset of Project/Object/Parameter configuration values.
+
+# msdb
+Stored procedures for stuff related to msdb
+
+## sp_jobStatus
+Stored procedure allows easy generation of scripts for setting status of agent jobs. 
+Usefull during maintenance breaks to generate script for disbling all active jobs and their easy re-enabling by simple parameter change.
