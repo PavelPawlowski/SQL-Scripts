@@ -4,7 +4,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_CloneRights] AS BEGIN PRINT ''Container for sp_CloneRights (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_CloneRights v0.35 (2017-08-03)
+sp_CloneRights v0.36 (2017-10-13)
 (C) 2010 - 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -91,7 +91,7 @@ CREATE TABLE #output (
 
 
 --Set and print the procedure output caption
-RAISERROR(N'PRINT ''sp_CloneRights v0.35 (2017-08-03) (C) 2010-2017 Pavel Pawlowski''', 0, 0) WITH NOWAIT;
+RAISERROR(N'PRINT ''sp_CloneRights v0.36 (2017-10-13) (C) 2010-2017 Pavel Pawlowski''', 0, 0) WITH NOWAIT;
 RAISERROR(N'PRINT ''===============================================================''', 0, 0) WITH NOWAIT;
 
 INSERT INTO @allowedClasses(ClassName, ClassDescription)
@@ -369,8 +369,14 @@ BEGIN
                 UNION ALL SELECT ''-----------------------------------------------------------'';
 
                 INSERT INTO #output(command)
-                SELECT ''EXEC sp_addrolemember @rolename ='' 
-                    + SPACE(1) + QUOTENAME(USER_NAME(rm.role_principal_id), '''''''') + '', @membername ='' + SPACE(1) + QUOTENAME(@NewUser, '''''''') AS command
+                SELECT 
+                    CASE 
+                        WHEN CONVERT(int, SERVERPROPERTY(''ProductMajorVersion'')) >= 11 THEN
+                            ''ALTER ROLE '' + QUOTENAME(USER_NAME(rm.role_principal_id)) + '' ADD MEMBER '' + QUOTENAME(@NewUser)
+                        ELSE
+                        ''EXEC sp_addrolemember @rolename ='' 
+                        + SPACE(1) + QUOTENAME(USER_NAME(rm.role_principal_id), '''''''') + '', @membername ='' + SPACE(1) + QUOTENAME(@NewUser, '''''''')
+                    END AS command
                 FROM sys.database_role_members AS rm
                 WHERE USER_NAME(rm.member_principal_id) COLLATE database_default = @OldUser
                 ORDER BY rm.role_principal_id ASC';
