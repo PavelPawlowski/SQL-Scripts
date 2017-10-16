@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.46 (2017-10-16)
+sp_ssisdb v 0.47 (2017-10-16)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -98,10 +98,11 @@ DECLARE
     ,@decryptSensitive                  bit             = 0     --Identifies whether Decryption of sensitive values in verbose mode should be handled
     ,@certName                          nvarchar(128)   = NULL  --Name of the cetificate to decrypt symmetric kye
     ,@keyName                           nvarchar(128)   = NULL  --Name of the symmetric key to decrypt sensitive data
+    ,@durationCondition                 nvarchar(max)   = NULL  --condition for duration
     ,@debugLevel                        smallint        = 0
 
 
-RAISERROR(N'sp_ssisdb v0.46 (2017-10-16) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.47 (2017-10-16) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -169,6 +170,11 @@ VALUES
     ,('AGT'     ,'AGENT_JOB'            ,NULL)      --Include details about agent job which initiated the execution
     ,('DS'      ,'DS'                   ,NULL)      --Decrypt sensitive
     ,('DS'      ,'DECRYPT_SENSITIVE'    ,NULL)      --Decrypt sensitive
+    ,('>'       ,'>'                    ,1)         --Duration longer than
+    ,('>='      ,'>='                   ,2)         --Duration longer or equal to
+    ,('<'       ,'<'                    ,1)         --Duration shorter than
+    ,('<='      ,'<='                   ,2)         --Duration shorter or equal to
+    ,('='       ,'='                    ,1)         --Duration equal to
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -237,23 +243,26 @@ SELECT
     /* =================================
              OPERATION Retrival 
     ====================================*/
-	SET @xml = N'<i>' + REPLACE(REPLACE(REPLACE(@op, N' ', @xr), N',', @xr), N';', @xr) + N'</i>'
+                                         --replacing [<] with &lt; as [<] is ilegal in xml building
+	SET @xml = N'<i>' + REPLACE(REPLACE(REPLACE(@op, N'<', N'&lt;') , N' ', @xr), N',', @xr) + N'</i>'
 
 	DECLARE @opVal TABLE (	--Operaton Validities
-		Val			varchar(10) NOT NULL PRIMARY KEY CLUSTERED
-		,MinDateVal	datetime
-        ,MaxDateVal datetime
-		,MinIntVal	bigint
-        ,MaxIntVal  bigint
-        ,StrVal  nvarchar(max)
+		Val			    varchar(10) NOT NULL PRIMARY KEY CLUSTERED
+		,MinDateVal	    datetime
+        ,MaxDateVal     datetime
+		,MinIntVal	    bigint
+        ,MaxIntVal      bigint
+        ,StrVal         nvarchar(max)
+        ,DurationDate   datetime2(3)
 	)
 
     DECLARE @opValData TABLE (
-         Modifier   nvarchar(30)
-        ,Val        varchar(10)
-        ,DateVal    datetime
-        ,IntVal     bigint
-        ,StrVal     nvarchar(50)
+         Modifier       nvarchar(30)
+        ,Val            varchar(10)
+        ,DateVal        datetime
+        ,IntVal         bigint
+        ,StrVal         nvarchar(50)
+        ,DurationDate   datetime2(3)
     )
 
 	;WITH OP AS (
@@ -261,7 +270,7 @@ SELECT
             NULLIF(LTRIM(RTRIM(n.value('.','nvarchar(128)'))), '') AS Modifier
         FROM @xml.nodes('/i') T(N)
 	)
-    INSERT INTO @opValData(Modifier, Val, DateVal, IntVal, StrVal)
+    INSERT INTO @opValData(Modifier, Val, DateVal, IntVal, StrVal, DurationDate)
 	SELECT
         OP.Modifier
         ,CASE 
@@ -286,9 +295,34 @@ SELECT
             WHEN VM.LeftChars IS NOT NULL THEN CONVERT(nvarchar(50), RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))
             ELSE CONVERT(nvarchar(50), OP.Modifier) 
         END AS StrVal
+        ,CASE 
+            WHEN VM.VAL IN (N'>', N'>=', N'<', N'<=', N'=') THEN 
+                CASE
+                    WHEN CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))) > 0 THEN  DATEADD(
+                                                                    MILLISECOND, 
+                                                                    DATEDIFF(MILLISECOND, 0, TRY_CONVERT(datetime2(3), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))))))                                                        
+                                                                    ,DATEADD(DAY, TRY_CONVERT(int, SUBSTRING(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), 1, CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))) - 1)), 0)
+                                                                ) 
+                    ELSE TRY_CONVERT(datetime2(3), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)))))
+                END
+
+            ELSE NULL
+        END AS DurationDate
+
 	FROM OP
     LEFT JOIN @valModifiers VM ON (OP.Modifier = VM.Modifier AND VM.LeftChars IS NULL) OR (LEFT(OP.Modifier, VM.LeftChars) = VM.Modifier)
-    WHERE OP.Modifier IS NOT NULL
+    WHERE 
+        OP.Modifier IS NOT NULL
+        AND
+        (
+            VM.Modifier NOT IN (N'<', N'>')
+            OR
+            (
+                VM.Modifier IN (N'<', N'>')
+                AND
+                SUBSTRING(OP.Modifier, 2, 1) <> '='
+            )
+        )
 
     --Check if we have a help modifier
     IF EXISTS(SELECT 1 FROM @opValData WHERE Val = '?')
@@ -303,10 +337,19 @@ SELECT
 
 IF @help <> 1
 BEGIN
-    IF EXISTS(SELECT 1 FROM @opValData WHERE Val IS NULL)
+    IF EXISTS(SELECT 1 FROM @opValData WHERE Val IS NULL) 
     BEGIN
         SET @msg = 'There are unsupported values, keywords or modifiers passed in the @op parameter. Check the parameters and/or formattings: ' + NCHAR(13) +
             QUOTENAME(STUFF((SELECT ', ' + op.Modifier FROM  @opValData op WHERE Val IS NULL FOR XML PATH('')), 1, 2, ''), '"') + NCHAR(13);
+        RAISERROR(@msg, 11, 0) WITH NOWAIT;
+
+        SET @help = 1
+    END
+
+    IF EXISTS (SELECT 1 FROM @opValData WHERE Val IN (N'>', N'>=', N'<', N'<=', N'=') AND DurationDate IS NULL)
+    BEGIN
+        SET @msg = 'There are unsupported duration modifiers passed in the @op parameter. Check parameters and/or formatting: ' + NCHAR(13) +
+            QUOTENAME(REPLACE(REPLACE(STUFF((SELECT ', ' + op.Modifier FROM  @opValData op WHERE Val IN (N'>', N'>=', N'<', N'<=', N'=') AND DurationDate IS NULL FOR XML PATH(N'')), 1, 2, N''), N'&gt;', N'>'), N'&lt;', N'<'), '"') + NCHAR(13);
         RAISERROR(@msg, 11, 0) WITH NOWAIT;
 
         SET @help = 1
@@ -315,7 +358,7 @@ END
 
 IF @help <> 1
 BEGIN
-	INSERT INTO @opVal (Val,  MinDateVal, MaxDateVal, MinIntVal, MaxIntVal, StrVal)
+	INSERT INTO @opVal (Val,  MinDateVal, MaxDateVal, MinIntVal, MaxIntVal, StrVal, DurationDate)
     SELECT
         Val
         ,CASE WHEN Val = 'D' THEN MIN(ISNULL(DateVal, '1900-01-01')) ELSE NULL END AS MinDateVal
@@ -329,14 +372,35 @@ BEGIN
             WHEN Val IN ('ST', 'ET') THEN MAX(StrVal)
             ELSE NULL
         END AS StrVal
+        ,CASE 
+            WHEN Val IN (N'>', N'>=') THEN MAX(DurationDate)
+            WHEN Val IN (N'<', N'<=', N'=') THEN MIN(DurationDate) 
+            ELSE NULL
+        END AS DurationDate
     FROM @opValData
-    	WHERE Val IS NOT NULL OR DateVal IS NOT NULL OR IntVal IS NOT NULL
+    	WHERE 
+            (
+                (Val IS NOT NULL AND Val NOT IN (N'>', N'>=', N'<', N'<=', N'='))
+                OR 
+                DateVal IS NOT NULL 
+                OR 
+                IntVal IS NOT NULL
+            )
+            OR
+            (
+                Val IN (N'>', N'>=', N'<', N'<=', N'=')
+                AND
+                DurationDate IS NOT NULL
+            )
     GROUP BY Val
 
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'DBG')
     BEGIN
         SET @debugLevel = ISNULL(NULLIF((SELECT MaxIntVal FROM @opVal WHERE Val = N'DBG'), 0), 1)
         
+        if(@debugLevel > 2)
+            SELECT * FROM @opValData
+
         if (@debugLevel > 1)
             SELECT * FROM @opVal
     END
@@ -444,6 +508,32 @@ BEGIN
                     RAISERROR(N' - Last %d operations', 0, 0, @opLastCnt) WITH NOWAIT;
                 ELSE
                     RAISERROR(N' - All Operations', 0, 0) WITH NOWAIT;
+            END
+
+            --duration was specified
+            IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN (N'>', N'>=', N'<', N'<=', N'='))
+            BEGIN
+                SELECT 
+                    @durationCondition = 
+                        N'(' + REPLACE(REPLACE(STUFF((
+                            SELECT
+                               N' AND o.durationDate ' + Val + N' ''' + CONVERT(varchar(23), DurationDate, 121) + N''''
+                            FROM @opVal
+                            FOR XML PATH('')
+                        ), 1, 5, N''), N'&lt;', N'<'), N'&gt;', N'>') + N')'
+
+                SET @msg = 
+                    REPLACE(REPLACE(STUFF((
+                        SELECT
+                           N' AND ' + Val + N' ''' + CONVERT(nvarchar(10), DATEDIFF(DAY, 0, DurationDate)) + 'd ' + CONVERT(varchar(12), CONVERT(time, DurationDate)) + N''''
+                        FROM @opVal
+                        FOR XML PATH('')
+                    ), 1, 5, N''), N'&lt;', N'<'), N'&gt;', N'>')
+
+                RAISERROR(N' - Duration: %s', 0, 0, @msg) WITH NOWAIT;
+
+                IF @debugLevel > 2
+                    SELECT @durationCondition AS DurationCondition
             END
 
             --Date values are specified
@@ -786,7 +876,7 @@ BEGIN
 RAISERROR('', 0, 0) WITH NOWAIT;
 RAISERROR('@op - Operator Parameter', 0, 0) WITH NOWAIT;
 RAISERROR('------------------------', 0, 0) WITH NOWAIT;
-RAISERROR('Comma, semicolon or space separated list of operations parameters. Specifies operations, filtering and grouping of the resuls.', 0, 0) WITH NOWAIT;
+RAISERROR('Comma, space separated list of operations parameters. Specifies operations, filtering and grouping of the resuls.', 0, 0) WITH NOWAIT;
 --RAISERROR('', 0, 0) WITH NOWAIT;
 RAISERROR(N'
   ?                         - Print this help
@@ -798,13 +888,26 @@ RAISERROR(N'
                               If Keyword is missing the default LAST 100 records are retrieved
 
   Date/Time                 - If provided then executions since that Date/Time are returned. If multiple Date/Time values are provided then executions between MIN and MAX values are returned.
-  hh:MM (hh:MM:ss)          - If only time is provided, then the time is interpreted as Time of current day
+  hh:MM(:ss)                - If only time is provided, then the time is interpreted as Time of current day
   yyyy-mm-dd                - If only date is provided, then it is intepreted as midnigth of that day (YYYY-MM-DDTHH:MM:SS)
   yyyy-mm-ddThh:MM:ss       - When Date/Time is passed, then Time is separated by T from date. In that case hours have to be provided as two digits
 
   START_TIME (ST)           - Use Start Time for searching (By Default Create Time is used)
-  END_TIME (ET)             - Use End Time for searching (By Default Create Time is used)
+  END_TIME (ET)             - Use End Time for searching (By Default Create Time is used) ', 0, 0) WITH NOWAIT;
 
+RAISERROR(N'  
+  >|>=|<|<=|=dddddd         - Duration Specifier. If provided then only operations with duration corresponding to the specifier are returned. Multiple specifiers are combined with AND.
+                            - If multiple durations are specified for the same specifier, MAX duration is used for [>] and [>=] and and MIN durtion for [<], [<=], [=]
+  dddddd                    - Specifies duration in below allowed formats
+  hh:MM(:ss(.fff))          - If only time is specified, it represents duration in hours, minutes, seconds and fraction of seconds
+  iiid(hh:MM(:ss(.fff)))    - iii specifies followed by d specifies number of days. Optional additional time can follow
+
+
+
+
+', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
   FOLDER (FLD)              - Optional keyword which specifies the result will be grouped by FOLDER. Nunmber of last records is per folder.
   (P)ROJECT                 - Optional keyword which specifeis the result will be grouped by FOLDER, PROJECT. Number of last records is per project
   (E)XECUTABLE              - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
@@ -855,12 +958,13 @@ Samples:
   LAST5 FOLDER                              - Last 5 executions per folder will be returned
   LAST10 PROJECT                            - last 10 executions per folder/project will be returned
   E L6 EM EP                                - last 6 executions per Executable (package) will be returned including overview of error messages and executed packages
-  LS F E 5                                  - last 5 exectutions per executable with status Success or Failure will be returned
-  815350 815500                             - executions with execution_id betwen 815350 and 815500 are returned
-  06:00:00                                  - all executions since 06:00:00 today will be returned
-  06:00:00 12:30:00                         - all executions from today between 06:00:00 and 12:30:00 today will be returned
-  2017-01-20T06:00:00 2017-01-21T13:35:00   - all executions between 2017-01-206:00:00 and 2017-01-21 13:35:00 will be returned
-  2017-01-20T06:00:00 12:30:00              - all executions between 2017-01-206:00:00 and today 12:30:00 will be returned
+  L5 E S F                                  - last 5 exectutions per executable with status Success or Failure will be returned
+  L10 >00:15:30                             - Last 10 executions with duration longer than 15 minutes and 30 seconds
+  815350 815500                             - Executions with execution_id betwen 815350 and 815500 are returned
+  06:00:00                                  - All executions since 06:00:00 today will be returned
+  06:00:00 12:30:00                         - All executions from today between 06:00:00 and 12:30:00 today will be returned
+  2017-01-20T06:00:00 2017-01-21T13:35:00   - All executions between 2017-01-206:00:00 and 2017-01-21 13:35:00 will be returned
+  2017-01-20T06:00:00 12:30:00              - All executions between 2017-01-206:00:00 and today 12:30:00 will be returned
 ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 LIKE Filters
@@ -985,7 +1089,13 @@ END
 /* END HELP PROCESSING */
 
 SET @sql = CONVERT(nvarchar(max), N'
-WITH Data AS (
+WITH BaseOperations AS (
+    SELECT
+        DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), 0)) durationDate
+        ,*
+    FROM internal.operations WITH(NOLOCK)
+),
+Data AS (
     SELECT ' + CASE WHEN @id IS NOT NULL THEN N'TOP (1) ' WHEN @totalMaxRows IS NOT NULL THEN N'TOP (@totalMaxRows) ' ELSE N'' END + N'
         e.execution_id
         ,e.folder_name
@@ -993,8 +1103,7 @@ WITH Data AS (
         ,e.package_name
         ,o.start_time
         ,o.end_time
-        ,RIGHT(''     '' + CONVERT(nvarchar(3), DATEDIFF(SECOND, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())) / 86400) + ''d '', 5) +
-        CONVERT(nchar(8), CONVERT(time, DATEADD(SECOND, DATEDIFF(SECOND, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())) % 86400, 0))) AS duration
+        ,RIGHT(''     '' + CONVERT(nvarchar(3), DATEDIFF(DAY, 0, durationDate)) + ''d '', 5) + CONVERT(varchar(12), CONVERT(time, durationDate)) AS duration
         ,CASE o.[status]
             WHEN 1 THEN ''Created''
             WHEN 2 THEN ''Running''
@@ -1043,7 +1152,7 @@ WITH Data AS (
             + N') AS rank'
         ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END + N') AS rank'
     END + N'
-    FROM internal.operations o WITH(NOLOCK)
+    FROM BaseOperations o 
     INNER JOIN internal.executions e WITH(NOLOCK) ON e.execution_id = o.operation_id
 ' +
     CASE
@@ -1087,6 +1196,7 @@ WITH Data AS (
                     WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL THEN '(execution_id BETWEEN @minInt AND @maxInt)'
                   END
                 )
+                ,(@durationCondition)
                 )T(val)
             FOR XML PATH('')
             )
@@ -1382,6 +1492,9 @@ N'
         ,d.created_time             ''Operation/@created_time''
         ,d.start_time               ''Operation/@start_time''
         ,d.end_time                 ''Operation/@end_time''
+        
+        ,CONVERT(nvarchar(10), DATEDIFF(DAY, d.start_time, ISNULL(d.end_time, SYSDATETIMEOFFSET()))) + ''d '' + CONVERT(nvarchar(15), CONVERT(time, DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, d.start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), d.start_time), ISNULL(d.end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(day, d.start_time, ISNULL(d.end_time, SYSDATETIMEOFFSET())), 0)))) ''Operation/@duration''
+
         ,d.status_code              ''Operation/@status_code''
         ,d.process_id               ''Operation/@process_id''
         ,d.project_lsn              ''Execution/@project_lsn''
