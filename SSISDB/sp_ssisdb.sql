@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.45 (2017-10-13)
+sp_ssisdb v 0.46 (2017-10-16)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -101,7 +101,7 @@ DECLARE
     ,@debugLevel                        smallint        = 0
 
 
-RAISERROR(N'sp_ssisdb v0.45 (2017-10-13) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.46 (2017-10-16) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -135,6 +135,14 @@ VALUES
     ,('F'       ,'FAILURE'              ,NULL)      --Failure
     ,('C'       ,'C'                    ,NULL)      --Cancelled
     ,('C'       ,'CANCELLED'            ,NULL)      --Cancelled
+    ,('T'       ,'T'                    ,NULL)      --Created
+    ,('T'       ,'CREATED'              ,NULL)      --Created
+    ,('G'       ,'G'                    ,NULL)      --Stopping
+    ,('G'       ,'STOPPING'             ,NULL)      --Stopping
+    ,('CD'      ,'CD'                   ,NULL)      --Completed
+    ,('CD'      ,'COMPLETED'            ,NULL)      --Completed
+    ,('PD'      ,'PD'                   ,NULL)      --Pending
+    ,('PD'      ,'PENDING '             ,NULL)      --Pending
     ,('U'       ,'U'                    ,NULL)      --Unexpected
     ,('U'       ,'UNEXPECTED'           ,NULL)      --Unexpected
     ,('FORCE'   ,'FORCE'                ,NULL)      --Force
@@ -186,7 +194,7 @@ VALUES
     ,(100   ,N'QUERY_CANCEL'             , N'QC')
     ,(130   ,N'TASK_FAILED'              , N'F')
     ,(90    ,N'DIAGNOSTICS'              , N'D')
-    ,(200   ,N'CUSTOM'                   , N'C')
+    ,(200   ,N'CUSTOM'                   , N'CS')
     ,(140   ,N'DIAGNOSTICS_EX'           , N'DE')
     ,(400   ,N'NON_DIAGNOSTIS'           , N'ND')
     ,(80    ,N'VARIABLE_VALUE_CHANGE'    , N'VC')
@@ -205,11 +213,11 @@ VALUES
     ,(2, N'RUNNING'     , N'R')
     ,(3, N'CANCELLED'   , N'C')
     ,(4, N'FAILED'      , N'F')
-    ,(5, N'PENDING'     , N'P')
+    ,(5, N'PENDING'     , N'PD')
     ,(6, N'UNEXPECTED'  , N'U')
     ,(7, N'SUCCESS'     , N'S')
     ,(8, N'STOPPING'    , N'G')
-    ,(9, N'COMPLETED'   , N'D')
+    ,(9, N'COMPLETED'   , N'CD')
 
 /* Update paramters to NULL where empty strings are passed */
 SELECT
@@ -415,8 +423,8 @@ BEGIN
         ELSE 
         BEGIN /*Non Verbose Params processing */
             --Force  status filter according the @op param
-            IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U'))
-                SET @status = STUFF((SELECT ',' + Val FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U') FOR XML PATH('')), 1, 1, '');
+            IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U', 'C', 'PD', 'T', 'G', 'CD'))
+                SET @status = STUFF((SELECT ',' + Val FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U', 'C', 'PD', 'T', 'G', 'CD') FOR XML PATH('')), 1, 1, '');
 
             --Last XXX was specified
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN ('L'))
@@ -762,7 +770,7 @@ BEGIN
     RAISERROR(N'Parametes:
      @op                    nvarchar(max)   = NULL  --Operator parameter - universal operator for setting large range of condidions and filters
     ,@status                nvarchar(MAX)   = NULL  --Comma separated list of execution statuses to return. Default NULL means all. See below for more details
-    ,@folder                nvarchar(max)   = NULL  --Comma separated list of folder filters. Default NLL means no filtering. See below for more details
+    ,@folder                nvarchar(max)   = NULL  --Comma separated list of folder filters. Default NULL means no filtering. See below for more details
     ,@project               nvarchar(max)   = NULL  --Comma separated list of project filters. Default NULL means no filtering. See below for more details
     ,@package               nvarchar(max)   = NULL  --Comma separated list of pacakge filters. Default NULL means no filtering. See below for more details
     ,@msg_type              nvarchar(max)   = NULL  --Comma separated list of Message types. When not provided, then for in row data a default combination of ERROR,TASK_FAILED is beging used.
@@ -781,56 +789,66 @@ RAISERROR('------------------------', 0, 0) WITH NOWAIT;
 RAISERROR('Comma, semicolon or space separated list of operations parameters. Specifies operations, filtering and grouping of the resuls.', 0, 0) WITH NOWAIT;
 --RAISERROR('', 0, 0) WITH NOWAIT;
 RAISERROR(N'
+  ?                         - Print this help
+
   iiiiiiiiiiiiii            - (integer values) Specifies range of execution_id(s) to return basic information. If single initeger is provided than executios starting with that id will be returned. 
                               In case of multiple initegers, range between minimum and maximum id is returned
   (L)ASTiiiii               - Optional Keywork which modifies output only to LAST iiiii records. THe LAST records are returned per group. 
                               If iiiii is not provided then then last 1 execution is returned. 
                               If Keyword is missing the default LAST 100 records are retrieved
+
   Date/Time                 - If provided then executions since that Date/Time are returned. If multiple Date/Time values are provided then executions between MIN and MAX values are returned.
   hh:MM (hh:MM:ss)          - If only time is provided, then the time is interpreted as Time of current day
   yyyy-mm-dd                - If only date is provided, then it is intepreted as midnigth of that day (YYYY-MM-DDTHH:MM:SS)
   yyyy-mm-ddThh:MM:ss       - When Date/Time is passed, then Time is separated by T from date. In that case hours have to be provided as two digits
 
+  START_TIME (ST)           - Use Start Time for searching (By Default Create Time is used)
+  END_TIME (ET)             - Use End Time for searching (By Default Create Time is used)
+
   FOLDER (FLD)              - Optional keyword which specifies the result will be grouped by FOLDER. Nunmber of last records is per folder.
   (P)ROJECT                 - Optional keyword which specifeis the result will be grouped by FOLDER, PROJECT. Number of last records is per project
   (E)XECUTABLE              - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
-  EXECUTED_PACKAGES (EP)    - Include information about executed packages per reult in the overview list. (Slow-downs the retrieval)
+  
   DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information in VERBOSE mode. If specified, sensitive execution paramters will be decrypted and the values provided
+
   AGENT_REFERENCES (AGR)    - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval)
-  AGENT_JOB (AGT)           - If available, Retrieve information aboutagent Job which executed the execution. (Slow-down the retrieval).
+  AGENT_JOB (AGT)           - If available, Retrieve information about agent Job which started the execution. (Slow-down the retrieval).
   MA(X)iiiii                - Optional keyword which specifies that when the LAST rows are returned per FOLDER, PROJECT, EXECUTABLE, then maximum of LAST iiiii rows
                               will be retrieved and those grouped and returned as per above specification', 0, 0) WITH NOWAIT;
 RAISERROR(N'
   (V)ERBOSEiiiiii           - Used to pass exeuction ID for which detailed overview should be provided. it has priority over the overview ranges.
                               In case multiple integer numbers are provided, it produces verbose information for the maximum integer provided.
-                              If verbose is specified without any integer number, then verbose invormation is provided for the last operation.
-
-  EXECUTABLE_STATISTICS(ES)iiiii        - Include executablew statistics in the details verbose output.
-                                          iiiii specifies max number of rows. If not provided then default 1000 rows are returned.
-                                          iiiii < 0 = All rows are returned and is the same as not including the keyword
-  EXECUTION_MESSAGES(EM)iiiii           - Include event messages details in the overview list and in details list. 
-                                          iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
-                                          iiiii < 0 = All rows are returned.
-                                          For Overview by default only ERROR and TASK_FAILED are included. (Slow downs data retrieval)
-  EXECUTION_DATA_STATISTICS(EDS)iiiii   - Include Execution Data Statistics in the details verbose output
-                                          iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
-                                          iiiii < 0 = All rows are returned.                                    
-  EXECUTION_COMPONENT_PHASES(ECP)iiiii  - Include Execution Componetn Phases in the details verbose output
-                                          iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
-                                          iiiii < 0 = All rows are returned.
-
-  START_TIME (ST)           - Use Start Time for searching (By Default Create Time is used)
-  END_TIME (ET)             - Use End Time for searching (By Default Creati TIme is used)
-', 0, 0) WITH NOWAIT;
+                              If verbose is specified without any integer number, then verbose invormation is provided for the last operation.', 0, 0) WITH NOWAIT;
 RAISERROR(N'
   (R)UNNING         - Filter Modifier applies RUNNING @status filter
   (S)UCCESS         - Filter Modifier applie SUCCESS @status filter
   (F)AILURE         - Filter modifier applies FAILURE @status filter
   (C)ANCELLED       - Filter modifier applies CANCELLED @status filter
   (U)NEXPECTED      - Filter modifier applies UNEXPECTED @status filter
-
-  ?                 - Print this help
+  CREATED(TD)       - Filter modifier applies CREATED @status filter
+  (P)ENDING         - Filter modifier applies PENDING @status filter
+  STOPPIN(G)        - Filter modifier applies STOPPING @status filter
+  COMPLETED(CD)     - Filter modifier applies COMPLETED @status filter
 ', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+  EXECUTED_PACKAGES (EP)                - Include information about executed packages per reult in the overview list. (Slow-downs the retrieval)
+  EXECUTABLE_STATISTICS(ES)iiiii        - Include executablew statistics in the details verbose output.
+                                          iiiii specifies max number of rows. If not provided then default 1000 rows are returned.
+                                          iiiii < 0 = All rows are returned and is the same as not including the keyword
+  EXECUTION_MESSAGES(EM)iiiii           - Include event messages details in the overview list and in details list. 
+                                          iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
+                                          iiiii < 0 = All rows are returned.
+                                          For Overview by default only ERROR and TASK_FAILED are included. (Slow downs data retrieval)', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS)iiiii   - Include Execution Data Statistics in the details verbose output
+                                          iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
+                                          iiiii < 0 = All rows are returned.                                    
+  EXECUTION_COMPONENT_PHASES(ECP)iiiii  - Include Execution Componetn Phases in the details verbose output
+                                          iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
+                                          iiiii < 0 = All rows are returned.
+', 0, 0) WITH NOWAIT;
+
 RAISERROR(N'
 Samples:  
   LAST10                                    - Last 10 executions will be returned
@@ -863,7 +881,7 @@ RAISERROR(N'
 ----------------------------
 Below list of execution statuses are available for filter:
 
-  CREA(T)ED     - Operation was created but not executed yet
+  CREATED(TD)   - Operation was created but not executed yet
   (R)UNNING     - Operation is running
   (S)UCCESS     - Operation ended successfully
   (F)FAILED     - Operation execution failed
@@ -871,7 +889,7 @@ Below list of execution statuses are available for filter:
   (P)ENDING     - Operation was set for exectuion, but he execution is stil pending
   (U)NEXPECTED  - Operetion edend unexpectedly
   STOPPIN(G)    - Operation is in process of stpping
-  COMPLETE(D)   - Operation was completed
+  COMPLETED(CD) - Operation was completed
 ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'
@@ -897,6 +915,70 @@ Below message filters are supported. By default ERROR and TASK_FAILED messages a
   (VC) VARIABLE_VALUE_CHANGE   - variable value change mesasge
   (U)  UNKNOWN                 - represents uknown message type
 ', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+@folder
+-------
+Comma separated list of Folder filters. When specified only executions of packages from projects belonging to providedl folders list are shown.
+Supports LIKE wildcards. Default NULL means any folder.
+
+@project
+--------
+Comma separated list of project filters. When specified, only executions of packages from projects matching the filter are shown.
+All matching project cross beloding to folders specified by @folder parameter are used.
+Supports LIKE wildcards. Default NULL means any project.', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+@package
+--------
+Comma separated list of package filters. When specified only executions of packages whose name is matching the @package filer are shown.
+Package are shown from all folders/projects matching the @folder/@project parameter.
+Supports LIKE wildcards. Default NULL means any package.
+
+@event_filter
+-------------
+Used only for detailed results filtering in VERBOSE mode.
+Comma separated list of event filters. Only messages for events whose name is matching the filter are returned.
+Supports LIKE wildcards. Default NULL means filter is not applied.
+
+@phase_filter
+-------------
+Used only for detailed results filtering in VERBOSE mode.
+Comma separated list of phase filters. Only execution component phases which name is matching the filter are returned.
+EXECUTION_COMPONENT_PHASES(ECP)iiiii has to be active for the filter to take effect.
+Supports LIKE wildcards. Default NULL means filter is not applied.', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+@task_filter
+------------
+Used only for detailed results filtering in VERBOSE mode.
+Comma separated lists of task filters. Only events, phases and messages for tasks which name is matching the filter are returned.
+Supports LIKE wildcards. Default NULL means filter is not applied.
+
+@subcomponent_filter
+--------------------
+Used only for detailed results filtering in VERBOSE mode.
+Comma separated list of sub-componetn filters. Only messages for subcomponents which name is matching the filter are returned.
+Supports LIKE wildcards. Default NULL means filter is not applied.', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+@package_path
+-------------
+Used only for detailed results filtering in VERBOSE mode.
+Comma separeted list of package paths. Only executable statistics and messages, execution component phases
+and execution data statistics which match the @package_path filter are returned.
+Supports LIKE wildcards. Default NULL means filter is not applied.
+
+@execution_path
+---------------
+Used only for detailed results filtering in VERBOSE mode.
+Comma separated list of package paths.Only executable statistics and messages, execution component phases
+and execution data statistics which match the @execution_path filter are returned.
+Supports LIKE wildcards. Default NULL means filter is not applied.', 0, 0) WITH NOWAIT;
+
+
+
+RAISERROR(N'--------------------------------------------- END OF HELP ---------------------------------------------', 0, 0) WITH NOWAIT;
 
 RETURN;
 END
@@ -2318,11 +2400,11 @@ BEGIN
                 AND 
                 sp.execution_id = @id' +
         CASE
-            WHEN NULLIF(@execution_path, '') IS NOT NULL THEN N' AND sp.execution_path LIKE @execution_path'
+            WHEN NULLIF(@execution_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #execution_paths f WHERE sp.execution_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #execution_paths f WHERE sp.execution_path LIKE f.filter AND f.exclusive = 1))'
             ELSE N''
         END + 
         CASE
-            WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND sp.package_path_full LIKE @package_path'
+            WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE sp.package_path_full LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE sp.package_path_full LIKE f.filter AND f.exclusive = 1))'
             ELSE N''
         END + N'
              ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(sp.phase_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(ep.phase_time, ''9999-12-31'')' ELSE N'sp.sequence_id' END + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END 
