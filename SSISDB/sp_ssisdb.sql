@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.47 (2017-10-16)
+sp_ssisdb v 0.50 (2017-10-17)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -47,7 +47,7 @@ ALTER PROCEDURE [dbo].[sp_ssisdb]
     ,@package_path          nvarchar(max)   = NULL                  --LIKE filter to be applied on package path fields. Used only for detailed results fitering
     ,@execution_path        nvarchar(max)   = NULL                  --LIKE filter to be applied on execution path fields. Used only for detailed results filtering
     ,@msg_filter            nvarchar(max)   = NULL                  --LIKE filter to be applied on messge text. Used only for detailed results filtering
---WITH EXECUTE AS 'AllSchemaOwner'
+WITH EXECUTE AS 'AllSchemaOwner'
 AS
 SET NOCOUNT ON;
 DECLARE
@@ -96,13 +96,12 @@ DECLARE
     ,@includeAngetReferences            bit             = 0     --Identifies whether to include Agent Job referencing packages
     ,@includeAgentJob                   bit             = 0     --Identifies whetehr to include information about agent job which executed the package
     ,@decryptSensitive                  bit             = 0     --Identifies whether Decryption of sensitive values in verbose mode should be handled
-    ,@certName                          nvarchar(128)   = NULL  --Name of the cetificate to decrypt symmetric kye
-    ,@keyName                           nvarchar(128)   = NULL  --Name of the symmetric key to decrypt sensitive data
     ,@durationCondition                 nvarchar(max)   = NULL  --condition for duration
+    ,@tms                               nvarchar(30)    = NULL  --variable to store timestamp data
     ,@debugLevel                        smallint        = 0
 
 
-RAISERROR(N'sp_ssisdb v0.47 (2017-10-16) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.50 (2017-10-17) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -160,6 +159,8 @@ VALUES
     ,('ST'      ,'START_TIME'           ,10)        --Use Start Time
     ,('ET'      ,'ET'                   ,2)         --Use End TIme
     ,('ET'      ,'END_TIME'             ,8)         --Use EndTime
+    ,('CT'      ,'CT'                   ,2)         --Use Create Time
+    ,('CT'      ,'CREATE_TIME'          ,1)         --Use Create Time
     ,('ECP'     ,'ECP'                  ,3)         --Execution Component Phases
     ,('ECP'     ,'EXECUTION_COMPONENT_PHASES', 26)  --Execution Component Phases
     ,('ES'      ,'ES'                   ,2)         --Executable Statistics
@@ -369,12 +370,12 @@ BEGIN
             ELSE NULL 
          END AS MaxIntVal
         ,CASE
-            WHEN Val IN ('ST', 'ET') THEN MAX(StrVal)
+            WHEN Val IN ('ST', 'ET', 'CT') THEN MAX(ISNULL(StrVal, ''))
             ELSE NULL
         END AS StrVal
         ,CASE 
-            WHEN Val IN (N'>', N'>=') THEN MAX(DurationDate)
-            WHEN Val IN (N'<', N'<=', N'=') THEN MIN(DurationDate) 
+            WHEN Val IN (N'>', N'>=') THEN MAX(ISNULL(DurationDate, '1900-01-01'))
+            WHEN Val IN (N'<', N'<=', N'=') THEN MIN(ISNULL(DurationDate, '1900-01-01')) 
             ELSE NULL
         END AS DurationDate
     FROM @opValData
@@ -408,7 +409,8 @@ END
 
 IF @help <> 1
 BEGIN
-        RAISERROR(N'Retrieving...', 0, 0) WITH NOWAIT;
+        RAISERROR(N'Information to Retrieve:', 0, 0) WITH NOWAIT;
+        RAISERROR(N'------------------------', 0, 0) WITH NOWAIT;
 
         IF @id IS NOT NULL OR EXISTS(SELECT 1 FROM @opVal WHERE Val = 'V')
         BEGIN   /*Verbose params processing */      
@@ -423,21 +425,6 @@ BEGIN
                 RAISERROR(N'   << No Executable statistics were found for execution_id = %I64d >>' , 0, 0, @id) WITH NOWAIT;
                 RETURN;
             END
-
-            --Decrypting sensitive - open the symmetric key
-            IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'DS')
-            BEGIN
-                SET @decryptSensitive = 1;
-                RAISERROR(N' - Decrypting sensitive data', 0, 0) WITH NOWAIT;
-                SET @certName = N'MS_Cert_Exec_' + CONVERT(nvarchar(20), @id)
-                SET @keyName = N'MS_Enckey_Exec_' + CONVERT(nvarchar(20), @id)
-
-                SET @sql = N'OPEN SYMMETRIC KEY ' + QUOTENAME(@keyName) + N' DECRYPTION BY CERTIFICATE ' + QUOTENAME(@certName);
-                EXECUTE sp_executesql @sql;
-                SET @sql = N'';
-
-            END
-
 
             /*Get EVENT MESSAGES param */
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'EM')
@@ -623,8 +610,7 @@ BEGIN
         END /*Non Verbose Params processing */
 
 
-    /* General Params processing */
-
+    /* General Params processing */  
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'AGR')
     BEGIN
         SET @includeAngetReferences = 1;
@@ -637,32 +623,50 @@ BEGIN
         RAISERROR(N' - Including information about Agent Job Step invoking the execution', 0, 0) WITH NOWAIT;
     END
 
+    IF @id IS NULL AND @opLastCnt IS NULL AND @opFromTZ IS NULL AND @minInt IS NULL  AND @lastSpecified = 0
+    BEGIN
+        SET @opLastCnt = @defaultLastOp;
+        RAISERROR(N' - default Last %d operations', 0, 0, @opLastCnt) WITH NOWAIT;
+    END
+
+    --Decrypting sensitive
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'DS')
+    BEGIN
+        SET @decryptSensitive = 1;
+        RAISERROR(N'   - DECRYPTING SENSITIVE DATA', 0, 0) WITH NOWAIT;
+    END
+
+    --Soring processing
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'ST')
     BEGIN
         IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'ST' AND StrVal IN ('_A', '_ASC','A','ASC'))
             SET @useTimeDescenting = 0;
 
         SET @useStartTime = 1;
-    END
 
-    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'ET')
+        SET @msg = CASE WHEN @useTimeDescenting = 0 THEN 'Ascending' ELSE N'Descending' END
+        RAISERROR(N'   - Sort by Start Time %s', 0, 0, @msg) WITH NOWAIT;
+    END 
+    ELSE IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'ET')
     BEGIN
         IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'ET' AND StrVal IN ('_A', '_ASC','A','ASC'))
             SET @useTimeDescenting = 0;
 
         SET @useEndTime = 1;
+        SET @msg = CASE WHEN @useTimeDescenting = 0 THEN 'Ascending' ELSE N'Descending' END
+        RAISERROR(N'   - Sort by End Time %s', 0, 0, @msg) WITH NOWAIT;
+    END
+    ELSE
+    BEGIN
+        IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'CT' AND StrVal IN ('_A', '_ASC','A','ASC'))
+            SET @useTimeDescenting = 0;
+
+        SET @msg = CASE WHEN @useTimeDescenting = 0 THEN 'Ascending' ELSE N'Descending' END
+        RAISERROR(N'   - Sort by Create Time %s', 0, 0, @msg) WITH NOWAIT;
     END
 
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'X')
         SET @totalMaxRows = (SELECT MaxIntVal FROM @opVal WHERE Val = N'X')
-
-
-    
-    IF @id IS NULL AND @opLastCnt IS NULL AND @opFromTZ IS NULL AND @minInt IS NULL  AND @lastSpecified = 0
-    BEGIN
-        SET @opLastCnt = @defaultLastOp;
-        RAISERROR(N' - default Last %d operations', 0, 0, @opLastCnt) WITH NOWAIT;
-    END
 
     /* END OF OPERATION  Retrieval */
 
@@ -888,22 +892,21 @@ RAISERROR(N'
                               If Keyword is missing the default LAST 100 records are retrieved
 
   Date/Time                 - If provided then executions since that Date/Time are returned. If multiple Date/Time values are provided then executions between MIN and MAX values are returned.
-  hh:MM(:ss)                - If only time is provided, then the time is interpreted as Time of current day
+  hh:MM[:ss]                - If only time is provided, then the time is interpreted as Time of current day
   yyyy-mm-dd                - If only date is provided, then it is intepreted as midnigth of that day (YYYY-MM-DDTHH:MM:SS)
   yyyy-mm-ddThh:MM:ss       - When Date/Time is passed, then Time is separated by T from date. In that case hours have to be provided as two digits
 
-  START_TIME (ST)           - Use Start Time for searching (By Default Create Time is used)
-  END_TIME (ET)             - Use End Time for searching (By Default Create Time is used) ', 0, 0) WITH NOWAIT;
+
+  START_TIME (ST)[_A|_ASC]  - Use Start Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending.
+  END_TIME (ET)[_A|_ASC]    - Use End Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending.
+  CREATE_TIME (CT)[_A|_ASC] - Use Create Time forr searching. This is the default. Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending.', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'  
   >|>=|<|<=|=dddddd         - Duration Specifier. If provided then only operations with duration corresponding to the specifier are returned. Multiple specifiers are combined with AND.
                             - If multiple durations are specified for the same specifier, MAX duration is used for [>] and [>=] and and MIN durtion for [<], [<=], [=]
   dddddd                    - Specifies duration in below allowed formats
-  hh:MM(:ss(.fff))          - If only time is specified, it represents duration in hours, minutes, seconds and fraction of seconds
-  iiid(hh:MM(:ss(.fff)))    - iii specifies followed by d specifies number of days. Optional additional time can follow
-
-
-
+  hh:MM[:ss[.fff]]          - If only time is specified, it represents duration in hours, minutes, seconds and fraction of second
+  iiid[hh:MM[:ss[.fff]]]    - iii specifies followed by d specifies number of days. Optional additional time can follow
 
 ', 0, 0) WITH NOWAIT;
 
@@ -912,10 +915,12 @@ RAISERROR(N'
   (P)ROJECT                 - Optional keyword which specifeis the result will be grouped by FOLDER, PROJECT. Number of last records is per project
   (E)XECUTABLE              - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
   
-  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information in VERBOSE mode. If specified, sensitive execution paramters will be decrypted and the values provided
+  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive execution paramters will be decrypted and the values provided
 
-  AGENT_REFERENCES (AGR)    - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval)
-  AGENT_JOB (AGT)           - If available, Retrieve information about agent Job which started the execution. (Slow-down the retrieval).
+  AGENT_REFERENCES (AGR)    - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval). Runs in caller context. Caller must have permissions to msdb.
+  AGENT_JOB (AGT)           - If available, Retrieve information about agent Job which started the execution. (Slow-down the retrieval). Runs in caller context. Caller must have permissions to msdb.
+
+
   MA(X)iiiii                - Optional keyword which specifies that when the LAST rows are returned per FOLDER, PROJECT, EXECUTABLE, then maximum of LAST iiiii rows
                               will be retrieved and those grouped and returned as per above specification', 0, 0) WITH NOWAIT;
 RAISERROR(N'
@@ -1103,7 +1108,7 @@ Data AS (
         ,e.package_name
         ,o.start_time
         ,o.end_time
-        ,RIGHT(''     '' + CONVERT(nvarchar(3), DATEDIFF(DAY, 0, durationDate)) + ''d '', 5) + CONVERT(varchar(12), CONVERT(time, durationDate)) AS duration
+        ,RIGHT(''     '' + CONVERT(nvarchar(5), DATEDIFF(DAY, 0, durationDate)) + ''d '', 6) + CONVERT(varchar(12), CONVERT(time, durationDate)) AS duration
         ,CASE o.[status]
             WHEN 1 THEN ''Created''
             WHEN 2 THEN ''Running''
@@ -1393,7 +1398,7 @@ N'
             ,run_date_time              ''job_step/@run_date_time''
             ,run_duration               ''job_step/@run_duration''
             ,retries_attempted          ''job_step/@retries_attempted''
-            ,o.name                     ''job_step/@operator_emailed_name''
+            ,o.name                     ''job_step/@operator_name''
             ,o.email_address            ''job_step/@operator_email_address''
             ,p.name                     ''job_step/@proxy_name''
             ,c.name                     ''job_step/@credentail_name''
@@ -1409,9 +1414,9 @@ N'
             ,CONVERT(xml, N''<?message-- '' + REPLACE(REPLACE(step_message, N''<?'', N''''), N''?>'', N'''') + N'' --?>'') ''job_step''
         FROM #JobsExecutionData jed
         LEFT JOIN internal.environment_references er WITH(NOLOCK) ON er.reference_id = jed.environment_reference_id
-        LEFT JOIN msdb.dbo.sysproxies p WITH(NOLOCK) ON jed.proxy_id = p.proxy_id
-        LEFT JOIN sys.credentials c WITH(NOLOCK) ON c.credential_id = p.credential_id
-        LEFT JOIN msdb.dbo.sysoperators o WITH(NOLOCK) ON o.id = jed.operator_id_emailed
+        LEFT JOIN #proxies p WITH(NOLOCK) ON jed.proxy_id = p.proxy_id
+        LEFT JOIN #credentials c WITH(NOLOCK) ON c.credential_id = p.credential_id
+        LEFT JOIN #operators o WITH(NOLOCK) ON o.id = jed.operator_id_emailed
         WHERE jed.execution_id = d.execution_id
         FOR XML PATH(''agent_job''), TYPE
         ) AS agent_job_detail'
@@ -1449,10 +1454,6 @@ N'
                     ,CONVERT(xml, N''<?command-- '' + REPLACE(REPLACE(command, N''<?'', N''''), N''?>'', N'''') + N'' --?>'')
                 FROM #JobsData J1
                 LEFT JOIN internal.environment_references er WITH(NOLOCK) ON er.reference_id = J1.environment_reference_id
-                --LEFT JOIN msdb.dbo.sysproxies p WITH(NOLOCK) ON js.proxy_id = p.proxy_id
-                --LEFT JOIN sys.credentials c WITH(NOLOCK) ON p.credential_id = p.credential_id
-                --LEFT JOIN msdb.dbo.sysoperators o WITH(NOLOCK) ON o.id = jh.operator_id_emailed
-
                 WHERE
                     j1.job_id = j.job_id
                     AND
@@ -1537,9 +1538,13 @@ N'
                 WHEN sensitive = 1 AND @decryptSensitive = 1 THEN 
                     (SELECT
                     CASE [parameter_data_type]
-                        WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEY([sensitive_parameter_value]), [parameter_data_type]), 126)
-                        ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEY([sensitive_parameter_value]), [parameter_data_type]))
+                        WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Exec_'' + CONVERT(nvarchar(20), d.execution_id)), NULL, [sensitive_parameter_value]), [parameter_data_type]), 126)
+                        ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Exec_'' + CONVERT(nvarchar(20), d.execution_id)), NULL, [sensitive_parameter_value]), [parameter_data_type]))
                     END ''processing-instruction(sensitive-value)''
+                    --CASE [parameter_data_type]
+                    --    WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEY([sensitive_parameter_value]), [parameter_data_type]), 126)
+                    --    ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEY([sensitive_parameter_value]), [parameter_data_type]))
+                    --END ''processing-instruction(sensitive-value)''
                     FOR XML PATH(''''), TYPE
                     ) 
                     
@@ -1627,8 +1632,18 @@ END
 
 /* END DEBUG PRINT*/
 
+    /**************              EXECUTION SECTION                ****************** */
+    RAISERROR(N'', 0, 0) WITH NOWAIT;
+    RAISERROR(N'', 0, 0) WITH NOWAIT;
+    RAISERROR(N'Processing Information:', 0, 0) WITH NOWAIT;
+    RAISERROR(N'-----------------------', 0, 0) WITH NOWAIT;
+
     IF @includeAngetReferences = 1
     BEGIN
+
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Starting retrieving Agent references data...', 0, 0, @tms) WITH NOWAIT;
+
         IF OBJECT_ID('tempdb..#JobsData') IS NOT NULL
             DROP TABLE #JobsData;
 
@@ -1658,242 +1673,376 @@ END
 	        ,command                    nvarchar(max) NULL
         );
 
+        BEGIN TRY
+            EXECUTE AS CALLER;
 
-        WITH JobsData AS (
-            SELECT
-                js.job_id               AS job_id
-                ,j.name                 AS job_name
-                ,j.start_step_id        AS start_step_id
-                ,j.enabled              AS is_enabled
-                ,ja.start_execution_date    AS start_execution_date
-                ,ja.stop_execution_date     AS stop_execution_date
-                ,ja.next_scheduled_run_date AS next_scheduled_run_date
-                ,step_id                AS step_id
-                ,step_name              AS step_name
-                ,SUBSTRING(command, PATINDEX('%\SSISDB\%', command) + 8, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) - PATINDEX('%\SSISDB\%', command) - 8) AS folder_name
-                ,SUBSTRING(
-                    command
-                    ,CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1
-                    ,CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) - (CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1)
-                )                       AS project_name
-                ,SUBSTRING(
-                    command
-                    ,CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1
-                    ,CHARINDEX('\', command, CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1) - (CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1)
-                 )                      AS package_name
-                ,SUBSTRING(
-                    command
-                    ,NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) + 14
-                    ,CHARINDEX(' ', command, NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) + 14) - NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) - 14
-                 ) AS environment_reference_id
-                ,CONVERT(datetime, CONVERT(char(8), NULLIF(last_run_date, 0))) + CONVERT(datetime, TRY_CONVERT(time, STUFF(STUFF(RIGHT(REPLICATE('0', 6) +  CAST(NULLIF(last_run_time, 0) as varchar(6)), 6), 3, 0, ':'), 6, 0, ':'))) AS last_run
-                ,CASE last_run_outcome 
-                    WHEN 0 THEN 'Failed'
-                    WHEN 1 THEN 'Succeeded'
-                    WHEN 2 THEN 'Retry'
-                    WHEN 3 THEN 'Cancelled'
-                    ELSE 'Unknown'
-                END AS                  last_run_status
-                ,STUFF(STUFF(STUFF(RIGHT(REPLICATE('0', 8) + CAST(last_run_duration as varchar(8)), 8), 3, 0, 'd '), 7, 0, ':'),10, 0, ':') AS last_run_duration
-                ,last_run_outcome       AS last_run_outcome
-                ,last_run_retries       AS last_run_retries
-                ,p.name                 AS proxy_name
-                ,c.name                 AS credential_name
-                ,c.credential_identity  AS credential_identity
-                ,step_uid
-                ,command
-            FROM msdb.dbo.sysjobsteps js WITH(NOLOCK)
-            INNER JOIN msdb.dbo.sysjobs j WITH(NOLOCK) ON j.job_id = js.job_id
-            INNER JOIN msdb.dbo.sysjobactivity ja WITH(NOLOCK) ON ja.job_id = j.job_id AND ja.session_id = (SELECT MAX(session_id) FROM msdb.dbo.sysjobactivity)
-            LEFT JOIN msdb.dbo.sysproxies p WITH(NOLOCK) ON js.proxy_id = p.proxy_id
-            LEFT JOIN sys.credentials c WITH(NOLOCK) ON p.credential_id = p.credential_id
-            WHERE 
-                js.subsystem = 'SSIS'
-        )
-        INSERT INTO #JobsData (
-             job_id
-            ,job_name
-            ,start_step_id
-            ,is_enabled
-            ,start_execution_date
-            ,stop_execution_date
-            ,next_scheduled_run_date
-            ,step_id
-            ,step_name
-            ,folder_name
-            ,project_name
-            ,package_name
-            ,environment_reference_id
-            ,last_run
-            ,last_run_status
-            ,last_run_duration
-            ,last_run_outcome
-            ,last_run_retries
-            ,proxy_name
-            ,credential_name
-            ,credential_identity
-            ,step_uid
-            ,command
-        )
-        SELECT
-             job_id
-            ,job_name
-            ,start_step_id
-            ,is_enabled
-            ,start_execution_date
-            ,stop_execution_date
-            ,next_scheduled_run_date
-            ,step_id
-            ,step_name
-            ,folder_name
-            ,project_name
-            ,package_name
-            ,environment_reference_id
-            ,last_run
-            ,last_run_status
-            ,last_run_duration
-            ,last_run_outcome
-            ,last_run_retries
-            ,proxy_name
-            ,credential_name
-            ,credential_identity
-            ,step_uid
-            ,command
-        FROM JobsData
+            BEGIN TRY
+                WITH JobsData AS (
+                    SELECT
+                        js.job_id               AS job_id
+                        ,j.name                 AS job_name
+                        ,j.start_step_id        AS start_step_id
+                        ,j.enabled              AS is_enabled
+                        ,ja.start_execution_date    AS start_execution_date
+                        ,ja.stop_execution_date     AS stop_execution_date
+                        ,ja.next_scheduled_run_date AS next_scheduled_run_date
+                        ,step_id                AS step_id
+                        ,step_name              AS step_name
+                        ,SUBSTRING(command, PATINDEX('%\SSISDB\%', command) + 8, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) - PATINDEX('%\SSISDB\%', command) - 8) AS folder_name
+                        ,SUBSTRING(
+                            command
+                            ,CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1
+                            ,CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) - (CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1)
+                        )                       AS project_name
+                        ,SUBSTRING(
+                            command
+                            ,CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1
+                            ,CHARINDEX('\', command, CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1) - (CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1)
+                         )                      AS package_name
+                        ,SUBSTRING(
+                            command
+                            ,NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) + 14
+                            ,CHARINDEX(' ', command, NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) + 14) - NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) - 14
+                         ) AS environment_reference_id
+                        ,CONVERT(datetime, CONVERT(char(8), NULLIF(last_run_date, 0))) + CONVERT(datetime, TRY_CONVERT(time, STUFF(STUFF(RIGHT(REPLICATE('0', 6) +  CAST(NULLIF(last_run_time, 0) as varchar(6)), 6), 3, 0, ':'), 6, 0, ':'))) AS last_run
+                        ,CASE last_run_outcome 
+                            WHEN 0 THEN 'Failed'
+                            WHEN 1 THEN 'Succeeded'
+                            WHEN 2 THEN 'Retry'
+                            WHEN 3 THEN 'Cancelled'
+                            ELSE 'Unknown'
+                        END AS                  last_run_status
+                        ,STUFF(STUFF(STUFF(RIGHT(REPLICATE('0', 8) + CAST(last_run_duration as varchar(8)), 8), 3, 0, 'd '), 7, 0, ':'),10, 0, ':') AS last_run_duration
+                        ,last_run_outcome       AS last_run_outcome
+                        ,last_run_retries       AS last_run_retries
+                        ,p.name                 AS proxy_name
+                        ,c.name                 AS credential_name
+                        ,c.credential_identity  AS credential_identity
+                        ,step_uid
+                        ,command
+                    FROM msdb.dbo.sysjobsteps js WITH(NOLOCK)
+                    INNER JOIN msdb.dbo.sysjobs j WITH(NOLOCK) ON j.job_id = js.job_id
+                    INNER JOIN msdb.dbo.sysjobactivity ja WITH(NOLOCK) ON ja.job_id = j.job_id AND ja.session_id = (SELECT MAX(session_id) FROM msdb.dbo.sysjobactivity)
+                    LEFT JOIN msdb.dbo.sysproxies p WITH(NOLOCK) ON js.proxy_id = p.proxy_id
+                    LEFT JOIN sys.credentials c WITH(NOLOCK) ON p.credential_id = p.credential_id
+                    WHERE 
+                        js.subsystem = 'SSIS'
+                )
+                INSERT INTO #JobsData (
+                     job_id
+                    ,job_name
+                    ,start_step_id
+                    ,is_enabled
+                    ,start_execution_date
+                    ,stop_execution_date
+                    ,next_scheduled_run_date
+                    ,step_id
+                    ,step_name
+                    ,folder_name
+                    ,project_name
+                    ,package_name
+                    ,environment_reference_id
+                    ,last_run
+                    ,last_run_status
+                    ,last_run_duration
+                    ,last_run_outcome
+                    ,last_run_retries
+                    ,proxy_name
+                    ,credential_name
+                    ,credential_identity
+                    ,step_uid
+                    ,command
+                )
+                SELECT
+                     job_id
+                    ,job_name
+                    ,start_step_id
+                    ,is_enabled
+                    ,start_execution_date
+                    ,stop_execution_date
+                    ,next_scheduled_run_date
+                    ,step_id
+                    ,step_name
+                    ,folder_name
+                    ,project_name
+                    ,package_name
+                    ,environment_reference_id
+                    ,last_run
+                    ,last_run_status
+                    ,last_run_duration
+                    ,last_run_outcome
+                    ,last_run_retries
+                    ,proxy_name
+                    ,credential_name
+                    ,credential_identity
+                    ,step_uid
+                    ,command
+                FROM JobsData
+            END TRY
+            BEGIN CATCH
+                SELECT
+                    @msg = ERROR_MESSAGE()
+                    ,@tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+                RAISERROR(N'%s - !!! Agent Job References data NOT AVAILABLE due to errors !!!, msg: %s', 0, 0, @tms, @msg) WITH NOWAIT;
+            END CATCH
+
+            REVERT
+        END TRY
+        BEGIN CATCH
+            REVERT;
+            THROW;
+        END CATCH
+
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Agent references data retrieval completed...', 0, 0, @tms) WITH NOWAIT;
     END
 
     IF @includeAgentJob = 1
     BEGIN
-        IF OBJECT_ID('tempdb..#JobsExecutionData') IS NOT NULL
-            DROP TABLE #JobsExecutionData;
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Starting retrieving Agent execution data...', 0, 0, @tms) WITH NOWAIT;
+
+            IF OBJECT_ID('tempdb..#JobsExecutionData') IS NOT NULL
+                DROP TABLE #JobsExecutionData;
+
+            IF OBJECT_ID('tempdb..#credentials') IS NOT NULL
+                DROP TABLE #credentials;
+
+            IF OBJECT_ID('tempdb..#proxies') IS NOT NULL
+                DROP TABLE #proxies;
+
+            IF OBJECT_ID('tempdb..#operators') IS NOT NULL
+                DROP TABLE #operators;
+
+            CREATE TABLE #credentials (
+                credential_id           int     NOT NULL PRIMARY KEY CLUSTERED
+                ,name                   sysname 
+                ,credential_identity    nvarchar(4000)
+            )
+
+            CREATE TABLE #proxies (
+                proxy_id                int     NOT NULL PRIMARY KEY CLUSTERED
+                ,name                   sysname
+                ,credential_id          int
+            )
+
+            CREATE TABLE  #operators (
+                id                      int     NOT NULL PRIMARY KEY CLUSTERED
+                ,name                   sysname 
+                ,email_address          nvarchar(100)
+            )
 
             CREATE TABLE #JobsExecutionData(
-	             execution_id               bigint              NOT NULL --PRIMARY KEY CLUSTERED
-	            ,job_id                     uniqueidentifier    NOT NULL
-	            ,job_name                   sysname             NOT NULL
-	            ,start_step_id              int                 NOT NULL
-	            ,is_enabled                 tinyint             NOT NULL
-	            ,step_id                    int                 NOT NULL
-	            ,step_name                  sysname             NOT NULL
-	            ,folder_name                nvarchar(128)       NULL
-	            ,project_name               nvarchar(128)       NULL
-	            ,package_name               nvarchar(260)       NULL
-	            ,environment_reference_id   bigint              NULL
-	            ,step_uid                   uniqueidentifier    NULL
-	            ,step_message               nvarchar(4000)      NULL
-	            ,command                    nvarchar(max)       NULL
-                ,run_status                 nvarchar(10)        NULL
-                ,run_date_time              datetime            NULL
-                ,run_duration               nchar(12)           NULL
-                ,retries_attempted          int                 NULL
-                ,operator_id_emailed        int                 NULL
-                ,proxy_id                   int                 NULL
+	                 execution_id               bigint              NOT NULL --PRIMARY KEY CLUSTERED
+	                ,job_id                     uniqueidentifier    NOT NULL
+	                ,job_name                   sysname             NOT NULL
+	                ,start_step_id              int                 NOT NULL
+	                ,is_enabled                 tinyint             NOT NULL
+	                ,step_id                    int                 NOT NULL
+	                ,step_name                  sysname             NOT NULL
+	                ,folder_name                nvarchar(128)       NULL
+	                ,project_name               nvarchar(128)       NULL
+	                ,package_name               nvarchar(260)       NULL
+	                ,environment_reference_id   bigint              NULL
+	                ,step_uid                   uniqueidentifier    NULL
+	                ,step_message               nvarchar(4000)      NULL
+	                ,command                    nvarchar(max)       NULL
+                    ,run_status                 nvarchar(10)        NULL
+                    ,run_date_time              datetime            NULL
+                    ,run_duration               nchar(12)           NULL
+                    ,retries_attempted          int                 NULL
+                    ,operator_id_emailed        int                 NULL
+                    ,proxy_id                   int                 NULL
+            )
 
-        )
+        BEGIN TRY
+            --Change context to caller as AllSchemaOwner has no access to msdb
+            EXECUTE AS CALLER;
 
-        ;WITH JobsExecutionData AS (
+            BEGIN TRY
+                ;WITH JobsExecutionData AS (
+                    SELECT
+                         j.job_id                       AS job_id
+                        ,j.name                         AS job_name
+                        ,j.start_step_id                AS start_step_id
+                        ,j.enabled                      AS is_enabled
+                        ,jh.step_id                     AS step_id
+                        ,jh.step_name                   AS step_name
+                        ,jh.message                     AS step_message
+                        ,ISNULL(
+                            TRY_CONVERT(bigint, SUBSTRING(message, NULLIF(PATINDEX('%Execution ID: %', message), 0) + 14, CHARINDEX('.', message, NULLIF(PATINDEX('%Execution ID: %', message), 0) + 14) - NULLIF(PATINDEX('%Execution ID: %', message), 0) - 14)) 
+                            ,TRY_CONVERT(bigint, SUBSTRING(message, NULLIF(PATINDEX('%Execution ID: %', message), 0) + 14, CHARINDEX(',', message, NULLIF(PATINDEX('%Execution ID: %', message), 0) + 14) - NULLIF(PATINDEX('%Execution ID: %', message), 0) - 14)) 
+                         ) AS execution_id
+                        ,LEFT(SUBSTRING(command, PATINDEX('%\SSISDB\%', command) + 8, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) - PATINDEX('%\SSISDB\%', command) - 8), 128) AS folder_name
+                        ,LEFT(SUBSTRING(
+                            command
+                            ,CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1
+                            ,CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) - (CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1)
+                        ), 128)                       AS project_name
+                        ,LEFT(SUBSTRING(
+                            command
+                            ,CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1
+                            ,CHARINDEX('\', command, CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1) - (CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1)
+                            ), 260)                      AS package_name
+                        ,TRY_CONVERT(bigint, SUBSTRING(
+                            command
+                            ,NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) + 14
+                            ,CHARINDEX(' ', command, NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) + 14) - NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) - 14
+                            )) AS environment_reference_id
+                        ,step_uid
+                        ,command
+                        ,CASE jh.run_status
+                            WHEN 0 THEN 'Failed'
+                            WHEN 1 THEN 'Succeeded'
+                            WHEN 2 THEN 'Retry'
+                            WHEN 3 THEN 'Cancelled'
+                            ELSE 'Unknown'
+                        END as run_status
+                       ,CONVERT(datetime, CONVERT(char(8), jh.run_date)) + CONVERT(datetime, TRY_CONVERT(time, STUFF(STUFF(RIGHT(REPLICATE('0', 6) +  CAST(jh.run_time as varchar(6)), 6), 3, 0, ':'), 6, 0, ':'))) AS run_date_time
+                       ,STUFF(STUFF(STUFF(RIGHT(REPLICATE('0', 8) + CAST(jh.run_duration as varchar(8)), 8), 3, 0, 'd '), 7, 0, ':'),10, 0, ':') AS run_duration
+                       ,jh.operator_id_emailed
+                       ,jh.retries_attempted
+                       ,js.proxy_id
+                    FROM msdb.dbo.sysjobhistory jh WITH(NOLOCK)
+                    INNER JOIN msdb.dbo.sysjobsteps js WITH(NOLOCK) ON js.job_id = jh.job_id AND js.step_id = jh.step_id
+                    INNER JOIN msdb.dbo.sysjobs j WITH(NOLOCK) ON j.job_id = js.job_id
+                    WHERE
+                    js.subsystem = 'SSIS'
+                )
+                INSERT INTO #JobsExecutionData(
+                     execution_id
+                    ,job_id
+                    ,job_name
+                    ,start_step_id
+                    ,is_enabled
+                    ,step_id
+                    ,step_name
+                    ,folder_name
+                    ,project_name
+                    ,package_name
+                    ,environment_reference_id
+                    ,step_uid
+                    ,step_message
+                    ,command
+                    ,run_status
+                    ,run_date_time
+                    ,run_duration
+                    ,retries_attempted
+                    ,operator_id_emailed
+                    ,proxy_id
+                )
+                SELECT
+                     execution_id
+                    ,job_id
+                    ,job_name
+                    ,start_step_id
+                    ,is_enabled
+                    ,step_id
+                    ,step_name
+                    ,folder_name
+                    ,project_name
+                    ,package_name
+                    ,environment_reference_id
+                    ,step_uid
+                    ,step_message
+                    ,command
+                    ,run_status
+                    ,run_date_time
+                    ,run_duration
+                    ,retries_attempted
+                    ,operator_id_emailed
+                    ,proxy_id
+                FROM JobsExecutionData
+                WHERE execution_id IS NOT NULL
+        END TRY
+        BEGIN CATCH
             SELECT
-                 j.job_id                       AS job_id
-                ,j.name                         AS job_name
-                ,j.start_step_id                AS start_step_id
-                ,j.enabled                      AS is_enabled
-                ,jh.step_id                     AS step_id
-                ,jh.step_name                   AS step_name
-                ,jh.message                     AS step_message
-                ,ISNULL(
-                    TRY_CONVERT(bigint, SUBSTRING(message, NULLIF(PATINDEX('%Execution ID: %', message), 0) + 14, CHARINDEX('.', message, NULLIF(PATINDEX('%Execution ID: %', message), 0) + 14) - NULLIF(PATINDEX('%Execution ID: %', message), 0) - 14)) 
-                    ,TRY_CONVERT(bigint, SUBSTRING(message, NULLIF(PATINDEX('%Execution ID: %', message), 0) + 14, CHARINDEX(',', message, NULLIF(PATINDEX('%Execution ID: %', message), 0) + 14) - NULLIF(PATINDEX('%Execution ID: %', message), 0) - 14)) 
-                 ) AS execution_id
-                ,LEFT(SUBSTRING(command, PATINDEX('%\SSISDB\%', command) + 8, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) - PATINDEX('%\SSISDB\%', command) - 8), 128) AS folder_name
-                ,LEFT(SUBSTRING(
-                    command
-                    ,CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1
-                    ,CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) - (CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1)
-                ), 128)                       AS project_name
-                ,LEFT(SUBSTRING(
-                    command
-                    ,CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1
-                    ,CHARINDEX('\', command, CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1) - (CHARINDEX('\', command, CHARINDEX('\', command, PATINDEX('%\SSISDB\%', command) + 8) + 1) + 1)
-                    ), 260)                      AS package_name
-                ,TRY_CONVERT(bigint, SUBSTRING(
-                    command
-                    ,NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) + 14
-                    ,CHARINDEX(' ', command, NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) + 14) - NULLIF(PATINDEX('%/ENVREFERENCE%', command), 0) - 14
-                    )) AS environment_reference_id
-                ,step_uid
-                ,command
-                ,CASE jh.run_status
-                    WHEN 0 THEN 'Failed'
-                    WHEN 1 THEN 'Succeeded'
-                    WHEN 2 THEN 'Retry'
-                    WHEN 3 THEN 'Cancelled'
-                    ELSE 'Unknown'
-                END as run_status
-               ,CONVERT(datetime, CONVERT(char(8), jh.run_date)) + CONVERT(datetime, TRY_CONVERT(time, STUFF(STUFF(RIGHT(REPLICATE('0', 6) +  CAST(jh.run_time as varchar(6)), 6), 3, 0, ':'), 6, 0, ':'))) AS run_date_time
-               ,STUFF(STUFF(STUFF(RIGHT(REPLICATE('0', 8) + CAST(jh.run_duration as varchar(8)), 8), 3, 0, 'd '), 7, 0, ':'),10, 0, ':') AS run_duration
-               ,jh.operator_id_emailed
-               ,jh.retries_attempted
-               ,js.proxy_id
-            FROM msdb.dbo.sysjobhistory jh WITH(NOLOCK)
-            INNER JOIN msdb.dbo.sysjobsteps js WITH(NOLOCK) ON js.job_id = jh.job_id AND js.step_id = jh.step_id
-            INNER JOIN msdb.dbo.sysjobs j WITH(NOLOCK) ON j.job_id = js.job_id
-            WHERE
-            js.subsystem = 'SSIS'
-        )
-        INSERT INTO #JobsExecutionData(
-             execution_id
-            ,job_id
-            ,job_name
-            ,start_step_id
-            ,is_enabled
-            ,step_id
-            ,step_name
-            ,folder_name
-            ,project_name
-            ,package_name
-            ,environment_reference_id
-            ,step_uid
-            ,step_message
-            ,command
-            ,run_status
-            ,run_date_time
-            ,run_duration
-            ,retries_attempted
-            ,operator_id_emailed
-            ,proxy_id
-        )
-        SELECT
-             execution_id
-            ,job_id
-            ,job_name
-            ,start_step_id
-            ,is_enabled
-            ,step_id
-            ,step_name
-            ,folder_name
-            ,project_name
-            ,package_name
-            ,environment_reference_id
-            ,step_uid
-            ,step_message
-            ,command
-            ,run_status
-            ,run_date_time
-            ,run_duration
-            ,retries_attempted
-            ,operator_id_emailed
-            ,proxy_id
-        FROM JobsExecutionData
-        WHERE execution_id IS NOT NULL
+                @msg = ERROR_MESSAGE()
+                ,@tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+            RAISERROR(N'%s - !!! Agent Job Execution data NOT AVAILABLE due to errors !!!, msg: %s', 0, 0, @tms, @msg) WITH NOWAIT;
+        END CATCH
+        
+            BEGIN TRY
+                INSERT INTO #credentials (
+                    credential_id
+                    ,name
+                    ,credential_identity
+                )
+                SELECT
+                    credential_id
+                    ,name
+                    ,credential_id
+                FROM sys.credentials WITH(NOLOCK)
+            END TRY
+            BEGIN CATCH
+            SELECT
+                @msg = ERROR_MESSAGE()
+                ,@tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+                RAISERROR(N'%s - !!! Credentials data NOT AVAILABLE due to errors !!!, msg: %s', 0, 0, @tms, @msg) WITH NOWAIT;
+            END CATCH
+
+            BEGIN TRY
+                INSERT INTO #proxies (
+                    proxy_id
+                    ,name
+                    ,credential_id
+                )
+                SELECT
+                    proxy_id
+                    ,name
+                    ,credential_id
+                FROM msdb.dbo.sysproxies WITH(NOLOCK)
+            END TRY
+            BEGIN CATCH
+            SELECT
+                @msg = ERROR_MESSAGE()
+                ,@tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+                RAISERROR(N'%s - !!! Proxies data NOT AVAILABLE due to errors !!!, msg: %s', 0, 0, @tms, @msg) WITH NOWAIT;
+            END CATCH
+
+
+            BEGIN TRY
+                INSERT INTO   #operators (
+                    id
+                    ,name
+                    ,email_address
+                )
+                SELECT
+                    id,
+                    name
+                    ,email_address
+                FROM msdb.dbo.sysoperators WITH(NOLOCK)
+            END TRY
+            BEGIN CATCH
+            SELECT
+                @msg = ERROR_MESSAGE()
+                ,@tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+                RAISERROR(N'%s - !!! Operators data NOT AVAILABLE due to errors !!!', 0, 0, @tms, @msg) WITH NOWAIT;                
+            END CATCH
+
+            REVERT
+        END TRY
+        BEGIN CATCH
+            REVERT;
+            THROW;
+        END CATCH
 
         CREATE INDEX #JobsExecutionData ON #JobsExecutionData (execution_id)
+
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Agent execution data retrieval completed...', 0, 0, @tms) WITH NOWAIT;
     END
 
+
+SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+RAISERROR(N'%s - Starting retrieving SSISDB core operations data...', 0, 0, @tms) WITH NOWAIT;
 
 /* EXECUTION OF THE MAIN QUERY */
 EXEC sp_executesql @sql, N'@opLastCnt int, @messages_inrow int, @fromTZ datetimeoffset, @toTZ datetimeoffset, @minInt bigint, @maxInt bigint, @id bigint, @totalMaxRows int, @decryptSensitive bit', 
     @opLastCnt, @max_messages, @opFromTZ, @opToTZ, @minInt, @maxInt, @id, @totalMaxRows, @decryptSensitive
 
+SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+RAISERROR(N'%s - SSISDB core operations data retrieval completed...', 0, 0, @tms) WITH NOWAIT;
 
 
 
@@ -1901,6 +2050,9 @@ EXEC sp_executesql @sql, N'@opLastCnt int, @messages_inrow int, @fromTZ datetime
 
 IF @id IS NOT NULL
 BEGIN
+    SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+    RAISERROR(N'%s - Verbose mode filters preparation...', 0, 0, @tms) WITH NOWAIT;
+
     IF OBJECT_ID('tempdb..#tasks') IS NOT NULL
 	    DROP TABLE #tasks;
     CREATE TABLE #tasks (
@@ -1959,6 +2111,11 @@ BEGIN
     /*EXECUTABLE STATISTICS */
     IF @incoludeExecutableStatistics = 1
     BEGIN
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        SET @msg = N'%s - Starting retrieval of Executable Statistics... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @execRows), N'All') + N' rows)';
+        RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
+        
+
         SET @sql = N'
             SELECT ' + CASE WHEN @execRows IS NOT NULL THEN N'TOP (@execRows)' ELSE N'' END + N'
                 es.[statistics_id]
@@ -2005,20 +2162,26 @@ BEGIN
 
         IF EXISTS(SELECT 1 FROM [internal].[executable_statistics] es WHERE es.execution_id = @id)
         BEGIN
-            SET @msg = N' - Processing executable statistics... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @execRows), N'All') + N' rows)';
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
-
             EXEC sp_executesql @sql, N'@id bigint, @execRows int, @package_path nvarchar(max), @execution_path nvarchar(max)', @id, @execRows, @package_path, @execution_path
         END
         ELSE
         BEGIN
-            SET @msg = N' - No Executable statistics were found for execution_id = ' + CONVERT(nvarchar(20), @id)
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
+            SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+            SET @msg = N'%s - No Executable statistics exists for execution_id = %I64d'
+            RAISERROR(@msg, 0, 0, @tms, @id) WITH NOWAIT;
         END
+
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Executable Statistics retrieval completed...', 0, 0, @tms) WITH NOWAIT;
+
     END --IF @incoludeExecutableStatistics = 1
 
     IF @includeMessages = 1
     BEGIN
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        SET @msg = N'%s - Starting retrieval of Event Messages... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @max_messages), N'All') + N' rows)';
+        RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
+
         /* EVENT MESSAGES */
         IF EXISTS(SELECT 1 FROM internal.operation_messages om WHERE om.operation_id = @id)
         BEGIN        
@@ -2274,23 +2437,19 @@ BEGIN
                  om.message_time' + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END + N'
                 ,om.operation_message_id' + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END 
 
-
-
-            SET @msg = N' - Processing Event Messages... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @max_messages), N'All') + N' rows)';
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
             IF @taskFilter = 1
-            BEGIN
-                SET @msg = N'   - Using Task Filter(s): ' + @task_filter
+            BEGIN                             
+                SET @msg = N'                            - Using Task Filter(s): ' + @task_filter
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
             END
             IF @taskFilter = 1
-            BEGIN
-                SET @msg = N'   - Using Event Filter(s): ' + @event_filter
+            BEGIN                             
+                SET @msg = N'                            - Using Event Filter(s): ' + @event_filter
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
             END
             IF @subcomponentFilter = 1
-            BEGIN
-                SET @msg = N'   - Using SubComponent Filter(s): ' + @subcomponent_filter
+            BEGIN                             
+                SET @msg = N'                            - Using SubComponent Filter(s): ' + @subcomponent_filter
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
             END
 
@@ -2299,14 +2458,19 @@ BEGIN
         END
         ELSE
         BEGIN
-            SET @msg = N' - No Event Messasges were found for execution_id = ' + CONVERT(nvarchar(20), @id)
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
+             SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+            SET @msg = N'%s - No Event Messasges exists for execution_id = %I64d'
+            RAISERROR(@msg, 0, 0, @tms, @id) WITH NOWAIT;
         END
     END --IF @includeMessages = 1
 
     /* EXECUTABLE DATA STATISTICS */
     IF @includeEDS = 1 AND EXISTS(SELECT 1 FROM [internal].[execution_data_statistics] WHERE execution_id = @id)
     BEGIN
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        SET @msg = N'%s - Starting retrieval of Execution Data Statistics... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @edsRows), N'All') + N' rows)';
+        RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
+
         SET @sql = N'
             SELECT ' + CASE WHEN @edsRows IS NOT NULL THEN N' TOP (@edsRows) ' ELSE N'' END + N'
                  eds.[data_stats_id]
@@ -2338,18 +2502,29 @@ BEGIN
         END + N'
              ORDER BY created_time ' + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END 
         
-        SET @msg = N' - Processing Execution Data Statistics... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @edsRows), N'All') + N' rows)';
-        RAISERROR(@msg, 0, 0) WITH NOWAIT;
-
         EXEC sp_executesql @sql, N'@id bigint, @edsRows int, @package_path nvarchar(max), @execution_path nvarchar(max)', @id, @edsRows, @package_path, @execution_path
+
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Execution Data Statistics retrieval completed...', 0, 0, @tms) WITH NOWAIT;
+
     END --IF @includeEDS = 1 AND EXISTS(SELECT 1 FROM [internal].[execution_data_statistics] WHERE execution_id = @id)
     ELSE IF @includeEDS = 1
     BEGIN
-        SET @msg = N' - No Execution Data Statistics were found for execution_id = ' + CONVERT(nvarchar(20), @id)
-        RAISERROR(@msg, 0, 0) WITH NOWAIT;
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        SET @msg = N'%s - No Execution Data Statistics exists for execution_id = %I64d'
+        RAISERROR(@msg, 0, 0, @tms, @id) WITH NOWAIT;
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Execution Data Statistics retrieval completed...', 0, 0, @tms) WITH NOWAIT;
     END --ELSE IF @includeEDS = 1
 
     /* EXECUTION COMPONENT PHASES */
+    IF @includeECP = 1
+    BEGIN
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        SET @msg = N'%s - Processing Execution Component Phases... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @ecpRows), N'All') + N' rows)';
+        RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
+
+    END
     IF @includeECP = 1 AND EXISTS(SELECT 1 FROM internal.execution_component_phases WHERE execution_id = @id)
     BEGIN
         IF (@phase_filter IS NOT NULL)
@@ -2522,35 +2697,32 @@ BEGIN
         END + N'
              ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(sp.phase_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(ep.phase_time, ''9999-12-31'')' ELSE N'sp.sequence_id' END + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END 
         
-        SET @msg = N' - Processing Execution Component Phases... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @ecpRows), N'All') + N' rows)';
-        RAISERROR(@msg, 0, 0) WITH NOWAIT;
         IF @phaseFilter = 1
         BEGIN
-            RAISERROR(N'   - Using Phase Filter(s): %s', 0, 0, @phase_filter) WITH NOWAIT;
+            RAISERROR(N'                            - Using Phase Filter(s): %s', 0, 0, @phase_filter) WITH NOWAIT;
         END
         IF @taskFilter = 1
         BEGIN
-            RAISERROR(N'   - Using Task Filter(s): %s', 0, 0, @task_filter) WITH NOWAIT;
+            RAISERROR(N'                            - Using Task Filter(s): %s', 0, 0, @task_filter) WITH NOWAIT;
         END
         IF @subcomponentFilter = 1
         BEGIN
-            RAISERROR(N'   - Using SubComponent Filter(s): %s', 0, 0, @subcomponent_filter) WITH NOWAIT;
+            RAISERROR(N'                            - Using SubComponent Filter(s): %s', 0, 0, @subcomponent_filter) WITH NOWAIT;
         END
         
         EXEC sp_executesql @sql, N'@id bigint, @ecpRows int, @package_path nvarchar(max), @execution_path nvarchar(max)', @id, @ecpRows, @package_path, @execution_path
+
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Execution Component Phases retrieval completed...', 0, 0, @tms) WITH NOWAIT;
+
     END --IF @includeECP = 1 AND EXISTS(SELECT 1 FROM internal.execution_component_phases WHERE execution_id = @id)
     ELSE IF @includeECP = 1
     BEGIN
-        RAISERROR(N' - No Execution Component Phases were found for execution_id = %I64d', 0, 0, @id) WITH NOWAIT;
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - No Execution Component Phases exits for execution_id = %I64d', 0, 0, @tms, @id) WITH NOWAIT;
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Execution Component Phases retrieval completed...', 0, 0, @tms) WITH NOWAIT;
     END --ELSE IF @includeECP = 1
-
-    --close symmetric key if we were decryptin sensitive
-    IF @decryptSensitive = 1
-    BEGIN
-        SET @sql = N'CLOSE SYMMETRIC KEY ' + QUOTENAME(@keyName);
-        EXECUTE sp_executesql @sql;
-        SET @sql = N'';
-    END
 END
 GO
 --GRANT EXECUTE permission on the stored procedure to [ssis_admin] role
