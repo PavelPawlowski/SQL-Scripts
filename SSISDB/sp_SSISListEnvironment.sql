@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISListEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISListEnvironment]''')
 GO
 /* ****************************************************
-sp_SSISListEnvironment v 0.31 (2017-10-11)
+sp_SSISListEnvironment v 0.35 (2017-10-24)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -102,7 +102,7 @@ BEGIN
     IF @folder IS NULL OR @environment IS NULL
         SET @printHelp = 1
 
-	RAISERROR(N'sp_SSISListEnvironment v0.31 (2017-10-11) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_SSISListEnvironment v0.35 (2017-10-24) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 	RAISERROR(N'==================================================================' , 0, 0) WITH NOWAIT;
 
     IF @value IS NOT NULL AND @exactValue IS NOT NULL
@@ -138,7 +138,7 @@ BEGIN
 RAISERROR(N'
 Wildcards:
     Wildcards are standard wildcards for the LIKE statement
-    Entries prefixed with [-] (minus) symbol are excluded form results.
+    Entries prefixed with [-] (minus) symbol are excluded form results and have priority over the non excluding
 
     Samples:
     sp_SSISListEnvironment @folder = N''TEST%%,DEV%%,-%%Backup'' = List all environment varaibles from folders starting with ''TEST'' or ''DEV'' but exclude all folder names ending with ''Backup''
@@ -249,146 +249,64 @@ Wildcards:
         SELECT DISTINCT
             LTRIM(RTRIM(V.value(N'.', N'nvarchar(128)'))) AS VariableName
         FROM @xml.nodes(N'/i') T(V)    
-    END
+    END;
 
-    DECLARE ec CURSOR FAST_FORWARD FOR
+
+    WITH Variables AS (
+        SELECT DISTINCT
+            ev.variable_id
+        FROM [internal].[environment_variables] ev
+        INNER JOIN @environments e ON e.EnvironmentID = ev.environment_id
+        INNER JOIN @variableNames vn ON ev.name LIKE vn.name AND LEFT(vn.name, 1) <> '-'
+
+        EXCEPT
+
+        SELECT DISTINCT
+            ev.variable_id
+        FROM [internal].[environment_variables] ev
+        INNER JOIN @environments e ON e.EnvironmentID = ev.environment_id
+        INNER JOIN @variableNames vn ON ev.name LIKE RIGHT(vn.name, LEN(vn.name) -1) AND LEFT(vn.name, 1) = '-'
+    ), VariableValues AS (
+        SELECT
+             e.FolderID
+            ,e.EnvironmentID
+            ,ev.variable_id             AS VariableID
+            ,e.FolderName
+            ,e.EnvironmentName
+            ,ev.[name]                  AS VariableName
+            ,ev.[value] AS v
+            ,ev.[sensitive_value]
+            ,CASE 
+                WHEN ev.[sensitive] = 0                            THEN [value]
+                WHEN ev.[sensitive] = 1 AND @decryptSensitive = 1   THEN [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N'MS_Cert_Env_' + CONVERT(nvarchar(20), ev.environment_id)), NULL, ev.[sensitive_value]), ev.[type])
+                ELSE NULL
+             END                        AS Value
+            ,ev.[description]           AS VariableDescription
+            ,ev.[type]                  AS VariableType
+            ,ev.[base_data_type]        AS BaseDataType
+            ,ev.[sensitive]             AS IsSensitive
+        FROM [internal].[environment_variables] ev
+        INNER JOIN Variables v ON v.variable_id = ev.variable_id
+        INNER JOIN @environments e ON e.EnvironmentID = ev.environment_id
+    ), VariableValuesString AS (
     SELECT
-        EnvironmentID
-        ,FolderID
+        FolderID
+        ,EnvironmentID
+        ,VariableID
         ,FolderName
         ,EnvironmentName
-    FROM @environments
-
-    OPEN ec;
-
-    FETCH NEXT FROM ec INTO @src_environment_id, @src_folder_id, @src_folder_name, @src_environment_name
-
-    WHILE @@FETCH_STATUS = 0
-    BEGIN
-        --Set Source and Destiantion Environment keys and Certificates        
-        SET @src_keyName = 'MS_Enckey_Env_' + CONVERT(varchar, @src_Environment_id);
-        SET @src_certificateName = 'MS_Cert_Env_' + CONVERT(varchar,@src_Environment_id)
-
-        --Open the Symmetic Keys for Descryption/Encryption
-        SET @sql = 'OPEN SYMMETRIC KEY ' + @src_keyName + ' DECRYPTION BY CERTIFICATE ' + @src_certificateName
-        EXECUTE sp_executesql @sql
-
-
-        --Declare cursor for iteration over the environment variables
-        DECLARE cr CURSOR FAST_FORWARD FOR
-            SELECT DISTINCT
-                 ev.variable_id
-                ,ev.[name]
-                ,ev.[description]
-                ,ev.[type]
-                ,ev.[sensitive]
-                ,ev.[value]
-                ,ev.[sensitive_value]
-                ,ev.[base_data_type]
-            FROM [internal].[environment_variables] ev
-            INNER JOIN @variableNames vn ON ev.name LIKE vn.name AND LEFT(vn.name, 1) <> '-'
-            WHERE
-                ev.environment_id = @src_Environment_id
-            EXCEPT
-            SELECT 
-                 ev.variable_id
-                ,ev.[name]
-                ,ev.[description]
-                ,ev.[type]
-                ,ev.[sensitive]
-                ,ev.[value]
-                ,ev.[sensitive_value]
-                ,ev.[base_data_type]
-            FROM [internal].[environment_variables] ev
-            INNER JOIN @variableNames vn ON ev.name LIKE RIGHT(vn.name, LEN(vn.name) -1) AND LEFT(vn.name, 1) = '-'
-            WHERE
-                ev.environment_id = @src_Environment_id
-
-
-        OPEN cr;
-
-        --Iterate over the environment variables
-        FETCH NEXT FROM cr into @variable_id, @name, @description, @type, @sensitive, @valueInternal, @sensitive_value, @base_data_type
-        WHILE @@FETCH_STATUS = 0
-        BEGIN
-            --Decrypt the sensitive_value for the purpose of re-encrypting on printing into the script
-            SET @decrypted_value = DECRYPTBYKEY(@sensitive_value)
-
-            SELECT
-                @valueInternal =CASE 
-                                    WHEN @sensitive = 0                             THEN @valueInternal
-                                    WHEN @sensitive = 1 AND @decryptSensitive = 1   THEN [internal].[get_value_by_data_type](@decrypted_value, @type)
-                                    ELSE NULL
-                                END
-
-            SELECT
-                @stringval = CASE
-                                WHEN @type = 'datetime' THEN CONVERT(nvarchar(50), @valueInternal, 126)
-                                ELSE CONVERT(nvarchar(4000), @valueInternal)
-                            END            
-
-            IF ((@value IS NULL OR @value = N'%') AND @exactValue IS NULL) OR (@exactValue IS NOT NULL AND @stringval = @exactValue)  OR EXISTS (
-                SELECT
-                    Value
-                FROM @values v
-                WHERE
-                    @exactValue IS NULL
-                    AND
-                    LEFT(v.Value, 1) <> '-'
-                    AND
-                    @stringval LIKE v.Value
-                EXCEPT
-                SELECT
-                    Value
-                FROM @values v
-                WHERE
-                    LEFT(v.Value, 1) = '-'
-                    AND
-                    @stringval LIKE RIGHT(v.Value, LEN(v.Value) - 1)
-            )
-            BEGIN            
-                INSERT INTO @outputTable (
-                    FolderID
-                    ,FolderName
-                    ,EnvironmentID
-                    ,EnvironmentName
-                    ,VariableID
-                    ,VariableName
-                    ,VariableDescription
-                    ,VariableType
-                    ,BaseDataType
-                    ,Value
-                    ,IsSensitive
-                )
-                VALUES (
-                     @src_folder_id
-                    ,@src_folder_name
-                    ,@src_Environment_id
-                    ,@src_environment_name
-                    ,@variable_id
-                    ,@name
-                    ,@description
-                    ,@type
-                    ,@base_data_type
-                    ,@valueInternal
-                    ,@sensitive
-                )
-            END
-            FETCH NEXT FROM cr into @variable_id, @name, @description, @type, @sensitive, @valueInternal, @sensitive_value, @base_data_type
-        END
-        CLOSE cr;
-        DEALLOCATE cr;
-
-        --Close symmetric keys being used during the process
-        SET @sql = 'CLOSE SYMMETRIC KEY '+ @src_keyName
-        EXECUTE sp_executesql @sql
-
-        FETCH NEXT FROM ec INTO @src_environment_id, @src_folder_id, @src_folder_name, @src_environment_name
-    END
-
-    CLOSE ec;
-    DEALLOCATE ec;
-
+        ,VariableName
+        ,Value
+        ,CASE
+            WHEN LOWER(vv.VariableType) = 'datetime' THEN CONVERT(nvarchar(50), Value, 126)
+            ELSE CONVERT(nvarchar(4000), Value)
+         END  AS StringValue
+        ,VariableDescription
+        ,VariableType
+        ,BaseDataType
+        ,IsSensitive
+    FROM VariableValues vv
+    )
     SELECT
         FolderID
         ,EnvironmentID
@@ -401,7 +319,31 @@ Wildcards:
         ,VariableType
         ,BaseDataType
         ,IsSensitive
-    FROM @outputTable
+    FROM VariableValuesString
+    WHERE
+        ((@value IS NULL OR @value = N'%') AND @exactValue IS NULL) OR (@exactValue IS NOT NULL AND @stringval = @exactValue)
+        OR
+        EXISTS (
+            SELECT
+                StringValue
+            FROM @values v
+            WHERE
+                @exactValue IS NULL
+                AND
+                LEFT(v.Value, 1) <> '-'
+                AND
+                StringValue LIKE v.Value
+            EXCEPT
+            SELECT
+                StringValue
+            FROM @values v
+            WHERE
+                @exactValue IS NULL
+                AND
+                LEFT(v.Value, 1) = '-'
+                AND
+                StringValue LIKE RIGHT(v.Value, LEN(v.Value) - 1)
+        )
     ORDER BY FolderName, EnvironmentName, VariableName
 END
 
