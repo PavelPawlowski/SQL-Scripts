@@ -141,19 +141,19 @@ Wildcards:
 RAISERROR(N'
 Table for output resultset:
 ---------------------------
-    CREATE TABLE #outputTable (
-         [FolderID]             bigint
-        ,[EnvironmentID]        bigint
-        ,[FolderName]           nvarchar(128)
-        ,[EnvironmentName]      nvarchar(128)
-        ,[VariableID]           bigint
-        ,[VariableName]         nvarchar(128)
-        ,[VariableDescription]  nvarchar(1024)
-        ,[VariableType]         nvarchar(128)
-        ,[BaseDataType]         nvarchar(128)
-        ,[Value]                sql_variant
-        ,[IsSensitive]          bit
-    )
+CREATE TABLE #outputTable (
+        [FolderID]             bigint
+    ,[EnvironmentID]        bigint
+    ,[VariableID]           bigint
+    ,[FolderName]           nvarchar(128)
+    ,[EnvironmentName]      nvarchar(128)
+    ,[VariableName]         nvarchar(128)
+    ,[Value]                sql_variant
+    ,[VariableDescription]  nvarchar(1024)
+    ,[VariableType]         nvarchar(128)
+    ,[BaseDataType]         nvarchar(128)
+    ,[IsSensitive]          bit
+)
 ', 0, 0) WITH NOWAIT;
 
         RAISERROR(N'',0, 0) WITH NOWAIT; 
