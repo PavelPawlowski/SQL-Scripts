@@ -4,8 +4,8 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneConfiguration] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneConfiguration]''')
 GO
 /* ****************************************************
-sp_SSISCloneConfiguration v 0.20 (2017-06-08)
-(C) 2016 Pavel Pawlowski
+sp_SSISCloneConfiguration v 0.50 (2017-10-28)
+(C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -16,30 +16,26 @@ License:
     written consent.
 
 Description:
-    Clones SSIS Project Configurations from one project to another.
-    Allows scripting of the configurations for easy transfer among environments.
+    Clones SSIS Project(s) Configurations.
+    Allows scripting of Parameters configuration for easy transfer among environments.
 
 Parameters:
-     @sourceFolder              nvarchar(128)   =       --Name of the Source Folder from which the project configuraiont should be cloned
-    ,@sourceProject             nvarchar(128)   =       --Name of the Source Project to clone configurations
-	,@sourceObject              nvarchar(max)	= NULL	--Comma separated list of source objects which parameter configuration should be clonned. Supports LIKE Wildcards. Default NULL means all objects
-    ,@parameter                 nvarchar(max)   = NULL  --Comma separated list of parameter names which configuration should be clonned. Supports LIKE wildcards. Default NULL means all paramaters
-    ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the project configuration
-    ,@destinationProject		nvarchar(128)   = NULL  --Name of the desntination project to which the source project configuraiont should be cloned.
-
-    ,@printScript               bit             = 0     --Specifies whether script for the variables should be generated
-    ,@decryptSensitiveInScript  bit             = 1     --Specifies whether sensitive data shuld be descrypted in script. Otherwise it extracts NULLs for the sensitive data in Script
+     @folder                    nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Suppots wildcards
+    ,@project                   nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
+	,@object                    nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be clonned. Supports Wildcards.
+    ,@parameter                 nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be clonned. Supports wildcards.
+    ,@destinationFolder         nvarchar(128)   = '%'   --Pattern for naming Desnation Folder. It is a default value for the script.
+    ,@destinationProject		nvarchar(128)   = '%'   --Pattern for naming Desnation Project. It is a default value for the script.
+    ,@decryptSensitive          bit             = 0     --Specifies whether sensitive data should be decrypted
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISCloneConfiguration]
-     @sourceFolder              nvarchar(128)   = NULL  --Name of the Source Folder from which the project configuraiont should be cloned
-    ,@sourceProject             nvarchar(128)   = NULL  --Name of the Source Project to clone configurations
-	,@sourceObject              nvarchar(max)	= NULL	--Comma separated list of source objects which parameter configuration should be clonned. Supports LIKE Wildcards. Default NULL means all objects
-    ,@parameter                 nvarchar(max)   = NULL  --Comma separated list of parameter names which configuration should be clonned. Supports LIKE wildcards. Default NULL means all paramaters
-    ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the project configuration
-    ,@destinationProject		nvarchar(128)   = NULL  --Name of the desntination project to which the source project configuraiont should be cloned.
-
-    ,@printScript               bit             = 0     --Specifies whether script for the variables should be generated
-    ,@decryptSensitiveInScript  bit             = 0     --Specifies whether sensitive data shuld be descrypted in script. Otherwise it extracts NULLs for the sensitive data in Script
+     @folder                    nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Suppots wildcards
+    ,@project                   nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
+	,@object                    nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be clonned. Supports Wildcards.
+    ,@parameter                 nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be clonned. Supports wildcards.
+    ,@destinationFolder         nvarchar(128)   = '%'   --Pattern for naming Desnation Folder. It is a default value for the script.
+    ,@destinationProject		nvarchar(128)   = '%'   --Pattern for naming Desnation Project. It is a default value for the script.
+    ,@decryptSensitive          bit             = 0     --Specifies whether sensitive data should be decrypted
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 BEGIN
@@ -47,414 +43,574 @@ BEGIN
     SET XACT_ABORT ON;
 
     DECLARE
-         @src_folder_id                 bigint                  --ID of the source folder
-		,@src_project_id                bigint					--ID of the source project
-		,@src_project_lsn               bigint					--current source project lsn
-
-        ,@dst_folder_id                 bigint                  --ID of the destination folder
-        ,@dst_project_id                bigint					--ID of the destination project
-
+        @printHelp                      bit             = 0
         ,@captionBegin                  nvarchar(50)    = N''   --Beginning of the caption for the purpose of the catpion printing
         ,@captionEnd                    nvarchar(50)    = N''   --End of the caption linef or the purpose of the caption printing
         ,@caption                       nvarchar(max)           --sp_SSISCloneEnvironment caption
-        ,@msg                           nvarchar(max)           --General purpose message variable (used for printing output)
-        ,@msg2                          nvarchar(max)           --General purpose message variable (used for printing output)
-        ,@printHelp                     bit             = 0     --Identifies whether Help should be printed (in case of no parameters provided or error)
+        ,@xml                           xml
 
-
+        ,@folder_name                   nvarchar(128)
+        ,@project_name                  nvarchar(128)
         ,@object_type                   smallint				--Object type from object configuration
         ,@object_name                   nvarchar(260)			--Object name in the objects configurations
         ,@parameter_name                nvarchar(128)			--Parameter name in the objects configurations
-        ,@parameter_data_type           nvarchar(128)			--Tada type of the parameter
+        ,@parameter_data_type           nvarchar(128)			--Dada type of the parameter
         ,@sensitive                     bit                     --Identifies sensitive parameter
-        ,@default_value                 sql_variant             --Non sensitive value of the parameter
-        ,@sensitive_default_value       varbinary(max)          --Sensitive value of the parameterr
-        ,@base_data_type                nvarchar(128)           --Base data type of the parameter
+        ,@default_value                 sql_variant             
+        ,@string_value                  nvarchar(4000)          
         ,@value_type                    char(1)					--Specifies the value type of the parameter (V - direct value or R - reference
         ,@referenced_variable_name      nvarchar(128)
 
-        ,@sql                           nvarchar(max)           --Variable for storing dynamic SQL statements
-        ,@src_keyName                   nvarchar(256)           --Name of the symmetric key for decryption of the source sensitive values from the source project configuration
-        ,@src_certificateName           nvarchar(256)           --Name of the certificate for decryption of the source symmetric key
-        ,@decrypted_value               varbinary(max)          --Variable to store decrypted sensitive value
-        ,@references_count              int             = 0     --Count of configurations using References
-        ,@xml                           xml                     --variable for parsing input parameters
+        ,@lastFolderName                nvarchar(128)
+        ,@lastProjectName               nvarchar(128)
+        ,@lastObjName                   nvarchar(260)
+        ,@lastObjType                   smallint
+        ,@fldQuoted                     nvarchar(4000)
+        ,@prjQuoted                     nvarchar(4000)
+        ,@objNameQuoted                 nvarchar(4000)
+        ,@paramNameQuoted               nvarchar(4000)
+        ,@refVarQuoted                  nvarchar(4000)
+        ,@paramValQuoted                nvarchar(max)
+        ,@baseDataType                  nvarchar(128)
+        ,@msg                           nvarchar(max)
+        ,@valueTypeDesc                 nvarchar(10)
+        ,@objectTypeDesc                nvarchar(10)
 
-
-    CREATE TABLE #objects (
-        ObjectName nvarchar(260) NOT NULL PRIMARY KEY CLUSTERED
+    --Table variable for holding parsed folder names list
+    DECLARE @folders TABLE (
+        folder_id       bigint
     )
-    CREATE TABLE #params (
-        ParamName nvarchar(128) NOT NULL PRIMARY KEY CLUSTERED
+
+    DECLARE @projects TABLE (
+        project_id      bigint
+        ,version_lsn    bigint
     )
 
-    --If the needed input parameters are null, print help
-    IF @sourceFolder IS NULL OR @sourceProject IS NULL 
+    DECLARE @objectNames TABLE(
+        object_name nvarchar(260) NOT NULL PRIMARY KEY CLUSTERED
+    )
+    DECLARE @paramNames TABLE(
+        parameter_name nvarchar(128) NOT NULL PRIMARY KEY CLUSTERED
+    )
+    
+
+    IF @folder IS NULL
         SET @printHelp = 1
 
-    --Set Destination Folder and Environment Name in case of NULL       
-    SELECT
-         @destinationFolder     = ISNULL(@destinationFolder, @sourceFolder)
-        ,@destinationProject    = ISNULL(@destinationProject, @sourceProject)
-        
-    --force @printScript = 1 in case source = destination
-    IF @sourceFolder = @destinationFolder AND @sourceProject = @destinationProject
-        SET @printScript = 1
-
-
 	--Set and print the procedure output caption
-    IF (@printScript = 1 AND @printHelp = 0)
+    IF (@printHelp = 0)
     BEGIN
         SET @captionBegin = N'RAISERROR(N''';
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.20 (2017-06-08) (C) 2016 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.50 (2017-10-28) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'=====================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
 
-    --PRINT HELP
     IF @printHelp = 1
     BEGIN
-        RAISERROR(N'Clones SSIS Project configuration from one project to another', 0, 0) WITH NOWAIT; 
+        RAISERROR(N'Clones SSIS Project configurations from one or multiple projects', 0, 0) WITH NOWAIT; 
         RAISERROR(N'Allows scripting of the configurations for easy transfer among environments.', 0, 0) WITH NOWAIT;
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
         RAISERROR(N'Usage:', 0, 0) WITH NOWAIT; 
         RAISERROR(N'[sp_SSISCloneConfiguration] parameters', 0, 0) WITH NOWAIT; 
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
-        SET @msg = N'Parameters:
-     @sourceFolder              nvarchar(128)   =       --Name of the Source Folder from which the project configuration should be cloned.
-                                                          Source folder is required and must exist.
-    ,@sourceProject             nvarchar(128)   =       --Name of the Source project which configurations should be clonned.
-                                                          Source project is required and must exist.
-	,@sourceObject              nvarchar(max)	= NULL	--Comma separated list of source objects which parameter configuration should be clonned. 
-                                                          Supports LIKE Wildcards. 
-                                                          Default NULL means all objects.
-                                                          It can point to Project name or concrete package name.
-    ,@parameter                 nvarchar(max)   = NULL  --Comma separated list of parameter names which configuration should be clonned. 
-                                                          Supports LIKE wildcards. 
-                                                          Default NULL means all paramaters
-    ,@destinationFolder         nvarchar(128)   = NULL  --Name of the destination folder to which the project configuration should be cloned.
-                                                          Destination folder is optional and if not provided @sourceFolder is being used.
-    ,@destinationProject        nvarchar(128)   = NULL  --Name of the destination project to which the source project configuraions should be cloned. 
-                                                          Destiantion Project is not required and Source Project name is used when not provided.
-                                                          When both @destinationFolder and @destinationProject are NULL or are matching the source
-                                                          @printScript = 1 is enforced.
-    ,@printScript               bit             = 0     --Specifies whether script for clonning should be generated or configuration should be clonned immediatelly.
-    ,@decryptSensitiveInScript  bit             = 0     --Specifies whether sensitive data shuld be descrypted in script.
-                                                          Otherwise it extracts NULLs for the sensitive data in Script and data needs to be provided manually
-    '
-        RAISERROR(@msg, 0, 0) WITH NOWAIT;
+        RAISERROR(N'Parameters:
+     @folder                    nvarchar(max)   = NULL  - Comma separated list of project folders to script configurations. Suppots wildcards
+                                                          Configurations for projects in matching folders will be scripted
+    ,@project                   nvarchar(max)   = ''%%''   - Comma separated list of projects to script configurations. Support wildcards
+                                                          Configurations for matching projects will be scripted
+	,@object                    nvarchar(max)	= ''%%''   - Comma separated list of source objects which parameter configuration should be clonned. Supports Wildcards.
+                                                          Configurations for matching objects will be scripted
+    ,@parameter                 nvarchar(max)   = ''%%''   - Comma separated list of parameter names which configuration should be clonned. Supports wildcards.
+                                                          Configurations for matching paramters will be scripted
+    ,@destinationFolder         nvarchar(128)   = ''%%''   - Pattern for naming Desnation Folder. %% in the destinaton folder name is replaced by the name of the source folder.
+                                                          Allows easy clonning of multiple folders by prefixing or suffixing the %% patttern
+                                                          It sets the default value for the script
+    ,@destinationProject		nvarchar(128)   = ''%%''   - Pattern for naming destination Project. %% in the destination project name is rpelaced by the source project name.
+                                                          Allows easy clonning of multiple project configurations by prefixing or suffixing the %% pattern
+                                                          It sets the default value for the script
+    ,@decryptSensitive          bit             = 0     - Specifies whether sensitive data shuld be descrypted.
+        ', 0, 0) WITH NOWAIT;
+RAISERROR(N'
+Wildcards:
+    Wildcards are standard wildcards for the LIKE statement
+    Entries prefixed with [-] (minus) symbol are excluded form results and have priority over the non excluding
 
-        RAISERROR(N'',0, 0) WITH NOWAIT; 
+Samples:
+--------
+Clone all Configurations for all projects from folders starting with ''TEST'' or ''DEV'' but exclude all folder names ending with ''Backup''
+sp_SSISCloneConfiguration @folder = N''TEST%%,DEV%%,-%%Backup'' 
+
+Clone Configurations for all projects from all folders. Script only configuraion for parameters which name starts with OLEDB_ and ends with _Password.
+Sensitive values will be revealed.
+sp_SSISCloneConfiguration
+    @folder             = ''%%''
+    ,@parameter         = ''OLEDB_%%_Password''
+    ,@decryptSensitive  = 1
+    ', 0, 0) WITH NOWAIT;
 
         RETURN;
     END
 
-    --get source folder_id
+    --Get list of folders
+    SET @xml = N'<i>' + REPLACE(@folder, ',', '</i><i>') + N'</i>';
+
+    WITH FolderNames AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(F.value('.', 'nvarchar(128)'))) AS FolderName
+        FROM @xml.nodes(N'/i') T(F)
+    )
+    INSERT INTO @folders (folder_id)
+    SELECT DISTINCT
+        folder_id
+    FROM internal.folders F
+    INNER JOIN FolderNames  FN ON F.name LIKE FN.FolderName AND LEFT(FN.FolderName, 1) <> '-'
+    EXCEPT
     SELECT
-        @src_folder_id = folder_id
-    FROM internal.folders f
-    WHERE f.name = @sourceFolder;
+        folder_id
+    FROM internal.folders F
+    INNER JOIN FolderNames  FN ON F.name LIKE RIGHT(FN.FolderName, LEN(FN.FolderName) - 1) AND LEFT(FN.FolderName, 1) = '-'
 
-    --check source folder
-    IF @src_folder_id IS NULL
+    IF NOT EXISTS(SELECT 1 FROM @folders)
     BEGIN
-        RAISERROR(N'Source Folder [%s] does not exists.', 15, 1, @sourceFolder) WITH NOWAIT;
+        RAISERROR(N'No Folder matching [%s] exists.', 15, 1, @folder) WITH NOWAIT;
         RETURN;
     END
 
-    --get source project_id
+    --Get list of Projects
+    SET @xml = N'<i>' + REPLACE(ISNULL(@project, N'%'), ',', '</i><i>') + N'</i>';
+
+    WITH ProjectNames AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(F.value('.', 'nvarchar(128)'))) AS ProjectName
+        FROM @xml.nodes(N'/i') T(F)
+    )
+    INSERT INTO @projects (project_id, version_lsn)
+    SELECT DISTINCT
+        project_id
+        ,object_version_lsn
+    FROM [internal].[projects] P
+    INNER JOIN @folders F ON F.folder_id = p.folder_id
+    INNER JOIN ProjectNames PN ON P.name LIKE PN.ProjectName AND LEFT(PN.ProjectName, 1) <> '-'
+    EXCEPT
     SELECT
-         @src_project_id    = p.project_id
-        ,@src_project_lsn   = p.object_version_lsn
-    FROM [catalog].projects p
-    WHERE
-        p.folder_id = @src_folder_id
-        AND
-        p.name = @sourceProject;
+        project_id
+        ,object_version_lsn
+    FROM [internal].[projects] P
+    INNER JOIN @folders F ON F.folder_id = p.folder_id
+    INNER JOIN ProjectNames PN ON P.name LIKE RIGHT(PN.ProjectName, LEN(PN.ProjectName) - 1) AND LEFT(PN.ProjectName, 1) = '-'
 
-
-    --chek source project
-    IF @src_project_id IS NULL
+    IF NOT EXISTS(SELECT 1 FROM @projects)
     BEGIN
-        RAISERROR(N'Source Project [%s]\[%s] does not exists.', 15, 2, @sourceFolder, @sourceProject) WITH NOWAIT;
+        RAISERROR(N'No Project matching [%s] exists in folders matching [%s]', 15, 2, @project, @folder) WITH NOWAIT;
         RETURN;
     END
 
-    --Parse and find object names to clone
-    SET @xml = N'<i>' + ISNULL(REPLACE(@sourceObject, N',', N'</i><i>'), N'%') + N'</i>';
+    --Get list of ObjectNames
+    SET @xml = N'<i>' + REPLACE(ISNULL(@object, N'%'), ',', '</i><i>') + N'</i>';
+
     WITH ObjectNames AS (
         SELECT DISTINCT
-            LTRIM(RTRIM(T.N.value(N'.', N'nvarchar(260)'))) AS ObjectName
-        FROM @xml.nodes(N'i') T(N)
+            LTRIM(RTRIM(F.value('.', 'nvarchar(128)'))) AS object_name
+        FROM @xml.nodes(N'/i') T(F)
     )
-    INSERT INTO #objects (
-        ObjectName
-   )
+    INSERT INTO @objectNames (object_name)
     SELECT DISTINCT
-        object_name
-    FROM [internal].[object_parameters] op
-    INNER JOIN ObjectNames n ON op.object_name LIKE n.ObjectName
-    WHERE
-        op.project_id = @src_project_id
-        AND
-        op.project_version_lsn = @src_project_lsn
+        OP.object_name
+    FROM [internal].[object_parameters] OP
+    INNER JOIN @projects P ON P.project_id = OP.project_id AND P.version_lsn = OP.project_version_lsn
+    INNER JOIN ObjectNames N ON OP.object_name LIKE N.object_name AND LEFT(N.object_name, 1) <> '-'
+    EXCEPT
+    SELECT DISTINCT
+        OP.object_name
+    FROM [internal].[object_parameters] OP
+    INNER JOIN @projects P ON P.project_id = OP.project_id AND P.version_lsn = OP.project_version_lsn
+    INNER JOIN ObjectNames N ON OP.object_name LIKE RIGHT(N.object_name, LEN(N.object_name) - 1) AND LEFT(N.object_name, 1) = '-'
 
-    --Parse and find param names to clone
-    SET @xml = N'<i>' + ISNULL(REPLACE(@parameter, N',', N'</i><i>'), N'%') + N'</i>';
+    IF NOT EXISTS(SELECT 1 FROM @objectNames)
+    BEGIN
+        RAISERROR(N'No Objects matching [%s] exists in Projects matching [%s] and folders matching [%s]', 15, 2, @object, @project, @folder) WITH NOWAIT;
+        RETURN;
+    END
+
+    --Get list of ParameterNames
+    SET @xml = N'<i>' + REPLACE(ISNULL(@parameter, N'%'), ',', '</i><i>') + N'</i>';
+
     WITH ParamNames AS (
         SELECT DISTINCT
-            LTRIM(RTRIM(T.N.value(N'.', N'nvarchar(128)'))) AS ParamName
-        FROM @xml.nodes(N'i') T(N)
+            LTRIM(RTRIM(F.value('.', 'nvarchar(128)'))) AS parameter_name
+        FROM @xml.nodes(N'/i') T(F)
     )
-    INSERT INTO #params (
-        ParamName
-   )
+    INSERT INTO @paramNames (parameter_name)
     SELECT DISTINCT
-        parameter_name
-    FROM [internal].[object_parameters] op
-    INNER JOIN ParamNames n ON op.parameter_name LIKE n.ParamName
-    WHERE
-        op.project_id = @src_project_id
-        AND
-        op.project_version_lsn = @src_project_lsn
+        OP.parameter_name
+    FROM [internal].[object_parameters] OP
+    INNER JOIN @projects P ON P.project_id = OP.project_id AND P.version_lsn = OP.project_version_lsn
+    INNER JOIN ParamNames N ON OP.parameter_name LIKE N.parameter_name AND LEFT(N.parameter_name, 1) <> '-'
+    EXCEPT
+    SELECT DISTINCT
+        OP.parameter_name
+    FROM [internal].[object_parameters] OP
+    INNER JOIN @projects P ON P.project_id = OP.project_id AND P.version_lsn = OP.project_version_lsn
+    INNER JOIN ParamNames N ON OP.parameter_name LIKE RIGHT(N.parameter_name, LEN(N.parameter_name) - 1) AND LEFT(N.parameter_name, 1) = '-';
 
-
-    IF NOT EXISTS(SELECT 1 FROM #objects)
+    IF NOT EXISTS(SELECT 1 FROM @paramNames)
     BEGIN
-        RAISERROR(N'No Source object configuration exists in [%s]\[%s] project matching input criteria "%s"', 15, 3, @sourceFolder, @sourceProject, @sourceObject) WITH NOWAIT;
-        RETURN
+        RAISERROR(N'No Parameters matching [%s] exists in Projects matching [%s] and folders matching [%s]', 15, 2, @parameter, @project, @folder) WITH NOWAIT;
+        RETURN;
     END
 
-    IF NOT EXISTS(SELECT 1 FROM #params)
-    BEGIN
-        RAISERROR(N'No parameter configuration exists in [%s]\[%s] project matching input criteria "%s"', 15, 4, @sourceFolder, @sourceProject, @parameter) WITH NOWAIT;
-        RETURN
-    END
-
-    IF NOT EXISTS(
-        SELECT 1
-        FROM [internal].[object_parameters] op
-        INNER JOIN #objects o ON op.object_name COLLATE database_default = o.ObjectName COLLATE database_default
-        INNER JOIN #params p ON op.parameter_name COLLATE database_default = p.ParamName COLLATE database_default
+    IF NOT EXISTS (
+        SELECT
+            1
+        FROM [internal].[object_parameters] OP
+        INNER JOIN [internal].[projects] PRJ ON PRJ.project_id = OP.project_id AND PRJ.object_version_lsn= OP.project_version_lsn
+        INNER JOIN [internal].[folders] F ON f.folder_id = PRJ.folder_id
+        INNER JOIN @projects P ON P.project_id = OP.project_id AND p.version_lsn = OP.project_version_lsn
+        INNER JOIN @objectNames N ON OP.object_name = N.object_name
+        INNER JOIN @paramNames PN ON OP.parameter_name = PN.parameter_name
         WHERE
-            op.project_id = @src_project_id
-            AND
-            op.project_version_lsn = @src_project_lsn
-            AND
             op.value_set = 1
     )
     BEGIN
-        RAISERROR(N'No parameter configuration exists in [%s]\[%s] project matching input criteria for Source Object Name and Parameter Name', 15, 4, @sourceFolder, @sourceProject) WITH NOWAIT;
-        RETURN
+        RAISERROR(N'No Parameter Configuration exists matching input criteria', 15, 2, @parameter, @project, @folder) WITH NOWAIT;
+        RETURN;
     END
 
-
-
-    IF @printScript = 0 --if not priting the script, check that the destination folder and project exists
-    BEGIN
-        --get destination folder_id
-        SELECT
-            @dst_folder_id = folder_id
-        FROM internal.folders f
-        WHERE f.name = @destinationFolder;
-
-        --check destination folder
-        IF @dst_folder_id IS NULL
-        BEGIN
-            RAISERROR(N'Destination Folder [%s] does not exists.', 15, 4, @destinationFolder) WITH NOWAIT;
-            RETURN;
-        END
-
-        SELECT
-             @dst_project_id    = p.project_id
-        FROM [catalog].projects p
-        WHERE
-            p.folder_id = @dst_folder_id
-            AND
-            p.name = @destinationProject;
-       
-        IF @dst_project_id IS NULL
-        BEGIN
-            RAISERROR(N'Destination project [%s]\[%s] does not exists.', 15, 5, @destinationFolder, @destinationProject) WITH NOWAIT;
-        END
-    END
-    ELSE --We are printing script. Generate check script
-    BEGIN
-        RAISERROR(N'DECLARE @destinationFolder nvarchar(128) = N''%s'' --Specify Destination Folder Name', 0, 0, @destinationFolder) WITH NOWAIT;
-        RAISERROR(N'DECLARE @destinationProject nvarchar(128) = N''%s'' --Specify Destination Project Name', 0, 0, @destinationProject) WITH NOWAIT;
-        RAISERROR(N'', 0, 0) WITH NOWAIT;
-
-        RAISERROR(N'--Checking for destination folder existence', 0, 0) WITH NOWAIT;
-        RAISERROR(N'IF NOT EXISTS(SELECT 1 FROM [SSISDB].[catalog].[folders] WHERE [name] = @destinationFolder)', 0, 0) WITH NOWAIT;
-        RAISERROR(N'BEGIN', 0, 0 ) WITH NOWAIT;
-        RAISERROR(N'    RAISERROR(N''Destination folder [%%s] does not exists.'', 15, 0, @destinationFolder) WITH NOWAIT;', 0, 0) WITH NOWAIT;                
-        RAISERROR(N'    RETURN;', 0, 0) WITH NOWAIT;
-        RAISERROR(N'END', 0, 0) WITH NOWAIT;
-
-        RAISERROR(N'--Checking for destination project existence', 0, 0) WITH NOWAIT;
-        RAISERROR(N'IF NOT EXISTS(SELECT 1', 0, 0) WITH NOWAIT;
-        RAISERROR(N'    FROM [SSISDB].[catalog].[projects] p', 0, 0) WITH NOWAIT;
-        RAISERROR(N'    INNER JOIN [SSISDB].[catalog].[folders] f ON f.folder_id = p.folder_id', 0, 0) WITH NOWAIT;
-        RAISERROR(N'    WHERE f.name = @destinationFolder AND p.name = @destinationProject)', 0, 0) WITH NOWAIT;
-        RAISERROR(N'BEGIN', 0, 0 ) WITH NOWAIT;
-        RAISERROR(N'    RAISERROR(N''Destination project [%%s]\[%%s] does not exists.'', 15, 1, @destinationFolder, @destinationProject) WITH NOWAIT;', 0, 0) WITH NOWAIT;                
-        RAISERROR(N'    RETURN;', 0, 0) WITH NOWAIT;
-        RAISERROR(N'END', 0, 0) WITH NOWAIT;
-    END
-
-    --Set Source and Destiantion Environment keys and Certificates        
-    SET @src_keyName = 'MS_Enckey_Proj_' + CONVERT(varchar, @src_project_id);
-    SET @src_certificateName = 'MS_Cert_Proj_' + CONVERT(varchar, @src_project_id)
-
-    --Open the Symmetic Keys for Descryption/Encryption
-    SET @sql = 'OPEN SYMMETRIC KEY ' + @src_keyName + ' DECRYPTION BY CERTIFICATE ' + @src_certificateName
-    EXECUTE sp_executesql @sql
-
-
-    IF @printScript = 0
-    BEGIN
-        RAISERROR(N'Clonning project configuration from project [%s]\[%s] to project [%s]\[%s]', 0, 0, @sourceFolder, @sourceProject, @destinationFolder, @destinationProject) WITH NOWAIT;        
-    END
-    ELSE
-    BEGIN
-        RAISERROR(N'', 0, 0) WITH NOWAIT;
-        RAISERROR(N'--Project parameters configuration', 0, 0) WITH NOWAIT;
-        RAISERROR(N'DECLARE @var sql_variant', 0, 0) WITH NOWAIT;
-    END
-
-    --Declare cursor for iteration over the environment variables
+    --Process the parameter configurations
     DECLARE cr CURSOR FAST_FORWARD FOR
-    SELECT DISTINCT
-        object_type
+    WITH ParameterValues AS (
+        SELECT
+             F.name as folder_name
+            ,PRJ.name AS project_name
+            ,OP.object_type
+            ,OP.object_name
+            ,OP.parameter_name
+            ,OP.parameter_data_type
+            ,OP.sensitive
+            ,CASE 
+                WHEN OP.[sensitive] = 0                            THEN default_value
+                WHEN OP.[sensitive] = 1 AND @decryptSensitive = 1   THEN [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N'MS_Cert_Proj_' + CONVERT(nvarchar(20), OP.project_id)), NULL, OP.sensitive_default_value), OP.parameter_data_type)
+                ELSE NULL
+                END                        AS default_value
+            ,OP.value_type
+            ,OP.referenced_variable_name
+        FROM [internal].[object_parameters] OP
+        INNER JOIN [internal].[projects] PRJ ON PRJ.project_id = OP.project_id AND PRJ.object_version_lsn= OP.project_version_lsn
+        INNER JOIN [internal].[folders] F ON f.folder_id = PRJ.folder_id
+        INNER JOIN @projects P ON P.project_id = OP.project_id AND p.version_lsn = OP.project_version_lsn
+        INNER JOIN @objectNames N ON OP.object_name = N.object_name
+        INNER JOIN @paramNames PN ON OP.parameter_name = PN.parameter_name
+        WHERE
+            op.value_set = 1
+    ), ParameterValuesString AS (
+        SELECT
+             folder_name
+            ,project_name
+            ,object_type
+            ,object_name
+            ,parameter_name
+            ,parameter_data_type
+            ,sensitive
+            ,default_value
+            ,CASE
+                WHEN LOWER(parameter_data_type) = 'datetime' THEN CONVERT(nvarchar(50), default_value, 126)
+                ELSE CONVERT(nvarchar(4000), default_value)
+             END  AS StringValue
+            ,value_type
+            ,referenced_variable_name
+        FROM ParameterValues
+    )
+    SELECT
+         folder_name
+        ,project_name
+        ,object_type
         ,object_name
         ,parameter_name
         ,parameter_data_type
         ,sensitive
         ,default_value
-        ,sensitive_default_value
+        ,StringValue
         ,value_type
         ,referenced_variable_name
-    FROM [internal].[object_parameters] op
-    INNER JOIN #objects o ON op.object_name COLLATE database_default = o.ObjectName COLLATE database_default
-    INNER JOIN #params p ON op.parameter_name COLLATE database_default = p.ParamName COLLATE database_default
-    WHERE
-        op.project_id = @src_project_id
-        AND
-        op.project_version_lsn = @src_project_lsn
-        AND
-        op.value_set = 1
+    FROM ParameterValuesString
+    ORDER BY
+        folder_name, project_name, object_type, object_name, parameter_name
+
+    RAISERROR(N'', 0, 0) WITH NOWAIT;
+    RAISERROR(N'--Global definitions:', 0, 0) WITH NOWAIT;
+    RAISERROR(N'---------------------', 0, 0) WITH NOWAIT;
+    RAISERROR(N'DECLARE @destinationFolder      nvarchar(128) = N''%s''     -- Specify destination folder name/wildcard', 0, 0, @destinationFolder) WITH NOWAIT;
+    RAISERROR(N'DECLARE @destinationProject     nvarchar(128) = N''%s''     -- Specify destination project name/wildcard', 0, 0, @destinationProject) WITH NOWAIT;
+    RAISERROR(N'', 0, 0) WITH NOWAIT;
+    RAISERROR(N'', 0, 0) WITH NOWAIT;
+    RAISERROR(N'--Declaration Definitions:', 0, 0) WITH NOWAIT;
+    RAISERROR(N'--------------------------', 0, 0) WITH NOWAIT;
+    RAISERROR(N'DECLARE
+     @folder_name       nvarchar(128)
+    ,@project_name      nvarchar(128)
+    ,@object_type       smallint
+    ,@object_name       nvarchar(260)
+    ,@parameter_name    nvarchar(128)
+    ,@value_type        char(1)
+    ,@parameter_value   sql_variant
+
+DECLARE @parameters TABLE (
+        folder_name        nvarchar(128)
+    ,project_name       nvarchar(128)
+    ,object_type        smallint
+    ,object_name        nvarchar(260)
+    ,parameter_name     nvarchar(128)
+    ,value_type         char(1)
+    ,parameter_value    sql_variant
+)
+
+SET NOCOUNT ON;
+', 0, 0) WITH NOWAIT;
 
     OPEN cr;
 
-    EXECUTE AS CALLER;
+    FETCH NEXT FROM cr into @folder_name, @project_name, @object_type, @object_name, @parameter_name, @parameter_data_type, @sensitive, @default_value, @string_value, @value_type, @referenced_variable_name
 
-    --Iterate over the environment variables
-    FETCH NEXT FROM cr into @object_type, @object_name, @parameter_name, @parameter_data_type, @sensitive, @default_value, @sensitive_default_value, @value_type, @referenced_variable_name
     WHILE @@FETCH_STATUS = 0
     BEGIN
-        --Decrypt the sensitive_value for the purpose of re-encrypting on printing into the script
-        SET @decrypted_value = DECRYPTBYKEY(@sensitive_default_value)
+        --Quote values for printing
+        SELECT
+             @fldQuoted         = N'N''' + REPLACE(@folder_name, '''', '''''') + ''''
+            ,@prjQuoted         = N'N''' + REPLACE(@project_name, '''', '''''') + ''''
+            ,@objNameQuoted     = N'N''' + REPLACE(@object_name, '''', '''''') + ''''
+            ,@paramNameQuoted   = N'N''' + REPLACE(@parameter_name, '''', '''''') + ''''
+            ,@paramValQuoted    = N'N''' + REPLACE(@string_value, '''', '''''') + ''''
+            ,@refVarQuoted      = N'N''' + REPLACE(@referenced_variable_name, '''', '''''') + ''''
 
-        SET @object_name = CASE WHEN @object_name = @sourceProject THEN @destinationProject ELSE @object_name END
+        SELECT
+            @msg                = CASE WHEN @sensitive = 0 THEN N'' WHEN @sensitive = 1 AND @decryptSensitive = 1 THEN N'    -- !! SENSITIVE !!' ELSE N'    -- !! SENSITIVE REMOVED !!! - Provide proper sensitive value' END
+            ,@valueTypeDesc     = CASE WHEN @value_type = 'R' THEN N'Reference' ELSE N'Value' END
+            ,@objectTypeDesc    = CASE @object_type WHEN 20 THEN N'Project' WHEN 30 THEN N'Package' ELSE N'Unknown' END
+
+        --Different folder, generate part for folder definition
+        IF @lastFolderName IS NULL OR @lastFolderName <> @folder_name
+        BEGIN
+            SET @lastProjectName = NULL;
+            RAISERROR(N'-- =================================================================================', 0, 0) WITH NOWAIT;
+            RAISERROR(N'-- Folder: %s', 0, 0, @folder_name) WITH NOWAIT;
+            RAISERROR(N'-- =================================================================================', 0, 0) WITH NOWAIT;
+            RAISERROR(N'SET @folder_name = REPLACE(@destinationFolder, N''%%'', %s)', 0, 0, @fldQuoted) WITH NOWAIT;
+        END
+
+        --Different Environment, generate part for environment definition
+        IF @lastProjectName IS NULL OR @lastProjectName <> @project_name
+        BEGIN
+            SET @lastObjName = NULL;
+            RAISERROR(N'-- *********************************************************************************', 0, 0) WITH NOWAIT;
+            RAISERROR(N'-- Project: %s', 0, 0, @project_name) WITH NOWAIT;
+            RAISERROR(N'-- *********************************************************************************', 0, 0) WITH NOWAIT;
+            RAISERROR(N'SET @project_name = REPLACE(@destinationProject, ''%%'', %s)', 0, 0, @prjQuoted) WITH NOWAIT;
+            RAISERROR(N'-- *********************************************************************************', 0, 0) WITH NOWAIT;
+        END
+
+        --Different Object, generate part for Object definition
+        IF @lastObjName IS NULL OR @lastObjType IS NULL OR @lastObjName <> @object_name OR @lastObjType <> @object_type
+        BEGIN
+            IF @lastObjName IS NOT NULL
+                RAISERROR(N'-- --------------------------------------------------------------------------------', 0, 0) WITH NOWAIT;
+            RAISERROR(N'-- Object: %s', 0, 0, @object_name) WITH NOWAIT;
+            RAISERROR(N'-- --------------------------------------------------------------------------------', 0, 0) WITH NOWAIT;
+            RAISERROR(N'SET @object_name = %s', 0, 0, @objNameQuoted) WITH NOWAIT;
+            RAISERROR(N'SET @object_type = %d   -- %s', 0, 0, @object_type, @objectTypeDesc) WITH NOWAIT;
+            RAISERROR(N'-- --------------------------------------------------------------------------------', 0, 0) WITH NOWAIT;
+        END
+        ELSE
+            RAISERROR(N'-- ---------------', 0, 0) WITH NOWAIT;
 
         
-        IF @printScript = 1 --SCRIPT is being printed - Generate Script
-        BEGIN
-            RAISERROR(N'', 0, 0) WITH NOWAIT;
-            --TODO: Update the Object Name in case of project
-            RAISERROR(N'RAISERROR(N''Creating Configuration [SSISDB]\[%%s]\[%%s]\[%s]\[%s]'', 0, 0, @destinationFolder, @destinationProject) WITH NOWAIT;', 0, 0, @object_name, @parameter_name) WITH NOWAIT;
-        END
+        SET @baseDataType = CONVERT(nvarchar(128), SQL_VARIANT_PROPERTY (@default_value, 'BaseType') )
+        SET @baseDataType = CASE LOWER(@baseDataType)
+                                WHEN 'decimal' THEN 'decimal(28, 18)'
+                                ELSE LOWER(@baseDataType)
+                            END
+
+        --In case sensitive and decrypt Sensitive is false, use NULL as value
+        IF @sensitive = 1 AND @decryptSensitive = 0
+            SET @paramValQuoted = N'NULL';
+
+        RAISERROR(N'SET @parameter_name     = %s', 0, 0, @paramNameQuoted) WITH NOWAIT;
+        RAISERROR(N'SET @value_type         = ''%s'' --%s', 0, 0, @value_type, @valueTypeDesc) WITH NOWAIT;
+
+        IF @value_type = 'R'
+            RAISERROR(N'SET @parameter_value    = %s', 0, 0, @refVarQuoted) WITH NOWAIT;
+        ELSE IF @BaseDataType = 'nvarchar'
+            RAISERROR(N'SET @parameter_value    = %s;%s', 0, 0, @paramValQuoted, @msg) WITH NOWAIT;
         ELSE
-        BEGIN
-            RAISERROR(N'Creating Configuration [SSISDB]\[%s]\[%s]\[%s]\[%s]', 0, 0, @destinationFolder, @destinationProject, @object_name, @parameter_name) WITH NOWAIT;
-        END
+            RAISERROR(N'SET @parameter_value    = CONVERT(%s, %s);%s', 0, 0, @baseDataType, @paramValQuoted, @msg) WITH NOWAIT;
 
-        SET @msg = '';
+        RAISERROR(N'INSERT INTO @parameters(folder_name, project_name, object_type, object_name, parameter_name, value_type, parameter_value) VALUES (@folder_name, @project_name, @object_type, @object_name, @parameter_name, @value_type, @parameter_value) ', 0, 0) WITH NOWAIT;
 
-        --Get the value in case of value reference
-        IF @value_type = 'V'
-        BEGIN
-            --if sensitive, replace the default_value with decrypted sensitive one
-            IF @sensitive = 1
-                SET @default_value = [internal].[get_value_by_data_type](@decrypted_value, @parameter_data_type)
+        SELECT
+            @lastFolderName     = @folder_name
+            ,@lastProjectName   = @project_name
+            ,@lastObjName       = @object_name
+            ,@lastObjType       = @object_type
 
-            SET @base_data_type = CONVERT(nvarchar(128), SQL_VARIANT_PROPERTY (@default_value, 'BaseType') )
-
-            SET @msg = CASE WHEN @printScript = 1 THEN N'SET @var' ELSE N'DECLARE @var sql_variant' END;
-
-            --Print the variable for storing the value
-            SET @msg = @msg +' = CONVERT(' +
-                CASE @base_data_type
-                    WHEN 'decimal' THEN 'decimal(28, 18)'
-                    WHEN 'nvarchar' THEN 'sql_variant'
-                    ELSE @base_data_type
-                END + N', '
-                
-            IF @printScript = 1 AND @sensitive = 1 AND @decryptSensitiveInScript = 0
-            BEGIN
-                SET @msg = @msg + N'NULL); --SENSITIVE REMOVED';
-            END
-            ELSE
-            BEGIN
-                SET @msg = @msg + N'N''' + 
-                    CASE 
-                        WHEN @base_data_type = 'datetime' THEN CONVERT(nvarchar(max), @default_value, 126)
-                        ELSE CONVERT(nvarchar(max), @default_value) 
-                    END + N''');' + CASE WHEN @sensitive = 1 THEN N' --SENSITIVE' ELSE N'' END;
-            END
-
-            SET @msg = @msg + NCHAR(13) + NCHAR(10)
-        END
-        ELSE
-            SET @references_count = @references_count + 1
-
-        SET @msg = @msg + N'EXEC [SSISDB].[catalog].[set_object_parameter_value] ' +
-            N'@object_type=' + CONVERT(nvarchar(10), @object_type) +
-            N', @parameter_name = N''' + @parameter_name + N'''' +
-            N', @object_name = ' + CASE WHEN @object_name = @sourceProject THEN N'@destinationProject' ELSE  N'N''' + @object_name + N'''' END +
-            N', @folder_name = ' + CASE WHEN @printScript = 0 THEN N'N''' + @destinationFolder + N'''' ELSE  N'@destinationFolder' END +
-            N', @project_name = ' + CASE WHEN @printScript = 0 THEN N'N''' + @destinationProject + N'''' ELSE  N'@destinationProject' END +
-            N', @value_type = ' + CASE WHEN @value_type = 'V' THEN N'''V''' ELSE N'''R''' END +
-            N', @parameter_value = ' + CASE WHEN @value_type = 'V' THEN N'@var' ELSE  N'N''' + @referenced_variable_name + N'''' END;
-
-		--Print of Execute the script
-        IF @printScript = 1
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
-        ELSE
-            EXEC(@msg); --Execute Script in case of non Printing
-
-        FETCH NEXT FROM cr into @object_type, @object_name, @parameter_name, @parameter_data_type, @sensitive, @default_value, @sensitive_default_value, @value_type, @referenced_variable_name
-    END
-
-    REVERT;
-
-    IF @references_count > 0
-    BEGIN        
-        SET @msg = @captionBegin + N'--------------------------------------------------------------' + REPLICATE(N'-', LEN(@destinationFolder) + LEN(@destinationProject)) + @captionEnd;
-        SET @msg2 = @captionBegin + N'There are configurations using Environment varaibles references.' + @captionEnd;
-
-        RAISERROR( @msg, 0, 0) WITH NOWAIT;
-        RAISERROR( @msg2, 0, 0) WITH NOWAIT;
-        IF @printScript = 1
-            SET @msg2 = N'RAISERROR(N''DON''''T FORGET TO SET ENVIRONMENT REFERENCES for project [%%s]\[%%s].'', 0, 0, @destinationFolder, @destinationProject) WITH NOWAIT';
-        ELSE
-            SET @msg2 = N'DON''T FORGET TO SET ENVIRONMENT REFERENCES for project [%s]\[%s].'
-
-        RAISERROR( @msg2, 0, 0, @destinationFolder, @destinationProject) WITH NOWAIT;
-        RAISERROR( @msg, 0, 0) WITH NOWAIT;
+        FETCH NEXT FROM cr into @folder_name, @project_name, @object_type, @object_name, @parameter_name, @parameter_data_type, @sensitive, @default_value, @string_value, @value_type, @referenced_variable_name
     END
 
     CLOSE cr;
     DEALLOCATE cr;
 
-    --Close symmetric keys being used during the process
-    SET @sql = 'CLOSE SYMMETRIC KEY '+ @src_keyName
-    EXECUTE sp_executesql @sql
+    --Print Runtime part for the script
+    RAISERROR(N'', 0, 0) WITH NOWAIT;
+    RAISERROR(N'-- =================================================================================', 0, 0) WITH NOWAIT;
+    RAISERROR(N'--                                     RUNTIME', 0, 0) WITH NOWAIT;
+    RAISERROR(N'-- =================================================================================', 0, 0) WITH NOWAIT;
+
+    RAISERROR(N'DECLARE
+    @lastFolderName         nvarchar(128)
+    ,@lastProjectName       nvarchar(128)
+    ,@lastObjectName        nvarchar(260)
+    ,@lastObjectType        smallint
+    ,@processFld            bit
+    ,@processProject        bit
+    ,@processObject         bit
+    ', 0, 0) WITH NOWAIT;
+RAISERROR(N'
+DECLARE cr CURSOR FAST_FORWARD FOR
+SELECT
+     folder_name
+    ,project_name
+    ,object_type
+    ,object_name
+    ,parameter_name
+    ,value_type
+    ,parameter_value
+FROM @parameters
+
+OPEN cr;
+
+FETCH NEXT FROM cr INTO @folder_name, @project_name, @object_type, @object_name, @parameter_name, @value_type, @parameter_value
+WHILE @@FETCH_STATUS = 0
+BEGIN', 0, 0) WITH NOWAIT;
+RAISERROR(N'    IF @lastFolderName IS NULL OR @lastFolderName <> @folder_name
+    BEGIN
+        SET @processFld = 1
+        SET @lastProjectName = NULL
+        IF @lastFolderName IS NOT NULL
+            RAISERROR(N''==================================================================='', 0, 0) WITH NOWAIT;
+
+        IF NOT EXISTS(SELECT 1 FROM [SSISDB].[catalog].[folders] f WHERE f.[name] = @folder_name)
+        BEGIN
+            SET @processFld = 0
+            RAISERROR(N''Destination folder [%%s] does not exist. Ignoring projects in folder'', 11, 0, @folder_name) WITH NOWAIT;
+        END
+        ELSE
+        BEGIN
+            RAISERROR(N''Processing folder [%%s]'', 0, 0, @folder_name) WITH NOWAIT;
+        END
+        RAISERROR(N''==================================================================='', 0, 0) WITH NOWAIT;
+    END
+', 0, 0) WITH NOWAIT;
+RAISERROR(N'    IF @processFld = 1 AND (@lastProjectName IS NULL OR @lastProjectName <> @project_name)
+    BEGIN
+        SET @processProject = 1;
+        SET @lastObjectName = NULL;
+        IF @lastProjectName IS NOT NULL
+            RAISERROR(N''*******************************************************************'', 0, 0) WITH NOWAIT;
+
+        IF NOT EXISTS(
+            SELECT
+                1
+            FROM [SSISDB].[catalog].[projects] p
+            INNER JOIN [SSISDB].[catalog].[folders] f ON f.folder_id = p.folder_id
+            WHERE
+                f.name = @folder_name
+                AND
+                p.name = @project_name
+        )
+        BEGIN
+            SET @processProject = 0;
+            RAISERROR(N''Destination project [%%s]\[%%s] does not exists. Ignoring project objects'', 11, 1, @folder_name, @project_name) WITH NOWAIT;
+        END
+        ELSE
+        BEGIN
+            RAISERROR(N''Processing Project: [%%s]\[%%s]'', 0, 0, @folder_name, @project_name) WITH NOWAIT;
+        END            
+        RAISERROR(N''*******************************************************************'', 0, 0) WITH NOWAIT;
+    END
+', 0, 0) WITH NOWAIT;
+RAISERROR(N'    IF @processProject = 1 AND (@lastObjectName IS NULL OR @lastObjectType IS NULL OR @lastObjectName <> @object_name OR @lastObjectType <> @object_type)
+    BEGIN
+        SET @processObject = 1
+        IF @lastObjectName IS NOT NULL
+            RAISERROR(N''-------------------------------------------------------------------'', 0, 0) WITH NOWAIT;
+
+        IF NOT EXISTS(
+            SELECT
+                *
+            FROM [SSISDB].[catalog].[object_parameters] op
+            INNER JOIN [SSISDB].[catalog].[projects] p ON p.project_id = op.project_id
+            INNER JOIN [SSISDB].[catalog].folders f ON f.folder_id = p.folder_id
+            WHERE
+                f.name = @folder_name
+                AND
+                p.name = @project_name
+                AND
+                op.object_name = @object_name
+                AND
+                op.object_type = @object_type
+        )
+        BEGIN
+            SET @processObject = 0;
+            RAISERROR(N''Destination Object [%%s]\[%%s]\[%%s] does not exists or does not have any parameters. Ignoring object parameters.'', 11, 2, @folder_name, @project_name, @object_name) WITH NOWAIT;
+        END
+        ELSE
+        BEGIN
+            RAISERROR(N''Processing Object: [%%s]\[%%s]\[%%s]'', 0, 0, @folder_name, @project_name, @object_name) WITH NOWAIT;
+        END
+        RAISERROR(N''-------------------------------------------------------------------'', 0, 0) WITH NOWAIT;
+    END
+', 0, 0) WITH NOWAIT;
+RAISERROR(N'    IF @processObject = 1
+    BEGIN        
+        RAISERROR(N''Setting Parameter:  [%%s]\[%%s]\[%%s]\[%%s]'', 0, 0, @folder_name, @project_name, @object_name, @parameter_name) WITH NOWAIT;
+        EXEC [SSISDB].[catalog].[set_object_parameter_value] @object_type = @object_type, @folder_name = @folder_name, @project_name = @project_name, @parameter_name = @parameter_name, @parameter_value = @parameter_value, @object_name=@object_name, @value_type = @value_type
+    END
+        
+    SELECT
+        @lastFolderName     = @folder_name
+        ,@lastProjectName   = @project_name
+        ,@lastObjectName    = @object_name
+        ,@lastObjectType    = @object_type
+
+
+    FETCH NEXT FROM cr INTO @folder_name, @project_name, @object_type, @object_name, @parameter_name, @value_type, @parameter_value
 END
-GO
---GRANT EXECUTE permission on the stored procedure to [ssis_admin] role
-GRANT EXECUTE ON [dbo].[sp_SSISCloneConfiguration] TO [ssis_admin]
-GO
+
+CLOSE cr;
+DEALLOCATE cr;
+
+IF EXITS(SELECT 1 FROM @parameters WHERE value_type = ''R'')
+    RAISERROR(N''==================================================================='', 0, 0) WITH NOWAIT;
+
+DECLARE fc CURSOR FAST_FORWARD FOR
+SELECT DISTINCT
+    folder_name
+    ,project_name
+FROM @parameters
+
+OPEN fc;
+FETCH NEXT FROM fc INTO @folderName, @project_name
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    RAISERROR(N''DON''''T FORGET TO SET ENVIRONMENT REFERENCES for project [%%s]\[%%s].'', 0, 0, @folder_name, @project_name) WITH NOWAIT;
+    FETCH NEXT FROM fc INTO @folderName, @project_name
+END
+
+CLOSE fc;
+DEALLOCATE fc;
+    
+', 0, 0) WITH NOWAIT;
+END
