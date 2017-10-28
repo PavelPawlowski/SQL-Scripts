@@ -31,6 +31,10 @@ Stored procedure for clonning SSIS server variables from one environment to anot
 Stored procedure cones SSIS project configuration from one project to another.
 Allows simple scripting of exsting configuration for easy transfer among environments or backup purposes
 
+### sp_SSISCloneProject
+Stored procedure for clonning SSIS project(s) among folders and servers.
+Allows simple deployment of projects among servers through linked servers.
+
 ### sp_SSISMapEnvironment
 Stored procedure maps Project/Object configuraiton parameters to corresponding Environment variables
 Mapping is done on parameter and variable name as well as data type.
