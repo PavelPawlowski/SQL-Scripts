@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISListEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISListEnvironment]''')
 GO
 /* ****************************************************
-sp_SSISListEnvironment v 0.35 (2017-10-24)
+sp_SSISListEnvironment v 0.36 (2017-10-28)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -21,7 +21,7 @@ Description:
 
 Parameters:
      @folder                nvarchar(max)    = NULL --comma separated list of environment folder. supports wildcards
-    ,@environment           nvarchar(max)    = NULL --comma separated lists of environments.  support wildcards
+    ,@environment           nvarchar(max)    = '%'  --comma separated lists of environments.  support wildcards
     ,@variables             nvarchar(max)    = NULL --Comma separated lists of environment varaibles to list. Supports wildcards
     ,@value                 nvarchar(max)    = NULL --Comma separated list of envirnment variable values. Supports wildcards
     ,@exactValue            nvarchar(max)    = NULL --Exact value of variables to be matched. Have priority above value
@@ -29,7 +29,7 @@ Parameters:
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISListEnvironment]
      @folder                nvarchar(max)    = NULL --comma separated list of environment folder. supports wildcards
-    ,@environment           nvarchar(max)    = NULL --comma separated lists of environments.  support wildcards
+    ,@environment           nvarchar(max)    = '%'  --comma separated lists of environments.  support wildcards
     ,@variables             nvarchar(max)    = NULL --Comma separated lists of environment varaibles to list. Supports wildcards
     ,@value                 nvarchar(max)    = NULL --Comma separated list of envirnment variable values. Supports wildcards
     ,@exactValue            nvarchar(max)    = NULL --Exact value of variables to be matched. Have priority above value
@@ -57,25 +57,28 @@ BEGIN
         ,@src_certificateName           nvarchar(256)           --Name of the certificate for decryption of the source symmetric key
         ,@decrypted_value               varbinary(max)          --Variable to store decrypted sensitive value
         ,@stringval                     nvarchar(max)           --String representation of the value
-        ,@xml                           xml
+        ,@xml                           xml                     --Xml variable for parsing input parameters
         ,@src_environment_name          nvarchar(128)
         ,@src_folder_name               nvarchar(128)
         ,@variable_id                   bigint
 
-
+    --Table variable for holding parsed folder names list
     DECLARE @folders TABLE (
         folder_id       bigint
         ,folder_name    nvarchar(128)
     )
 
+    --Table variable for holding parsed variable names list
     DECLARE @variableNames TABLE (
         name    nvarchar(128)
     )
-
+    
+    --Table variable for holding parsed variable values list
     DECLARE @values TABLE (
         Value   nvarchar(4000)
     )
 
+    --Table variable fo holding itermediate environment list
     DECLARE @environments TABLE (
         FolderID            bigint
         ,EnvironmentID      bigint
@@ -83,49 +86,33 @@ BEGIN
         ,EnvironmentName    nvarchar(128)
     )
 
-    DECLARE @outputTable TABLE (
-         FolderID               bigint
-        ,EnvironmentID          bigint
-        ,FolderName             nvarchar(128)
-        ,EnvironmentName        nvarchar(128)
-        ,VariableID             bigint
-        ,VariableName           nvarchar(128)
-        ,VariableDescription    nvarchar(1024)
-        ,VariableType           nvarchar(128)
-        ,BaseDataType           nvarchar(128)
-        ,Value                  sql_variant
-        ,IsSensitive            bit
-    )
-
-
     --If the needed input parameters are null, print help
     IF @folder IS NULL OR @environment IS NULL
         SET @printHelp = 1
 
-	RAISERROR(N'sp_SSISListEnvironment v0.35 (2017-10-24) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_SSISListEnvironment v0.36 (2017-10-28) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 	RAISERROR(N'==================================================================' , 0, 0) WITH NOWAIT;
 
+    --Check @value and @exactValue
     IF @value IS NOT NULL AND @exactValue IS NOT NULL
     BEGIN
         RAISERROR(N'Only @value or @exactValue can be specified at a time', 11, 0) WITH NOWAIT;
         SET @printHelp = 1
     END
 
-
-
     --PRINT HELP
     IF @printHelp = 1
     BEGIN
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
-        RAISERROR(N'Lists SSIS environment variables and allows seeing encrypted invormation', 0, 0) WITH NOWAIT; 
+        RAISERROR(N'Lists SSIS environment variables and allows seeing encrypted information', 0, 0) WITH NOWAIT; 
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
         RAISERROR(N'Usage:', 0, 0) WITH NOWAIT; 
         RAISERROR(N'[sp_SSISListEnvironment] parameters', 0, 0) WITH NOWAIT; 
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
-        SET @msg = N'Parameters:
+        RAISERROR(N'Parameters:
      @folder                nvarchar(max)    = NULL - Comma separated list of environment folders. Supports wildcards.
                                                       Only variables from environment beloging to matched folder are listed
-    ,@environment           nvarchar(max)    = NULL - Comma separated lists of environments.  Support wildcards.
+    ,@environment           nvarchar(max)    = ''%%''  - Comma separated lists of environments.  Support wildcards.
                                                       Only variables from environments matching provided list are returned.
     ,@variables             nvarchar(max)    = NULL - Comma separated lists of environment varaibles to list. Supports wildcards.
                                                       Only variables matching provided pattern are returned
@@ -134,7 +121,7 @@ BEGIN
                                                       Ideal when need to find all environments and variables using particular value.
                                                       Eg. Updating to new password.
     ,@exactValue            nvarchar(max)    = NULL - Exact value of variables to be matched. Only one of @exactvalue and @value can be specified at a time
-    ,@decryptSensitive      bit              = 0    - Specifies whether sensitive data shuld be descrypted.'
+    ,@decryptSensitive      bit              = 0    - Specifies whether sensitive data shuld be descrypted.', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 Wildcards:
     Wildcards are standard wildcards for the LIKE statement
@@ -150,7 +137,24 @@ Wildcards:
         ,@variables     = ''OLEDB_%%_Password''
         ,@value         = ''AAA,BBB''
     ', 0, 0) WITH NOWAIT;
-        RAISERROR(@msg, 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+Table for output resultset:
+---------------------------
+    CREATE TABLE #outputTable (
+         [FolderID]             bigint
+        ,[EnvironmentID]        bigint
+        ,[FolderName]           nvarchar(128)
+        ,[EnvironmentName]      nvarchar(128)
+        ,[VariableID]           bigint
+        ,[VariableName]         nvarchar(128)
+        ,[VariableDescription]  nvarchar(1024)
+        ,[VariableType]         nvarchar(128)
+        ,[BaseDataType]         nvarchar(128)
+        ,[Value]                sql_variant
+        ,[IsSensitive]          bit
+    )
+', 0, 0) WITH NOWAIT;
 
         RAISERROR(N'',0, 0) WITH NOWAIT; 
 
@@ -179,14 +183,11 @@ Wildcards:
     FROM internal.folders F
     INNER JOIN FolderNames  FN ON F.name LIKE RIGHT(FN.FolderName, LEN(FN.FolderName) - 1) AND LEFT(FN.FolderName, 1) = '-'
 
-    
-
     IF NOT EXISTS(SELECT 1 FROM @folders)
     BEGIN
         RAISERROR(N'No Folder matching [%s] exists.', 15, 1, @folder) WITH NOWAIT;
         RETURN;
     END
-
 
     --Get list of environments
     SET @xml = N'<i>' + REPLACE(@environment, ',', '</i><i>') + N'</i>';
@@ -220,6 +221,11 @@ Wildcards:
     INNER JOIN @folders F ON E.folder_id = F.folder_id
     INNER JOIN EnvironmentNames EN ON E.environment_name LIKE RIGHT(EN.EnvName, LEN(EN.EnvName) -1) AND LEFT(EN.EnvName, 1) = '-'
 
+    IF NOT EXISTS(SELECT 1 FROM @environments)
+    BEGIN
+        RAISERROR(N'No Environments matching [%s] exists in folders matching [%s]', 15, 2, @environment, @folder) WITH NOWAIT;
+        RETURN;
+    END
 
     --Get variable values list
     SET @xml = N'<i>' + REPLACE(@value, ',', '</i><i>') + N'</i>';
@@ -229,29 +235,16 @@ Wildcards:
         LTRIM(RTRIM(V.value(N'.', N'nvarchar(4000)'))) AS Value
     FROM @xml.nodes(N'/i') T(V)
 
+    --Get variable names list
+    SET @xml = N'<i>' + REPLACE(ISNULL(@variables, N'%'), ',', '</i><i>') + N'</i>';
+    INSERT INTO @variableNames (
+        Name
+    )
+    SELECT DISTINCT
+        LTRIM(RTRIM(V.value(N'.', N'nvarchar(128)'))) AS VariableName
+    FROM @xml.nodes(N'/i') T(V);
 
-    IF NOT EXISTS(SELECT 1 FROM @environments)
-    BEGIN
-        RAISERROR(N'No Environments matching [%s] exists in folders matching [%s]', 15, 2, @environment, @folder) WITH NOWAIT;
-        RETURN;
-    END
-
-    IF @variables IS NULL
-    BEGIN
-        INSERT INTO @variableNames(name) VALUES(N'%')
-    END
-    ELSE
-    BEGIN
-        SET @xml = N'<i>' + REPLACE(@variables, ',', '</i><i>') + N'</i>';
-        INSERT INTO @variableNames (
-            Name
-        )
-        SELECT DISTINCT
-            LTRIM(RTRIM(V.value(N'.', N'nvarchar(128)'))) AS VariableName
-        FROM @xml.nodes(N'/i') T(V)    
-    END;
-
-
+    --Output the result
     WITH Variables AS (
         SELECT DISTINCT
             ev.variable_id
@@ -321,7 +314,7 @@ Wildcards:
         ,IsSensitive
     FROM VariableValuesString
     WHERE
-        ((@value IS NULL OR @value = N'%') AND @exactValue IS NULL) OR (@exactValue IS NOT NULL AND @stringval = @exactValue)
+        ((@value IS NULL OR @value = N'%') AND @exactValue IS NULL) OR (@exactValue IS NOT NULL AND StringValue = @exactValue)
         OR
         EXISTS (
             SELECT
