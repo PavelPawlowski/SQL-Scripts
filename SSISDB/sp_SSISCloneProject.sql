@@ -357,5 +357,5 @@ sp_SSISCloneProject                         - Clones all projects from all folde
 END
 GO
 --GRANT EXECUTE permission on the stored procedure to [ssis_admin] role
-GRANT EXECUTE ON [dbo].[sp_SSISListEnvironment] TO [ssis_admin]
+GRANT EXECUTE ON [dbo].[sp_SSISCloneProject] TO [ssis_admin]
 GO
