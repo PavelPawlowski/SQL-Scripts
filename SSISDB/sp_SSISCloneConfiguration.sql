@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneConfiguration] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneConfiguration]''')
 GO
 /* ****************************************************
-sp_SSISCloneConfiguration v 0.50 (2017-10-28)
+sp_SSISCloneConfiguration v 0.51 (2017-10-30)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -20,21 +20,21 @@ Description:
     Allows scripting of Parameters configuration for easy transfer among environments.
 
 Parameters:
-     @folder                    nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Suppots wildcards
+     @folder                    nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Supports wildcards
     ,@project                   nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
-	,@object                    nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be clonned. Supports Wildcards.
-    ,@parameter                 nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be clonned. Supports wildcards.
-    ,@destinationFolder         nvarchar(128)   = '%'   --Pattern for naming Desnation Folder. It is a default value for the script.
-    ,@destinationProject		nvarchar(128)   = '%'   --Pattern for naming Desnation Project. It is a default value for the script.
+	,@object                    nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be cloned. Supports wildcards.
+    ,@parameter                 nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
+    ,@destinationFolder         nvarchar(128)   = '%'   --Pattern for naming Destination Folder. It is a default value for the script.
+    ,@destinationProject		nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
     ,@decryptSensitive          bit             = 0     --Specifies whether sensitive data should be decrypted
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISCloneConfiguration]
-     @folder                    nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Suppots wildcards
+     @folder                    nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Supports wildcards
     ,@project                   nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
-	,@object                    nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be clonned. Supports Wildcards.
-    ,@parameter                 nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be clonned. Supports wildcards.
-    ,@destinationFolder         nvarchar(128)   = '%'   --Pattern for naming Desnation Folder. It is a default value for the script.
-    ,@destinationProject		nvarchar(128)   = '%'   --Pattern for naming Desnation Project. It is a default value for the script.
+	,@object                    nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
+    ,@parameter                 nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
+    ,@destinationFolder         nvarchar(128)   = '%'   --Pattern for naming Destination Folder. It is a default value for the script.
+    ,@destinationProject		nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
     ,@decryptSensitive          bit             = 0     --Specifies whether sensitive data should be decrypted
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
@@ -44,8 +44,8 @@ BEGIN
 
     DECLARE
         @printHelp                      bit             = 0
-        ,@captionBegin                  nvarchar(50)    = N''   --Beginning of the caption for the purpose of the catpion printing
-        ,@captionEnd                    nvarchar(50)    = N''   --End of the caption linef or the purpose of the caption printing
+        ,@captionBegin                  nvarchar(50)    = N''   --Beginning of the caption for the purpose of the caption printing
+        ,@captionEnd                    nvarchar(50)    = N''   --End of the caption line for the purpose of the caption printing
         ,@caption                       nvarchar(max)           --sp_SSISCloneEnvironment caption
         ,@xml                           xml
 
@@ -58,7 +58,7 @@ BEGIN
         ,@sensitive                     bit                     --Identifies sensitive parameter
         ,@default_value                 sql_variant             
         ,@string_value                  nvarchar(4000)          
-        ,@value_type                    char(1)					--Specifies the value type of the parameter (V - direct value or R - reference
+        ,@value_type                    char(1)					--Specifies the value type of the parameter (V - direct value or R - reference)
         ,@referenced_variable_name      nvarchar(128)
 
         ,@lastFolderName                nvarchar(128)
@@ -104,7 +104,7 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.50 (2017-10-28) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.51 (2017-10-30) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'=====================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -118,21 +118,21 @@ BEGIN
         RAISERROR(N'[sp_SSISCloneConfiguration] parameters', 0, 0) WITH NOWAIT; 
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
         RAISERROR(N'Parameters:
-     @folder                    nvarchar(max)   = NULL  - Comma separated list of project folders to script configurations. Suppots wildcards
+     @folder                    nvarchar(max)   = NULL  - Comma separated list of project folders to script configurations. Supports wildcards
                                                           Configurations for projects in matching folders will be scripted
     ,@project                   nvarchar(max)   = ''%%''   - Comma separated list of projects to script configurations. Support wildcards
                                                           Configurations for matching projects will be scripted
-	,@object                    nvarchar(max)	= ''%%''   - Comma separated list of source objects which parameter configuration should be clonned. Supports Wildcards.
+	,@object                    nvarchar(max)	= ''%%''   - Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
                                                           Configurations for matching objects will be scripted
-    ,@parameter                 nvarchar(max)   = ''%%''   - Comma separated list of parameter names which configuration should be clonned. Supports wildcards.
-                                                          Configurations for matching paramters will be scripted
-    ,@destinationFolder         nvarchar(128)   = ''%%''   - Pattern for naming Desnation Folder. %% in the destinaton folder name is replaced by the name of the source folder.
-                                                          Allows easy clonning of multiple folders by prefixing or suffixing the %% patttern
+    ,@parameter                 nvarchar(max)   = ''%%''   - Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
+                                                          Configurations for matching parameters will be scripted
+    ,@destinationFolder         nvarchar(128)   = ''%%''   - Pattern for naming Destination Folder. %% in the destination folder name is replaced by the name of the source folder.
+                                                          Allows easy cloning of multiple folders by prefixing or suffixing the %% pattern
                                                           It sets the default value for the script
-    ,@destinationProject		nvarchar(128)   = ''%%''   - Pattern for naming destination Project. %% in the destination project name is rpelaced by the source project name.
-                                                          Allows easy clonning of multiple project configurations by prefixing or suffixing the %% pattern
+    ,@destinationProject		nvarchar(128)   = ''%%''   - Pattern for naming destination Project. %% in the destination project name is replaced by the source project name.
+                                                          Allows easy cloning of multiple project configurations by prefixing or suffixing the %% pattern
                                                           It sets the default value for the script
-    ,@decryptSensitive          bit             = 0     - Specifies whether sensitive data shuld be descrypted.
+    ,@decryptSensitive          bit             = 0     - Specifies whether sensitive data should be decrypted.
         ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 Wildcards:
@@ -144,7 +144,7 @@ Samples:
 Clone all Configurations for all projects from folders starting with ''TEST'' or ''DEV'' but exclude all folder names ending with ''Backup''
 sp_SSISCloneConfiguration @folder = N''TEST%%,DEV%%,-%%Backup'' 
 
-Clone Configurations for all projects from all folders. Script only configuraion for parameters which name starts with OLEDB_ and ends with _Password.
+Clone Configurations for all projects from all folders. Script only configuration for parameters which name starts with OLEDB_ and ends with _Password.
 Sensitive values will be revealed.
 sp_SSISCloneConfiguration
     @folder             = ''%%''
@@ -591,7 +591,7 @@ END
 CLOSE cr;
 DEALLOCATE cr;
 
-IF EXITS(SELECT 1 FROM @parameters WHERE value_type = ''R'')
+IF EXISTS(SELECT 1 FROM @parameters WHERE value_type = ''R'')
     RAISERROR(N''==================================================================='', 0, 0) WITH NOWAIT;
 
 DECLARE fc CURSOR FAST_FORWARD FOR
@@ -601,12 +601,12 @@ SELECT DISTINCT
 FROM @parameters
 
 OPEN fc;
-FETCH NEXT FROM fc INTO @folderName, @project_name
+FETCH NEXT FROM fc INTO @folder_name, @project_name
 
 WHILE @@FETCH_STATUS = 0
 BEGIN
     RAISERROR(N''DON''''T FORGET TO SET ENVIRONMENT REFERENCES for project [%%s]\[%%s].'', 0, 0, @folder_name, @project_name) WITH NOWAIT;
-    FETCH NEXT FROM fc INTO @folderName, @project_name
+    FETCH NEXT FROM fc INTO @folder_name, @project_name
 END
 
 CLOSE fc;
