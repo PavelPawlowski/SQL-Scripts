@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneEnvironment]''')
 GO
 /* ****************************************************
-sp_SSISCloneEnvironment v 0.52 (2017-10-28)
+sp_SSISCloneEnvironment v 0.53 (2017-10-30)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -20,28 +20,28 @@ Description:
     Allows scripting of the environments for easy transfer among environments.
 
 Parameters:
-     @folder                    nvarchar(max)   = NULL --comma separated list of environment folder. supports wildcards
-    ,@environment               nvarchar(max)   = '%'  --comma separated lists of environments.  support wildcards
-    ,@variables                 nvarchar(max)   = NULL --Comma separated lists of environment varaibles to list. Supports wildcards
-    ,@destinationFolder         nvarchar(128)   = '%'  --Name of the destination folder(s). Support Wildcards
-    ,@destinationEnvironment    nvarchar(128)   = '%'  --Name of the destination Environment(s). Support wildcards
+     @folder                    nvarchar(max)   = NULL --comma separated list of environment folder. Supports wildcards.
+    ,@environment               nvarchar(max)   = '%'  --comma separated lists of environments. Supports wildcards.
+    ,@variables                 nvarchar(max)   = NULL --Comma separated lists of environment variables to list. Supports wildcards.
+    ,@destinationFolder         nvarchar(128)   = '%'  --Name of the destination folder(s). Supports wildcards.
+    ,@destinationEnvironment    nvarchar(128)   = '%'  --Name of the destination Environment(s). Supports wildcards.
     ,@autoCreate                bit             = 0    --Specifies whether the destination Folder/Environment should be auto-created if not exists. It sets default value for the script
-    ,@overwrite                 bit             = 0    --Specifries whether destination environment variables should beoverwriten. It sets default value for the script 
-    ,@value                     nvarchar(max)   = NULL --Comma separated list of envirnment variable values. Supports wildcards
+    ,@overwrite                 bit             = 0    --Specifies whether destination environment variables should be overwritten. It sets default value for the script 
+    ,@value                     nvarchar(max)   = NULL --Comma separated list of environment variable values. Supports wildcards
     ,@exactValue                nvarchar(max)   = NULL --Exact value of variables to be matched. Have priority above value
-    ,@decryptSensitive          bit             = 0    --Specifies whether sensitive data shuld be decrypted.
+    ,@decryptSensitive          bit             = 0    --Specifies whether sensitive data should be decrypted.
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISCloneEnvironment]
-     @folder                    nvarchar(max)   = NULL --comma separated list of environment folder. supports wildcards
-    ,@environment               nvarchar(max)   = '%'  --comma separated lists of environments.  support wildcards
-    ,@variables                 nvarchar(max)   = NULL --Comma separated lists of environment varaibles to list. Supports wildcards
-    ,@destinationFolder         nvarchar(128)   = '%'  --Name of the destination folder(s). Support Wildcards. It sets default value for the script
+     @folder                    nvarchar(max)   = NULL --comma separated list of environment folder. Supports wildcards.
+    ,@environment               nvarchar(max)   = '%'  --comma separated lists of environments. Supports wildcards.
+    ,@variables                 nvarchar(max)   = NULL --Comma separated lists of environment variables to list. Supports wildcards.
+    ,@destinationFolder         nvarchar(128)   = '%'  --Name of the destination folder(s). Supports wildcards. It sets default value for the script
     ,@destinationEnvironment    nvarchar(128)   = '%'  --Name of the destination Environment(s). Support wildcards. It sets default value for the script
     ,@autoCreate                bit             = 0    --Specifies whether the destination Folder/Environment should be auto-created if not exists. It sets default value for the script
-    ,@overwrite                 bit             = 0    --Specifries whether destination environment variables should beoverwriten. It sets default value for the script 
-    ,@value                     nvarchar(max)   = NULL --Comma separated list of envirnment variable values. Supports wildcards
+    ,@overwrite                 bit             = 0    --Specifies whether destination environment variables should be overwritten. It sets default value for the script 
+    ,@value                     nvarchar(max)   = NULL --Comma separated list of environment variable values. Supports wildcards
     ,@exactValue                nvarchar(max)   = NULL --Exact value of variables to be matched. Have priority above value
-    ,@decryptSensitive          bit             = 0    --Specifies whether sensitive data shuld be decrypted.
+    ,@decryptSensitive          bit             = 0    --Specifies whether sensitive data should be decrypted.
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 BEGIN
@@ -50,7 +50,7 @@ BEGIN
 
     DECLARE
         @src_folder_id                  bigint                  --ID of the source folder
-        ,@src_Environment_id            bigint                  --ID of thesource Environment
+        ,@src_Environment_id            bigint                  --ID of the source Environment
         ,@msg                           nvarchar(max)           --General purpose message variable (used for printing output)
         ,@printHelp                     bit             = 0     --Identifies whether Help should be printed (in case of no parameters provided or error)
         ,@name                          sysname                 --Name of the variable
@@ -115,7 +115,7 @@ BEGIN
         Value   nvarchar(4000)
     )
 
-    --Table variable fo holding itermediate environment list
+    --Table variable fo holding intermediate environment list
     DECLARE @environments TABLE (
         FolderID                bigint
         ,EnvironmentID          bigint
@@ -149,7 +149,7 @@ BEGIN
         SET @printHelp = 1
     END
 
-    SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'sp_SSISCloneEnvironment v0.52 (2017-10-28) (C) 2017 Pavel Pawlowski' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
+    SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'sp_SSISCloneEnvironment v0.53 (2017-10-30) (C) 2017 Pavel Pawlowski' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
 	RAISERROR(@msg, 0, 0) WITH NOWAIT;
     SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'===================================================================' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
 	RAISERROR(@msg, 0, 0) WITH NOWAIT;
@@ -166,7 +166,7 @@ BEGIN
     IF @printHelp = 1
     BEGIN
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
-        RAISERROR(N'Generates script for clonning of SSIS environment variables.
+        RAISERROR(N'Generates script for cloning of SSIS environment variables.
 Multiple environments from multiple folders can be scripted at a time.
 Variables can be filtered by names as well as values.
     ', 0, 0) WITH NOWAIT; 
@@ -176,26 +176,26 @@ Variables can be filtered by names as well as values.
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
         RAISERROR(N'Parameters:
      @folder                    nvarchar(max)   = NULL - Comma separated list of environment folders. Supports wildcards
-                                                         Variables from envrionmetns in matching folders will be scripted
+                                                         Variables from environments in matching folders will be scripted
     ,@environment               nvarchar(max)   = ''%%''  - Comma separated lists of environments.  support wildcards
-                                                         Variables from all environment matching the condition will be scripbed.
-    ,@variables                 nvarchar(max)   = NULL - Comma separated lists of environment varaibles to script. Supports wildcards
+                                                         Variables from all environment matching the condition will be scripted.
+    ,@variables                 nvarchar(max)   = NULL - Comma separated lists of environment variables to script. Supports wildcards
                                                          Only variables which name is matching pattern are scripted
-    ,@destinationFolder         nvarchar(128)   = ''%%''  - Pattern for naming Desnation Folder. %% in the destinaton folder name is replaced by the name of the source folder.
-                                                         Allows easy clonning of multiple folders by prefixing or suffixing the %% patttern
+    ,@destinationFolder         nvarchar(128)   = ''%%''  - Pattern for naming Destination Folder. %% in the destination folder name is replaced by the name of the source folder.
+                                                         Allows easy cloning of multiple folders by prefixing or suffixing the %% pattern
                                                          It sets the default value for the script
-    ,@destinationEnvironment    nvarchar(128)   = ''%%''  - Pattern for naming destination Environment. %% in the destination environment name is rpelaced by the source environment name.
-                                                         Allows easy clonning of multiple folders by prefixing or suffixing the %% pattern
+    ,@destinationEnvironment    nvarchar(128)   = ''%%''  - Pattern for naming destination Environment. %% in the destination environment name is replaced by the source environment name.
+                                                         Allows easy cloning of multiple folders by prefixing or suffixing the %% pattern
                                                          It sets the default value for the script
     ,@autoCreate                bit             = 0    - Specifies whether the destination Folder/Environment should be auto-created if not exists. 
                                                          It sets default value for the script
-    ,@overwrite                 bit             = 0    - Specifries whether destination environment variables should beoverwriten. 
+    ,@overwrite                 bit             = 0    - Specifies whether destination environment variables should be overwritten. 
                                                          It sets default value for the script 
-    ,@value                     nvarchar(max)   = NULL - Comma separated list of envirnment variable values. Supports wildcards
+    ,@value                     nvarchar(max)   = NULL - Comma separated list of environment variable values. Supports wildcards
                                                          Only variables which value matches the provided pattern are scripted
     ,@exactValue                nvarchar(max)   = NULL - Exact value of variables to be matched. Have priority above @value
-                                                         Only variables which value exactly matchins the @eactValue are scripted.
-    ,@decryptSensitive          bit             = 0    - Specifies whether sensitive data shuld be decrypted.
+                                                         Only variables which value exactly matching the @exactValue are scripted.
+    ,@decryptSensitive          bit             = 0    - Specifies whether sensitive data should be decrypted.
 ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 Wildcards:
@@ -207,14 +207,14 @@ Samples:
 Clone all environments and its variables from folders starting with ''TEST'' or ''DEV'' but exclude all folder names ending with ''Backup''
 sp_SSISCloneEnvironment @folder = N''TEST%%,DEV%%,-%%Backup'' 
 
-Clone variables from all folders and envrionments which name starts with OLEDB_ and ends with _Password and containing value "AAA" or "BBB"
+Clone variables from all folders and environments which name starts with OLEDB_ and ends with _Password and containing value "AAA" or "BBB"
 sp_SSISClonenvironment
     @folder         = ''%%''
     ,@environment   = ''%%''
     ,@variables     = ''OLEDB_%%_Password''
     ,@value         = ''AAA,BBB''
 
-Clone all Environmens and variables from all folders starting with ''DEV_''. Destination folders will contain suffix "_Copy" and Environments will be prefixed by "Clone_
+Clone all Environments and variables from all folders starting with ''DEV_''. Destination folders will contain suffix "_Copy" and Environments will be prefixed by "Clone_
 Sensitive information will be decrypted into the script. Destination Folders and Environment will be automatically created if they do not exits.
 In case variable in destination environment already exists its value will be overwritten
 sp_SSISCloneEnvironment
@@ -474,7 +474,7 @@ DECLARE @variables TABLE (
 SET NOCOUNT ON;    
 ', 0, 0) WITH NOWAIT;
     
-    --Cursor for looping evironment variables
+    --Cursor for looping environment variables
     DECLARE cr CURSOR FAST_FORWARD FOR
     SELECT
          FolderID

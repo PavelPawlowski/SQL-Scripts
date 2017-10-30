@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISListEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISListEnvironment]''')
 GO
 /* ****************************************************
-sp_SSISListEnvironment v 0.36 (2017-10-28)
+sp_SSISListEnvironment v 0.37 (2017-10-30)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -16,24 +16,24 @@ License:
     written consent.
 
 Description:
-    List Environment variables and their values for environments specified by paramters.
+    List Environment variables and their values for environments specified by parameters.
     Allows decryption of encrypted variable values
 
 Parameters:
-     @folder                nvarchar(max)    = NULL --comma separated list of environment folder. supports wildcards
-    ,@environment           nvarchar(max)    = '%'  --comma separated lists of environments.  support wildcards
-    ,@variables             nvarchar(max)    = NULL --Comma separated lists of environment varaibles to list. Supports wildcards
-    ,@value                 nvarchar(max)    = NULL --Comma separated list of envirnment variable values. Supports wildcards
-    ,@exactValue            nvarchar(max)    = NULL --Exact value of variables to be matched. Have priority above value
-    ,@decryptSensitive      bit              = 0    --Specifies whether sensitive data shuld be descrypted.
+     @folder                nvarchar(max)    = NULL --comma separated list of environment folder. Supports wildcards.
+    ,@environment           nvarchar(max)    = '%'  --comma separated lists of environments.  Supports wildcards.
+    ,@variables             nvarchar(max)    = NULL --Comma separated lists of environment variables to list. Supports wildcards.
+    ,@value                 nvarchar(max)    = NULL --Comma separated list of environment variable values. Supports wildcards.
+    ,@exactValue            nvarchar(max)    = NULL --Exact value of variables to be matched. Have priority above value.
+    ,@decryptSensitive      bit              = 0    --Specifies whether sensitive data should be decrypted.
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISListEnvironment]
-     @folder                nvarchar(max)    = NULL --comma separated list of environment folder. supports wildcards
-    ,@environment           nvarchar(max)    = '%'  --comma separated lists of environments.  support wildcards
-    ,@variables             nvarchar(max)    = NULL --Comma separated lists of environment varaibles to list. Supports wildcards
-    ,@value                 nvarchar(max)    = NULL --Comma separated list of envirnment variable values. Supports wildcards
-    ,@exactValue            nvarchar(max)    = NULL --Exact value of variables to be matched. Have priority above value
-    ,@decryptSensitive      bit              = 0    --Specifies whether sensitive data shuld be descrypted.
+     @folder                nvarchar(max)    = NULL --comma separated list of environment folder. Supports wildcards.
+    ,@environment           nvarchar(max)    = '%'  --comma separated lists of environments.  Supports wildcards.
+    ,@variables             nvarchar(max)    = NULL --Comma separated lists of environment variables to list. Supports wildcards.
+    ,@value                 nvarchar(max)    = NULL --Comma separated list of environment variable values. Supports wildcards.
+    ,@exactValue            nvarchar(max)    = NULL --Exact value of variables to be matched. Have priority above value.
+    ,@decryptSensitive      bit              = 0    --Specifies whether sensitive data should be decrypted.
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 BEGIN
@@ -42,7 +42,7 @@ BEGIN
 
     DECLARE
         @src_folder_id                  bigint                  --ID of the source folder
-        ,@src_Environment_id            bigint                  --ID of thesource Environment
+        ,@src_Environment_id            bigint                  --ID of the source Environment
         ,@msg                           nvarchar(max)           --General purpose message variable (used for printing output)
         ,@printHelp                     bit             = 0     --Identifies whether Help should be printed (in case of no parameters provided or error)
         ,@name                          sysname                 --Name of the variable
@@ -78,7 +78,7 @@ BEGIN
         Value   nvarchar(4000)
     )
 
-    --Table variable fo holding itermediate environment list
+    --Table variable fo holding intermediate environment list
     DECLARE @environments TABLE (
         FolderID            bigint
         ,EnvironmentID      bigint
@@ -90,7 +90,7 @@ BEGIN
     IF @folder IS NULL OR @environment IS NULL
         SET @printHelp = 1
 
-	RAISERROR(N'sp_SSISListEnvironment v0.36 (2017-10-28) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_SSISListEnvironment v0.37 (2017-10-30) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 	RAISERROR(N'==================================================================' , 0, 0) WITH NOWAIT;
 
     --Check @value and @exactValue
@@ -111,26 +111,26 @@ BEGIN
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
         RAISERROR(N'Parameters:
      @folder                nvarchar(max)    = NULL - Comma separated list of environment folders. Supports wildcards.
-                                                      Only variables from environment beloging to matched folder are listed
+                                                      Only variables from environment belonging to matched folder are listed
     ,@environment           nvarchar(max)    = ''%%''  - Comma separated lists of environments.  Support wildcards.
                                                       Only variables from environments matching provided list are returned.
-    ,@variables             nvarchar(max)    = NULL - Comma separated lists of environment varaibles to list. Supports wildcards.
+    ,@variables             nvarchar(max)    = NULL - Comma separated lists of environment variables to list. Supports wildcards.
                                                       Only variables matching provided pattern are returned
-    ,@value                 nvarchar(max)    = NULL - Comma separated list of envirnment variable values. Supports wildcards.
-                                                      Only variables wich value in string representaion matches provided pattern are listed.
+    ,@value                 nvarchar(max)    = NULL - Comma separated list of environment variable values. Supports wildcards.
+                                                      Only variables which value in string representation matches provided pattern are listed.
                                                       Ideal when need to find all environments and variables using particular value.
                                                       Eg. Updating to new password.
-    ,@exactValue            nvarchar(max)    = NULL - Exact value of variables to be matched. Only one of @exactvalue and @value can be specified at a time
-    ,@decryptSensitive      bit              = 0    - Specifies whether sensitive data shuld be descrypted.', 0, 0) WITH NOWAIT;
+    ,@exactValue            nvarchar(max)    = NULL - Exact value of variables to be matched. Only one of @exactValue and @value can be specified at a time
+    ,@decryptSensitive      bit              = 0    - Specifies whether sensitive data should be decrypted.', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 Wildcards:
     Wildcards are standard wildcards for the LIKE statement
     Entries prefixed with [-] (minus) symbol are excluded form results and have priority over the non excluding
 
     Samples:
-    sp_SSISListEnvironment @folder = N''TEST%%,DEV%%,-%%Backup'' = List all environment varaibles from folders starting with ''TEST'' or ''DEV'' but exclude all folder names ending with ''Backup''
+    sp_SSISListEnvironment @folder = N''TEST%%,DEV%%,-%%Backup'' = List all environment variables from folders starting with ''TEST'' or ''DEV'' but exclude all folder names ending with ''Backup''
 
-    List varaibles from all folders and evironments starting with OLEDB_ and ending with _Password and containing value "AAA" or "BBB"
+    List varibles from all folders and environments starting with OLEDB_ and ending with _Password and containing value "AAA" or "BBB"
     sp_SSISListEnvironment
         @folder         = ''%%''
         ,@environment   = ''%%''

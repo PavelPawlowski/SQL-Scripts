@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.50 (2017-10-17)
+sp_ssisdb v 0.51 (2017-10-30)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -19,34 +19,34 @@ Description:
     Provides information about processes in SSISDB
 
 Parameters:
-     @op                    nvarchar(max)	= NULL                  --Operator parameter - universal operator for stting large range of condidiotns and filter
+     @op                    nvarchar(max)	= NULL                  --Operator parameter - universal operator for setting large range of conditions and filters
     ,@status                nvarchar(max)   = NULL                  --Comma separated list of execution statuses to return. Default NULL means all. See below for more details
     ,@folder                nvarchar(max)	= NULL                  --Comma separated list of folder filters. Default NLL means no filtering. See below for more details
     ,@project               nvarchar(max)   = NULL                  --Comma separated list of project filters. Default NULL means no filtering. See below for more details
-    ,@package               nvarchar(max)   = NULL                  --Comma separated list of pacakge filters. Default NULL means no filtering. See below for more details
+    ,@package               nvarchar(max)   = NULL                  --Comma separated list of package filters. Default NULL means no filtering. See below for more details
     ,@msg_type              nvarchar(max)   = NULL                  --Comma separated list of Message types to show
     ,@event_filter          nvarchar(max)   = NULL                  --Comma separated list of event LIKE filters. Used only for detailed results filtering
     ,@phase_filter          nvarchar(max)   = NULL                  --Comma separated list of phase LIKE filters. Used only for detailed results filtering
     ,@task_filter           nvarchar(max)   = NULL                  --Comma separated list of task LIKE filters. Used only for detailed results filtering
     ,@subcomponent_filter   nvarchar(max)   = NULL                  --Comma separated list of sub-component LIKE filters. Used only for detailed results filtering.
-    ,@package_path          nvarchar(max)   = NULL                  --LIKE filter to be applied on package path fields. Used only for detailed results fitering
+    ,@package_path          nvarchar(max)   = NULL                  --LIKE filter to be applied on package path fields. Used only for detailed results filtering
     ,@execution_path        nvarchar(max)   = NULL                  --LIKE filter to be applied on execution path fields. Used only for detailed results filtering
-    ,@msg_filter            nvarchar(max)   = NULL                  --LIKE filter to be applied on messge text. Used only for detailed results filtering
+    ,@msg_filter            nvarchar(max)   = NULL                  --LIKE filter to be applied on message text. Used only for detailed results filtering
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_ssisdb]
-     @op                    nvarchar(max)	= NULL                  --Operator parameter - universal operator for stting large range of condidiotns and filter
+     @op                    nvarchar(max)	= NULL                  --Operator parameter - universal operator for setting large range of conditions and filters
     ,@status                nvarchar(max)   = NULL                  --Comma separated list of execution statuses to return. Default NULL means all. See below for more details
     ,@folder                nvarchar(max)	= NULL                  --Comma separated list of folder filters. Default NLL means no filtering. See below for more details
     ,@project               nvarchar(max)   = NULL                  --Comma separated list of project filters. Default NULL means no filtering. See below for more details
-    ,@package               nvarchar(max)   = NULL                  --Comma separated list of pacakge filters. Default NULL means no filtering. See below for more details
+    ,@package               nvarchar(max)   = NULL                  --Comma separated list of package filters. Default NULL means no filtering. See below for more details
     ,@msg_type              nvarchar(max)   = NULL                  --Comma separated list of Message types to show
     ,@event_filter          nvarchar(max)   = NULL                  --Comma separated list of event LIKE filters. Used only for detailed results filtering
     ,@phase_filter          nvarchar(max)   = NULL                  --Comma separated list of phase LIKE filters. Used only for detailed results filtering
     ,@task_filter           nvarchar(max)   = NULL                  --Comma separated list of task LIKE filters. Used only for detailed results filtering
     ,@subcomponent_filter   nvarchar(max)   = NULL                  --Comma separated list of sub-component LIKE filters. Used only for detailed results filtering.
-    ,@package_path          nvarchar(max)   = NULL                  --LIKE filter to be applied on package path fields. Used only for detailed results fitering
+    ,@package_path          nvarchar(max)   = NULL                  --LIKE filter to be applied on package path fields. Used only for detailed results filtering
     ,@execution_path        nvarchar(max)   = NULL                  --LIKE filter to be applied on execution path fields. Used only for detailed results filtering
-    ,@msg_filter            nvarchar(max)   = NULL                  --LIKE filter to be applied on messge text. Used only for detailed results filtering
+    ,@msg_filter            nvarchar(max)   = NULL                  --LIKE filter to be applied on message text. Used only for detailed results filtering
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 SET NOCOUNT ON;
@@ -54,54 +54,54 @@ DECLARE
 	@xml						     xml
     ,@xr                                nvarchar(10)    = N'</i><i>'    --xml replacement'
     ,@defaultLastOp	                    int             = 100           --default number of rows to retrieve
-    ,@msg                               nvarchar(max)                   --general purpoe message variable
+    ,@msg                               nvarchar(max)                   --general purpose message variable
     ,@sql                               nvarchar(max)                   --variable for storing queries to be executed
 
 DECLARE
      @id                                bigint          = NULL  --for storage of execution id to provide detailed output
     ,@opLastCnt                         int             = NULL  --specifies if last count is retrieved
     ,@lastSpecified                     bit             = 0     --Indicates whether the LAST keyword was specified
-    ,@opLastGrp                         CHAR(1)	      = NULL  --Specifies type of grouing for Last retrieval
+    ,@opLastGrp                         CHAR(1)	      = NULL  --Specifies type of grouping for Last retrieval
     ,@opFrom                            datetime                --variable to hold initial from date/time value in @op param
     ,@opTo                              datetime                --variable to hold initial to date/time value in @op param
     ,@minInt                            bigint                  --variable to hold min integer passed in @op param
     ,@maxInt                            bigint                  --variable to hold max integer passed in @op param
-    ,@opFromTZ                          datetimeoffset          --variable to hold @opFrom value convered to datetimeoffset
+    ,@opFromTZ                          datetimeoffset          --variable to hold @opFrom value converted to datetimeoffset
     ,@opToTZ                            datetimeoffset          --variable to hold @opTo value converted to datetimeofset
     ,@fldFilter                         bit             = 0     --identifies whether we have a folder filter
     ,@prjFilter                         bit             = 0     --identifies whether we have a project filer
-    ,@pkgFilter                         bit             = 0     --identifies whetthe we have a package filer
-    ,@msgTypeFilter                     bit             = 0     --identifies whether we have a message typefilter in place
+    ,@pkgFilter                         bit             = 0     --identifies whether we have a package filer
+    ,@msgTypeFilter                     bit             = 0     --identifies whether we have a message type filter in place
     ,@statusFilter                      bit             = 0     --identifies whether we have a status filter
     ,@includeExecPackages               bit             = 0     --identifies whether executed packages should be included in the list.
     ,@includeMessages                   bit             = 0     --Identifies whether exclude messages in overview list
     ,@includeEDS                        bit             = 0     --Identifies whether executable data statistics should be included in detailed output
     ,@includeECP                        bit             = 0     --Identifies whether execution component phases should be included in the detailed output
-    ,@projId                            bigint          = NULL  --project ID or LSN for inernal purposes
+    ,@projId                            bigint          = NULL  --project ID or LSN for internal purposes
     ,@force                             bit             = 0     --Specifies whether execution should be forced even large result set should be returned
     ,@totalMaxRows                      int             = NULL
     ,@edsRows                           int             = NULL  --maximum number of EDS rows
-    ,@ecpRows                           int             = NULL  --maximu number of ECP rows
+    ,@ecpRows                           int             = NULL  --maximum number of ECP rows
     ,@max_messages                      int             = NULL  --Number of messages to include as in-row details
     ,@useStartTime                      bit             = 0     --Use Start Time for searching
     ,@useEndTime                        bit             = 0     --Use End time for searching
-    ,@useTimeDescenting                 bit             = 1     --Use Descending sort
+    ,@useTimeDescending                 bit             = 1     --Use Descending sort
     ,@execRows                          int             = NULL  --Maximum number or Executable Statistics rows
-    ,@incoludeExecutableStatistics      bit             = 0     --Indicates whetehr to include Executable Statistics in the output
-    ,@help                              bit             = 0     --Indicates taht Help should be printed
-    ,@phaseFilter                       bit             = 0     --Identifies whether applly phase filter
+    ,@includeExecutableStatistics       bit             = 0     --Indicates whether to include Executable Statistics in the output
+    ,@help                              bit             = 0     --Indicates that Help should be printed
+    ,@phaseFilter                       bit             = 0     --Identifies whether apply phase filter
     ,@taskFilter                        bit             = 0     --Identifies whether apply task filter
     ,@eventFilter                       bit             = 0     --Identifies whether apply event filter
-    ,@subcomponentFilter                bit             = 0     --Identifies whether apply sub-component filter
-    ,@includeAngetReferences            bit             = 0     --Identifies whether to include Agent Job referencing packages
-    ,@includeAgentJob                   bit             = 0     --Identifies whetehr to include information about agent job which executed the package
+    ,@subComponentFilter                bit             = 0     --Identifies whether apply sub-component filter
+    ,@includeAgentReferences            bit             = 0     --Identifies whether to include Agent Job referencing packages
+    ,@includeAgentJob                   bit             = 0     --Identifies whether to include information about agent job which executed the package
     ,@decryptSensitive                  bit             = 0     --Identifies whether Decryption of sensitive values in verbose mode should be handled
     ,@durationCondition                 nvarchar(max)   = NULL  --condition for duration
     ,@tms                               nvarchar(30)    = NULL  --variable to store timestamp data
     ,@debugLevel                        smallint        = 0
 
 
-RAISERROR(N'sp_ssisdb v0.50 (2017-10-17) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.51 (2017-10-30) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -203,7 +203,7 @@ VALUES
     ,(90    ,N'DIAGNOSTICS'              , N'D')
     ,(200   ,N'CUSTOM'                   , N'CS')
     ,(140   ,N'DIAGNOSTICS_EX'           , N'DE')
-    ,(400   ,N'NON_DIAGNOSTIS'           , N'ND')
+    ,(400   ,N'NON_DIAGNOSTICS'          , N'ND')
     ,(80    ,N'VARIABLE_VALUE_CHANGE'    , N'VC')
 
 
@@ -226,7 +226,7 @@ VALUES
     ,(8, N'STOPPING'    , N'G')
     ,(9, N'COMPLETED'   , N'CD')
 
-/* Update paramters to NULL where empty strings are passed */
+/* Update parameters to NULL where empty strings are passed */
 SELECT
      @status                = NULLIF(@status, N'')
     ,@folder                = NULLIF(@folder, N'')
@@ -242,12 +242,12 @@ SELECT
     ,@msg_filter            = NULLIF(@msg_filter, N'')
 
     /* =================================
-             OPERATION Retrival 
+             OPERATION Retrieval 
     ====================================*/
-                                         --replacing [<] with &lt; as [<] is ilegal in xml building
+                                         --replacing [<] with &lt; as [<] is illegal in xml building
 	SET @xml = N'<i>' + REPLACE(REPLACE(REPLACE(@op, N'<', N'&lt;') , N' ', @xr), N',', @xr) + N'</i>'
 
-	DECLARE @opVal TABLE (	--Operaton Validities
+	DECLARE @opVal TABLE (	--Operation Validities
 		Val			    varchar(10) NOT NULL PRIMARY KEY CLUSTERED
 		,MinDateVal	    datetime
         ,MaxDateVal     datetime
@@ -340,7 +340,7 @@ IF @help <> 1
 BEGIN
     IF EXISTS(SELECT 1 FROM @opValData WHERE Val IS NULL) 
     BEGIN
-        SET @msg = 'There are unsupported values, keywords or modifiers passed in the @op parameter. Check the parameters and/or formattings: ' + NCHAR(13) +
+        SET @msg = 'There are unsupported values, keywords or modifiers passed in the @op parameter. Check the parameters and/or formatting: ' + NCHAR(13) +
             QUOTENAME(STUFF((SELECT ', ' + op.Modifier FROM  @opValData op WHERE Val IS NULL FOR XML PATH('')), 1, 2, ''), '"') + NCHAR(13);
         RAISERROR(@msg, 11, 0) WITH NOWAIT;
 
@@ -461,7 +461,7 @@ BEGIN
 
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'ES')
             BEGIN
-                SET @incoludeExecutableStatistics = 1
+                SET @includeExecutableStatistics = 1
                 SET @execRows = (SELECT MaxIntVal FROM @opVal WHERE Val = 'ES')
 
                 IF @execRows < 0
@@ -613,7 +613,7 @@ BEGIN
     /* General Params processing */  
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'AGR')
     BEGIN
-        SET @includeAngetReferences = 1;
+        SET @includeAgentReferences = 1;
         RAISERROR(N' - Including information about Agent Job Steps referencing the package', 0, 0) WITH NOWAIT;
     END
 
@@ -640,28 +640,28 @@ BEGIN
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'ST')
     BEGIN
         IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'ST' AND StrVal IN ('_A', '_ASC','A','ASC'))
-            SET @useTimeDescenting = 0;
+            SET @useTimeDescending = 0;
 
         SET @useStartTime = 1;
 
-        SET @msg = CASE WHEN @useTimeDescenting = 0 THEN 'Ascending' ELSE N'Descending' END
+        SET @msg = CASE WHEN @useTimeDescending = 0 THEN 'Ascending' ELSE N'Descending' END
         RAISERROR(N'   - Sort by Start Time %s', 0, 0, @msg) WITH NOWAIT;
     END 
     ELSE IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'ET')
     BEGIN
         IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'ET' AND StrVal IN ('_A', '_ASC','A','ASC'))
-            SET @useTimeDescenting = 0;
+            SET @useTimeDescending = 0;
 
         SET @useEndTime = 1;
-        SET @msg = CASE WHEN @useTimeDescenting = 0 THEN 'Ascending' ELSE N'Descending' END
+        SET @msg = CASE WHEN @useTimeDescending = 0 THEN 'Ascending' ELSE N'Descending' END
         RAISERROR(N'   - Sort by End Time %s', 0, 0, @msg) WITH NOWAIT;
     END
     ELSE
     BEGIN
         IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'CT' AND StrVal IN ('_A', '_ASC','A','ASC'))
-            SET @useTimeDescenting = 0;
+            SET @useTimeDescending = 0;
 
-        SET @msg = CASE WHEN @useTimeDescenting = 0 THEN 'Ascending' ELSE N'Descending' END
+        SET @msg = CASE WHEN @useTimeDescending = 0 THEN 'Ascending' ELSE N'Descending' END
         RAISERROR(N'   - Sort by Create Time %s', 0, 0, @msg) WITH NOWAIT;
     END
 
@@ -862,19 +862,19 @@ BEGIN
     RAISERROR('', 0, 0) WITH NOWAIT;
 
     RAISERROR(N'Parametes:
-     @op                    nvarchar(max)   = NULL  --Operator parameter - universal operator for setting large range of condidions and filters
-    ,@status                nvarchar(MAX)   = NULL  --Comma separated list of execution statuses to return. Default NULL means all. See below for more details
-    ,@folder                nvarchar(max)   = NULL  --Comma separated list of folder filters. Default NULL means no filtering. See below for more details
-    ,@project               nvarchar(max)   = NULL  --Comma separated list of project filters. Default NULL means no filtering. See below for more details
-    ,@package               nvarchar(max)   = NULL  --Comma separated list of pacakge filters. Default NULL means no filtering. See below for more details
-    ,@msg_type              nvarchar(max)   = NULL  --Comma separated list of Message types. When not provided, then for in row data a default combination of ERROR,TASK_FAILED is beging used.
-    ,@event_filter          nvarchar(max)   = NULL  --Comma separated list of event LIKE filters. Used only for detailed results filtering
-    ,@phase_filter          nvarchar(max)   = NULL  --Comma separated list of phase LIKE filters. Used only for detailed results filtering
-    ,@task_filter           nvarchar(max)   = NULL  --Comma separated list of task LIKE filters. Used only for detailed results filtering
-    ,@subcomponent_filter   nvarchar(max)   = NULL  --Comma separated list of sub-component LIKE filters. Used only for detailed results filtering.
-    ,@package_path          nvarchar(max)   = NULL  --Comma separated list of package_path LIKE filters. Used only for detailed results fitering
-    ,@execution_path        nvarchar(max)   = NULL  --Comma separated list of execution_path LIKE filters. Used only for detailed results filtering
-    ,@msg_filter            nvarchar(max)   = NULL  --Comma separated list of message LIKE filters. Used only for detailed results filtering
+     @op                    nvarchar(max)   = NULL  - Operator parameter - universal operator for setting large range of condidions and filters
+    ,@status                nvarchar(MAX)   = NULL  - Comma separated list of execution statuses to return. Default NULL means all. See below for more details
+    ,@folder                nvarchar(max)   = NULL  - Comma separated list of folder filters. Default NULL means no filtering. See below for more details
+    ,@project               nvarchar(max)   = NULL  - Comma separated list of project filters. Default NULL means no filtering. See below for more details
+    ,@package               nvarchar(max)   = NULL  - Comma separated list of pacakge filters. Default NULL means no filtering. See below for more details
+    ,@msg_type              nvarchar(max)   = NULL  - Comma separated list of Message types. When not provided, then for in row data a default combination of ERROR,TASK_FAILED is beging used.
+    ,@event_filter          nvarchar(max)   = NULL  - Comma separated list of event LIKE filters. Used only for detailed results filtering
+    ,@phase_filter          nvarchar(max)   = NULL  - Comma separated list of phase LIKE filters. Used only for detailed results filtering
+    ,@task_filter           nvarchar(max)   = NULL  - Comma separated list of task LIKE filters. Used only for detailed results filtering
+    ,@subcomponent_filter   nvarchar(max)   = NULL  - Comma separated list of sub-component LIKE filters. Used only for detailed results filtering.
+    ,@package_path          nvarchar(max)   = NULL  - Comma separated list of package_path LIKE filters. Used only for detailed results fitering
+    ,@execution_path        nvarchar(max)   = NULL  - Comma separated list of execution_path LIKE filters. Used only for detailed results filtering
+    ,@msg_filter            nvarchar(max)   = NULL  - Comma separated list of message LIKE filters. Used only for detailed results filtering
     ', 0, 0) WITH NOWAIT
 
 RAISERROR('', 0, 0) WITH NOWAIT;
@@ -915,7 +915,7 @@ RAISERROR(N'
   (P)ROJECT                 - Optional keyword which specifeis the result will be grouped by FOLDER, PROJECT. Number of last records is per project
   (E)XECUTABLE              - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
   
-  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive execution paramters will be decrypted and the values provided
+  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive execution parameters will be decrypted and the values provided
 
   AGENT_REFERENCES (AGR)    - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval). Runs in caller context. Caller must have permissions to msdb.
   AGENT_JOB (AGT)           - If available, Retrieve information about agent Job which started the execution. (Slow-down the retrieval). Runs in caller context. Caller must have permissions to msdb.
@@ -1020,7 +1020,7 @@ Below message filters are supported. By default ERROR and TASK_FAILED messages a
   (D)  DIAGNOSTICS             - diagnostics message
   (C)  CUSTOM                  - custom message
   (DE) DIAGNOSTICS_EX          - extended diagnostics message (Fired when a child package is being executed. Message containt XML with parametes passed to child package)
-  (ND) NON_DIAGNOSTIS          - non diagnostics message
+  (ND) NON_DIAGNOSTICS         - non diagnostics message
   (VC) VARIABLE_VALUE_CHANGE   - variable value change mesasge
   (U)  UNKNOWN                 - represents uknown message type
 ', 0, 0) WITH NOWAIT;
@@ -1085,7 +1085,13 @@ Comma separated list of package paths.Only executable statistics and messages, e
 and execution data statistics which match the @execution_path filter are returned.
 Supports LIKE wildcards. Default NULL means filter is not applied.', 0, 0) WITH NOWAIT;
 
-
+RAISERROR(N'
+@msg_filter
+-----------
+Used only for detailed results filtering in VERBOSE mode.
+Comma separated list of filters which are applied on the message body.
+Supports LIKE filters. Default NULL means filter is not applied.
+', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'--------------------------------------------- END OF HELP ---------------------------------------------', 0, 0) WITH NOWAIT;
 
@@ -1143,8 +1149,8 @@ Data AS (
                     WHEN 'P' THEN 'e.folder_name, e.project_name'
                     WHEN 'E' THEN 'e.folder_name, e.project_name, e.package_name'
                 END
-            + N' ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END + N') AS row_no'
-        ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END + N') AS row_no'
+            + N' ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS row_no'
+        ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS row_no'
     END + N'
 ' + CASE 
         WHEN @opLastGrp IS NOT NULL THEN
@@ -1155,7 +1161,7 @@ Data AS (
                     WHEN 'E' THEN 'e.folder_name, e.project_name, e.package_name'
                 END
             + N') AS rank'
-        ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END + N') AS rank'
+        ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS rank'
     END + N'
     FROM BaseOperations o 
     INNER JOIN internal.executions e WITH(NOLOCK) ON e.execution_id = o.operation_id
@@ -1422,7 +1428,7 @@ N'
         ) AS agent_job_detail'
         ELSE N''
     END +
-    CASE WHEN @includeAngetReferences > 0 THEN N'
+    CASE WHEN @includeAgentReferences > 0 THEN N'
         ,(SELECT
              job_name                       ''@job_name''
             ,is_enabled                     ''@is_enabled''
@@ -1638,7 +1644,7 @@ END
     RAISERROR(N'Processing Information:', 0, 0) WITH NOWAIT;
     RAISERROR(N'-----------------------', 0, 0) WITH NOWAIT;
 
-    IF @includeAngetReferences = 1
+    IF @includeAgentReferences = 1
     BEGIN
 
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
@@ -2109,7 +2115,7 @@ BEGIN
 
 
     /*EXECUTABLE STATISTICS */
-    IF @incoludeExecutableStatistics = 1
+    IF @includeExecutableStatistics = 1
     BEGIN
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
         SET @msg = N'%s - Starting retrieval of Executable Statistics... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @execRows), N'All') + N' rows)';
@@ -2158,7 +2164,7 @@ BEGIN
             WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE e.package_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE e.package_path LIKE f.filter AND f.exclusive = 1))'
             ELSE N''
         END + N'
-             ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(es.start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(es.end_time, ''9999-12-31'')' ELSE N'es.end_time' END + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END
+             ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(es.start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(es.end_time, ''9999-12-31'')' ELSE N'es.end_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END
 
         IF EXISTS(SELECT 1 FROM [internal].[executable_statistics] es WHERE es.execution_id = @id)
         BEGIN
@@ -2174,7 +2180,7 @@ BEGIN
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
         RAISERROR(N'%s - Executable Statistics retrieval completed...', 0, 0, @tms) WITH NOWAIT;
 
-    END --IF @incoludeExecutableStatistics = 1
+    END --IF @includeExecutableStatistics = 1
 
     IF @includeMessages = 1
     BEGIN
@@ -2298,11 +2304,11 @@ BEGIN
             
                 IF EXISTS(SELECT 1 fld FROM @xml.nodes('/i') T(n))
                 BEGIN
-                    SET @subcomponentFilter = 1               
+                    SET @subComponentFilter = 1               
                     SET @subcomponent_filter = REPLACE(STUFF((SELECT DISTINCT ', ' + LTRIM(RTRIM(n.value('.','nvarchar(128)'))) FROM @xml.nodes('/i') T(n) FOR XML PATH('')), 1, 2, ''), N'%', N'%%')
                 END
                 ELSE
-                    SET @subcomponentFilter = 0
+                    SET @subComponentFilter = 0
             END
 
             --Messsage Filters
@@ -2417,7 +2423,7 @@ BEGIN
                 ELSE N''
             END +
             CASE 
-                WHEN @subcomponentFilter = 1 THEN N' INNER JOIN #subComponents cf ON cf.subcomponent_name = em.subcomponent_name'
+                WHEN @subComponentFilter = 1 THEN N' INNER JOIN #subComponents cf ON cf.subcomponent_name = em.subcomponent_name'
                 ELSE N''
             END + N'
             WHERE om.operation_id = @id' +
@@ -2434,8 +2440,8 @@ BEGIN
                 ELSE N''
             END + N'
             ORDER BY 
-                 om.message_time' + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END + N'
-                ,om.operation_message_id' + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END 
+                 om.message_time' + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N'
+                ,om.operation_message_id' + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END 
 
             IF @taskFilter = 1
             BEGIN                             
@@ -2447,7 +2453,7 @@ BEGIN
                 SET @msg = N'                            - Using Event Filter(s): ' + @event_filter
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
             END
-            IF @subcomponentFilter = 1
+            IF @subComponentFilter = 1
             BEGIN                             
                 SET @msg = N'                            - Using SubComponent Filter(s): ' + @subcomponent_filter
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
@@ -2500,7 +2506,7 @@ BEGIN
             WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE eds.package_path_full LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE eds.package_path_full LIKE f.filter AND f.exclusive = 1))'
             ELSE N''
         END + N'
-             ORDER BY created_time ' + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END 
+             ORDER BY created_time ' + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END 
         
         EXEC sp_executesql @sql, N'@id bigint, @edsRows int, @package_path nvarchar(max), @execution_path nvarchar(max)', @id, @edsRows, @package_path, @execution_path
 
@@ -2638,11 +2644,11 @@ BEGIN
             
             IF EXISTS(SELECT 1 fld FROM @xml.nodes('/i') T(n))
             BEGIN
-                SET @subcomponentFilter = 1               
+                SET @subComponentFilter = 1               
                 SET @subcomponent_filter = REPLACE(STUFF((SELECT DISTINCT ', ' + LTRIM(RTRIM(n.value('.','nvarchar(128)'))) FROM @xml.nodes('/i') T(n) FOR XML PATH('')), 1, 2, ''), N'%', N'%%')
             END
             ELSE
-                SET @subcomponentFilter = 0
+                SET @subComponentFilter = 0
         END
 
 
@@ -2675,7 +2681,7 @@ BEGIN
             ELSE N''
         END +
         CASE 
-            WHEN @subcomponentFilter = 1 THEN N' INNER JOIN #subComponents cf ON cf.subcomponent_name = sp.subcomponent_name'
+            WHEN @subComponentFilter = 1 THEN N' INNER JOIN #subComponents cf ON cf.subcomponent_name = sp.subcomponent_name'
             ELSE N''
         END + N'
             LEFT JOIN internal.execution_component_phases ep WITH(NOLOCK) ON   sp.[phase_stats_id] != ep.[phase_stats_id]
@@ -2695,7 +2701,7 @@ BEGIN
             WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE sp.package_path_full LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE sp.package_path_full LIKE f.filter AND f.exclusive = 1))'
             ELSE N''
         END + N'
-             ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(sp.phase_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(ep.phase_time, ''9999-12-31'')' ELSE N'sp.sequence_id' END + CASE WHEN @useTimeDescenting = 1THEN  N' DESC' ELSE N' ASC' END 
+             ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(sp.phase_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(ep.phase_time, ''9999-12-31'')' ELSE N'sp.sequence_id' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END 
         
         IF @phaseFilter = 1
         BEGIN
@@ -2705,7 +2711,7 @@ BEGIN
         BEGIN
             RAISERROR(N'                            - Using Task Filter(s): %s', 0, 0, @task_filter) WITH NOWAIT;
         END
-        IF @subcomponentFilter = 1
+        IF @subComponentFilter = 1
         BEGIN
             RAISERROR(N'                            - Using SubComponent Filter(s): %s', 0, 0, @subcomponent_filter) WITH NOWAIT;
         END

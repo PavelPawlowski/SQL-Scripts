@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISResetConfiguration] AS PRINT ''Placeholder for [dbo].[sp_SSISResetConfiguration]''')
 GO
 /* ****************************************************
-sp_SSISResetConfiguration v 0.20 (2017-05-29)
+sp_SSISResetConfiguration v 0.21 (2017-10-30)
 (C) 2016 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -19,16 +19,16 @@ Description:
     Resets configured value for project, object or individual parameter in the project configuration
 
 Parameters:
-     @folder        nvarchar(128)   =       --Name of the Folder of the project to reset configuraions
+     @folder        nvarchar(128)   =       --Name of the Folder of the project to reset configurations
     ,@project       nvarchar(128)   =       --Name of the Project to reset configuration
-	,@object        nvarchar(260)   = NULL	--Comma separated list of objects which parametes should be cleared. Supports LIKE wildcards
+	,@object        nvarchar(260)   = NULL	--Comma separated list of objects which parameters should be cleared. Supports LIKE wildcards
     ,@parameter     nvarchar(max)   = NULL  --Comma separated list of parameters to be cleared. Supports LIKE wildcards
     ,@listOnly      bit             = 0     --specifies whether only list of parameters to be reset will be printed. No actual reset will happen
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISResetConfiguration]
-     @folder        nvarchar(128)   = NULL  --Name of the Folder of the project to reset configuraions
+     @folder        nvarchar(128)   = NULL  --Name of the Folder of the project to reset configurations
     ,@project       nvarchar(128)   = NULL  --Name of the Project to reset configuration
-	,@object        nvarchar(260)   = NULL	--Comma separated list of objects which parametes should be cleared. Supports LIKE wildcards
+	,@object        nvarchar(260)   = NULL	--Comma separated list of objects which parameters should be cleared. Supports LIKE wildcards
     ,@parameter     nvarchar(max)   = NULL  --Comma separated list of parameters to be cleared. Supports LIKE wildcards
     ,@listOnly      bit             = 0     --specifies whether only list of parameters to be reset will be printed. No actual reset will happen
 WITH EXECUTE AS 'AllSchemaOwner'
@@ -53,7 +53,7 @@ BEGIN
 		,@xmlPar						xml						--variable for holding xml for parsing input parameters
 
 
-	--Table for holding list of paramters to be dropped
+	--Table for holding list of parameters to be dropped
 	CREATE TABLE #parametersToClear (
 		parameter_id	bigint			NOT NULL	PRIMARY KEY CLUSTERED
 		,object_name	nvarchar(128)
@@ -65,7 +65,7 @@ BEGIN
         SET @printHelp = 1
 
 
-	RAISERROR(N'sp_SSISResetConfiguration v0.20 (2017-05-29) (C) 2016 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_SSISResetConfiguration v0.21 (2017-10-30) (C) 2016 Pavel Pawlowski', 0, 0) WITH NOWAIT;
     RAISERROR(N'=====================================================================', 0, 0) WITH NOWAIT;
 
     --PRINT HELP
@@ -77,17 +77,17 @@ BEGIN
         RAISERROR(N'[sp_SSISResetConfiguration] parameters', 0, 0) WITH NOWAIT; 
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
         SET @msg = N'Parameters:
-     @folder        nvarchar(128)   =       --Name of the Folder of the project to reset configuraions.
+     @folder        nvarchar(128)   =       - Name of the Folder of the project to reset configurations.
                                               Folder is required and must exist.
-    ,@project       nvarchar(128)   =       --Name of the Project to reset configuration.
+    ,@project       nvarchar(128)   =       - Name of the Project to reset configuration.
                                               Project is required and must exists.
-	,@object        nvarchar(260)   = NULL	--Comma separated list of object names within project to reset configuration. Support LIKE wildcards
-                                              Object is optional and if provided then only configuration for that prticular objects will be reset.
-    ,@parameter     nvarchar(128)   = NULL  --Comma separated list of parameter names within project to reset configuration. Support LIKE wildcards
+	,@object        nvarchar(260)   = NULL	- Comma separated list of object names within project to reset configuration. Support LIKE wildcards
+                                              Object is optional and if provided then only configuration for that particular objects will be reset.
+    ,@parameter     nvarchar(128)   = NULL  - Comma separated list of parameter names within project to reset configuration. Support LIKE wildcards
                                               Parameter is optional and if provided then only configuration for that parameter are reset
                                               When @parameter is provided and @object not, then all parameters with that particular name
                                               are reset within the project configurations.
-    ,@listOnly      bit             = 0     --Specifies whether only list of parameters to be reset will be printed. 
+    ,@listOnly      bit             = 0     - Specifies whether only list of parameters to be reset will be printed. 
                                               No actual reset will happen.
     '
         RAISERROR(@msg, 0, 0) WITH NOWAIT;
@@ -168,7 +168,7 @@ BEGIN
 
 
     RAISERROR(N'', 0, 0) WITH NOWAIT;
-    RAISERROR( N'Reseting configurations for project [%s]\[%s]', 0, 0, @folder, @project) WITH NOWAIT;
+    RAISERROR( N'Resetting configurations for project [%s]\[%s]', 0, 0, @folder, @project) WITH NOWAIT;
     SET @msg = N'-----------------------------------------' + REPLICATE('-', LEN(@folder) + LEN(@project));
     RAISERROR(@msg, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -194,7 +194,7 @@ BEGIN
 
     WHILE @@FETCH_STATUS = 0
     BEGIN
-        RAISERROR ('%sReseting configuraion of parameter [SSISDB]\[%s]\[%s]\[%s]\[%s]', 0, 0, @preview, @folder, @project, @object_name, @parameter_name) WITH NOWAIT;
+        RAISERROR ('%sResetting configuration of parameter [SSISDB]\[%s]\[%s]\[%s]\[%s]', 0, 0, @preview, @folder, @project, @object_name, @parameter_name) WITH NOWAIT;
         
         IF @listOnly = 0
         BEGIN
@@ -215,7 +215,7 @@ BEGIN
 
     IF @cnt = 0
     BEGIN
-        RAISERROR(N'Nothing to RESET. There is no parameter matching critera passed.', 0, 0) WITH NOWAIT;
+        RAISERROR(N'Nothing to RESET. There is no parameter matching criteria passed.', 0, 0) WITH NOWAIT;
     END
 
     CLOSE cr;
