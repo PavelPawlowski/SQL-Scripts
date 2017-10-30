@@ -4,7 +4,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_find] AS BEGIN PRINT ''Container for sp_find (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_find v 0.91 (2017-10-13)
+sp_find v 0.92 (2017-10-30)
 (C) 2014 - 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -19,7 +19,7 @@ Description:
     Searches databases and server objects for specified string
 
 Parameters:
-     @searchString              nvarchar(max)   = NULL          -- String to search for To serch for substring include wildcards like '%searchString%'
+     @searchString              nvarchar(max)   = NULL          -- String to search for To search for substring include wildcards like '%searchString%'
     ,@objectTypes               nvarchar(max)   = N'DATABASE'   -- Comma separated list of Object Types to search
     ,@databaseName              nvarchar(max)   = NULL          -- Comma separated list of databases to search. NULL means current database. Supports wildcards and ''%%'' means all databases
     ,@searchInDefinition        bit             = 1             -- Specifies whether to search in object definitions
@@ -29,7 +29,7 @@ Parameters:
  --------------------
  CREATE TABLE #Results(
      [DatabaseName]          nvarchar(128)   NULL       -- Database name of the match. In case of server scoped objects NULL
-    ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whethe match was in NAME or in definition
+    ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whether match was in NAME or in definition
     ,[ObjectType]            nvarchar(66)    NOT NULL   -- Type of object found
     ,[ObjectID]              varchar(36)     NOT NULL   -- ID of the object found
     ,[ObjectSchema]          nvarchar(128)   NULL       -- Object schema. NULL for not schema bound objects
@@ -47,7 +47,7 @@ Parameters:
 Revisions: 
 * ***************************************************** */ 
 ALTER PROCEDURE [dbo].[sp_find]
-     @searchString              nvarchar(max)   = NULL          -- String to search for To serch for substring include wildcards like '%searchString%'
+     @searchString              nvarchar(max)   = NULL          -- String to search for To search for substring include wildcards like '%searchString%'
     ,@objectTypes               nvarchar(max)   = N'DATABASE'   -- Comma separated list of Object Types to search
     ,@databaseName              nvarchar(max)   = NULL          -- Comma separated list of databases to search. NULL means current database. Supports wildcards and ''%%'' means all databases
     ,@searchInDefinition        bit             = 1             -- Specifies whether to search in object definitions
@@ -57,22 +57,22 @@ BEGIN
 SET NOCOUNT ON;
 
 DECLARE
-    @wrongTypes nvarchar(max)                           -- Will store wrong object types not matchind the correct one
+    @wrongTypes nvarchar(max)                           -- Will store wrong object types not matching the correct one
     --,@searchStr nvarchar(max) = N'%' + @searchString + N'%'	-- Updated Search string with all wildcards  ##Currently do not add wildcards to allow search for exact match
     ,@searchStr nvarchar(max) = @searchString           -- Updated Search string with all wildcards
     ,@dbName nvarchar(128)                              -- database name of currently processed database
-    ,@dbCollation nvarchar(128)                         -- colaltion to be used for currently processed database
+    ,@dbCollation nvarchar(128)                         -- collation to be used for currently processed database
     ,@searchBaseSQL nvarchar(max)                       -- Base search SQL 
     ,@searchSQL nvarchar(max)                           -- Search SQL updated for current database and collation
     ,@searchDescription nvarchar(255)                   -- Description of the current search being executed
     ,@sql nvarchar(max)                                 -- variable ro general dynamic SQL manipulations
-    ,@msg nvarchar(max)                                 -- for storing mesaages being printed
+    ,@msg nvarchar(max)                                 -- for storing messages being printed
     ,@paramDefinition nvarchar(max)                     -- Parameters Definition for help printing
     ,@caption nvarchar(max)                             -- sp_Find caption
-    ,@start datetime2                                   -- Start timestap scope search
+    ,@start datetime2                                   -- Start timestamp scope search
     ,@searchStart datetime2                             -- Start timestamp of current search
     ,@dbSearchStart datetime2                           -- Start timestamp of current database search
-    ,@end datetime2                                     -- End fimenstap of current search
+    ,@end datetime2                                     -- End timestamp of current search
     ,@searchEnd datetime2                               -- End timestamp scope search
     ,@dbSearchEnd datetime2                             -- End timestamp of current database search
     ,@now nvarchar(24)                                  -- Current time converted to string for printing
@@ -90,10 +90,10 @@ DECLARE
     ,@matchInDefinition nvarchar(10) = N'DEFINITION'    -- Specifies string to return when there is match in definition
     ,@basePath nvarchar(max) = N''                      -- Base ObjectPath - for database object searches it contains path to the Database
     ,@atGroup tinyint                                   -- Allowed Types group for help printing purposes
-    ,@lastAtGroup tinyint = 0                           -- Last Allowed Types group for helpprinting purposes
+    ,@lastAtGroup tinyint = 0                           -- Last Allowed Types group for help printing purposes
 
 --Set and print the procedure output caption
-SET @caption =  N'sp_find v0.91 (2017-10-13) (C) 2014-2017 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+SET @caption =  N'sp_find v0.92 (2017-10-30) (C) 2014-2017 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
                 N'========================================================' + NCHAR(13) + NCHAR(10);
 RAISERROR(@caption, 0, 0) WITH NOWAIT;
 
@@ -110,7 +110,7 @@ CREATE TABLE #typesMapping(
     ,PRIMARY KEY CLUSTERED(ObjectType,ParentObjectType)
 )
 
---Table varaible to hold input object types
+--Table variable to hold input object types
 DECLARE @inputTypes TABLE (
     ObjectType nvarchar(128) COLLATE Latin1_General_CI_AS NOT NULL PRIMARY KEY CLUSTERED
 )
@@ -144,9 +144,9 @@ DECLARE @allowedTypes TABLE (
      RowID                  int NOT NULL IDENTITY(1,1)                                          --RowID of the Allowed Types
     ,[Group]                tinyint                                                             --Group fo allowed types for sorting purposes during help printing
     ,ObjectType             nvarchar(128)   COLLATE Latin1_General_CI_AS PRIMARY KEY CLUSTERED  --Object Type
-    ,[Type]                 char(2)                                                             --Type corresponding to insternal sytem type codes
+    ,[Type]                 char(2)                                                             --Type corresponding to internal system type codes
     ,SearchScope            char(1)                                                             --Scope of the search name/definition
-    ,ObjectDescription      varchar(256)    COLLATE Latin1_General_CI_AS                        --Desciprion of the object type
+    ,ObjectDescription      varchar(256)    COLLATE Latin1_General_CI_AS                        --Description of the object type
     ,DefinitionSearchScope  varchar(256)    COLLATE Latin1_General_CI_AS                        --Description of the Definition search scope
 );
 
@@ -164,7 +164,7 @@ DECLARE @searches TABLE (
     ,SearchSQL           nvarchar(MAX)   NOT NULL
 )
 
---Insrt allwed object types into @allowedTypes table variable
+--Inert allowed object types into @allowedTypes table variable
 INSERT INTO @allowedTypes([Group], ObjectType, [Type], SearchScope, ObjectDescription, DefinitionSearchScope)
 VALUES
          (0,    N'DATABASE'                          ,''     ,'D'    ,'Any database scoped object'                                       ,'Depends on concrete object type')          --Custom Group Type
@@ -173,10 +173,10 @@ VALUES
                                                
         ,(1,    N'OBJECT'                            ,''     ,'D'    ,'Any schema scoped database object'                                ,'Depends on concrete object type')          --Custom Group Type
         ,(1,    N'SYSTEM_OBJECT'                     ,''     ,'D'    ,'Any system objects (EXPLICIT)'                                    ,'Depends on concrete object type')          --Custom Group TYpe
-        ,(1,    N'AGGREGATE_FUNCTION'                ,'AF'   ,'D'    ,'Aggregate funciton (CLR)'                                         ,'assembly_class & assembly_method names')
+        ,(1,    N'AGGREGATE_FUNCTION'                ,'AF'   ,'D'    ,'Aggregate function (CLR)'                                         ,'assembly_class & assembly_method names')
         ,(1,    N'CHECK_CONSTRAINT'                  ,'C'    ,'D'    ,'CHECK constraint'                                                 ,'T-SQL definition of the constraint')
         ,(1,    N'CLR_SCALAR_FUNCTION'               ,'FS'   ,'D'    ,'Scalar function (CLR)'                                            ,'assembly_class & assembly_method names')
-        ,(1,    N'FUNCTION'                          ,''     ,'D'    ,'Any fucntion (SQL or CLR'                                         ,'Depends on concrete function type')        --Custom Group Type
+        ,(1,    N'FUNCTION'                          ,''     ,'D'    ,'Any function (SQL or CLR'                                         ,'Depends on concrete function type')        --Custom Group Type
         ,(1,    N'SQL_FUNCTION'                      ,''     ,'D'    ,'Any SQL function (scalar, inline table-valued, table valued'      ,'Whole T-SQL Definition')                   --Custom Type
         ,(1,    N'CLR_FUNCTION'                      ,''     ,'D'    ,'Any CLR function (scalar, table-valued'                           ,'assembly_class & assembly_method names')   --Custom Group Type
         ,(1,    N'PROCEDURE'                         ,''     ,'D'    ,'Any stored procedure (SQL, CLR or Extended)'                      ,'Depends on concrete procedure type')       --Custom Group Type
@@ -202,7 +202,7 @@ VALUES
         ,(1,    N'SERVICE_QUEUE'                     ,'SQ'   ,'N'    ,'Service Queue'                                                    ,'')
         ,(1,    N'SQL_INLINE_TABLE_VALUED_FUNCTION'  ,'IF'   ,'D'    ,'SQL inline table valued function'                                 ,'Whole T-SQL Definition')
         ,(1,    N'SQL_SCALAR_FUNCTION'               ,'FN'   ,'D'    ,'SQL scalar function'                                              ,'Whole T-SQL Definition')
-        ,(1,    N'SQL_STORED_PROCEDURE'              ,'P'    ,'D'    ,'SQL stored prcedure'                                              ,'Whole T-SQL Definition')
+        ,(1,    N'SQL_STORED_PROCEDURE'              ,'P'    ,'D'    ,'SQL stored procedure'                                             ,'Whole T-SQL Definition')
         ,(1,    N'SQL_TABLE_VALUED_FUNCTION'         ,'TF'   ,'D'    ,'SQL table valued function'                                        ,'Whole T-SQL Definition')
         ,(1,    N'SQL_TRIGGER'                       ,''     ,'D'    ,'SQL DML or DDL (database or server) Trigger'                      ,'Whole T-SQL Definition')
         ,(1,    N'SYNONYM'                           ,'SN'   ,'N'    ,'Synonym'                                                          ,'')
@@ -222,7 +222,7 @@ VALUES
         ,(1,    N'COLUMN'                            ,''     ,'D'    ,'Column'                                                           ,'T-SQL definition of computed columns')
         ,(1,    N'SYSTEM_COLUMN'                     ,''     ,'D'    ,'Column of system and internal tables'                             ,'T-SQL definition of computed columns')    --Custom Type
         ,(1,    N'SCHEMA'                            ,''     ,'N'    ,'Schema'                                                           ,'')	--Custom Type
-        ,(1,    N'DATABASE_PRINCIPAL'                ,''     ,'N'    ,'Any datbabase principal'                                          ,'')	--Custom Group Type
+        ,(1,    N'DATABASE_PRINCIPAL'                ,''     ,'N'    ,'Any database principal'                                           ,'')	--Custom Group Type
         ,(1,    N'SQL_USER'                          ,'S'    ,'N'    ,'SQL user'                                                         ,'')
         ,(1,    N'WINDOWS_USER'                      ,'U'    ,'N'    ,'Windows user'                                                     ,'')
         ,(1,    N'WINDOWS_GROUP'                     ,'G'    ,'N'    ,'Windows group user or login'                                      ,'')
@@ -387,7 +387,7 @@ VALUES
 IF ISNULL(RTRIM(LTRIM(@objectTypes)), N'') = N''
 BEGIN
     SET @printHelp = 1;
-    RAISERROR(N'You have to prvide list of @objectTypes to search. The list cannot be NULL, empty and must contain only supported types.', 15, 0);
+    RAISERROR(N'You have to provide list of @objectTypes to search. The list cannot be NULL, empty and must contain only supported types.', 15, 0);
 END
 ELSE
 BEGIN
@@ -425,7 +425,7 @@ END
 IF RTRIM(LTRIM(@searchString)) = N''
 BEGIN
     SET @printHelp = 1;
-    RAISERROR(N'You have to prvide @searchString which is not NULL, empty and does not contains only spaces.', 15, 0);
+    RAISERROR(N'You have to provide @searchString which is not NULL, empty and does not contains only spaces.', 15, 0);
 END
 
 
@@ -438,11 +438,13 @@ BEGIN
     RAISERROR(N'[sp_find] parameters', 0, 0)
     RAISERROR(N'', 0, 0)
     SET @msg = N'Parameters:
-     @searchString              nvarchar(max)   = NULL          -- String to search for To serch for substring include wildcards like ''%%searchString%%''
-    ,@objectTypes               nvarchar(max)   = N''DATABASE''   -- Comma separated list of Object Types to search
-    ,@databaseName              nvarchar(max)   = NULL          -- Comma separated list of databases to search. NULL means current database. Supports wildcards and ''%%'' means all databases
-    ,@searchInDefinition        bit             = 1             -- Specifies whether to search in object definitions
-    ,@caseSensitive             bit             = 0             -- Specifies whether a Case Sensitive search should be done'
+     @searchString              nvarchar(max)   = NULL          - String to search for. Supports wildcards within the string.
+                                                                  To search for substring include wildcards like ''%%searchString%%''
+    ,@objectTypes               nvarchar(max)   = N''DATABASE''   - Comma separated list of Object Types to search
+    ,@databaseName              nvarchar(max)   = NULL          - Comma separated list of databases to search. NULL means current database. 
+                                                                  Supports wildcards and ''%%'' means all databases
+    ,@searchInDefinition        bit             = 1             - Specifies whether to search in object definitions
+    ,@caseSensitive             bit             = 0             - Specifies whether a Case Sensitive search should be done'
     RAISERROR(@msg, 0, 0);
     RAISERROR(N'', 0, 0);
     
@@ -482,14 +484,14 @@ BEGIN
     RAISERROR(N'----------------------------', 0, 0);
     SET @msg = N'CREATE TABLE #Results(
      [DatabaseName]          nvarchar(128)   NULL       -- Database name of the match. In case of server scoped objects NULL
-    ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whethe match was in NAME or in definition
+    ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whether match was in NAME or in definition
     ,[ObjectType]            nvarchar(66)    NOT NULL   -- Type of object found
     ,[ObjectID]              varchar(36)     NOT NULL   -- ID of the object found
-    ,[ObjectSchema]          nvarchar(128)   NULL       -- Object schema. NULL for not schema bound objects
+    ,[ObjectSchema]          nvarchar(128)   NULL       -- Object schema. NULL for non-schema bound objects
     ,[ObjectName]            nvarchar(128)   NULL       -- Object name
     ,[ParentObjectType]      nvarchar(60)    NULL       -- Parent object type
     ,[ParentObjectID]        varchar(36)     NULL       -- Parent object ID
-    ,[ParentObjectSchema]    nvarchar(128)   NULL       -- Parent object schema. NULL for not schema bound objects
+    ,[ParentObjectSchema]    nvarchar(128)   NULL       -- Parent object schema. NULL for no-schema bound objects
     ,[ParentObjectName]      nvarchar(128)   NULL       -- Parent Object Name
     ,[ObjectCreationDate]    datetime        NULL       -- Object creation date if available
     ,[ObjectModifyDate]      datetime        NULL       -- Object modification date if available
