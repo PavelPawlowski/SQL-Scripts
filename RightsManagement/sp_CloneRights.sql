@@ -4,7 +4,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_CloneRights] AS BEGIN PRINT ''Container for sp_CloneRights (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_CloneRights v0.36 (2017-10-13)
+sp_CloneRights v0.37 (2017-10-30)
 (C) 2010 - 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -19,11 +19,11 @@ Description:
     Clones rights and/or group membership for specified user(s)
 
 Parameters:
-     @user                      sysname         = NULL  - Comma separated list of user names to sciprt rights. 
+     @user                      sysname         = NULL  - Comma separated list of user names to script rights. 
                                                         - Supports wildcards when eg ''%%'' means all users
                                                         - [-] prefix means except
     ,@newUser                   sysname         = NULL  - New user to which copy rights. If New users is provided, @Old user must return exactly one record
-    ,@database                  nvarchar(max)   = NULL  - Comma separated listof databases to be iterated and permissions scripted. 
+    ,@database                  nvarchar(max)   = NULL  - Comma separated list of databases to be iterated and permissions scripted. 
                                                         - Supports Like wildcards. NULL means current database
                                                         - [-] prefix means except
     ,@scriptClass               nvarchar(max)   = NULL  - Comma separated list of permission classes to script. NULL = ALL
@@ -35,7 +35,7 @@ Parameters:
 ALTER PROCEDURE [dbo].[sp_CloneRights] 
     @user                       sysname         = NULL, --Old user from which to copy right 
     @newUser                    sysname         = NULL, --New user to which copy rights
-    @database                   nvarchar(max)   = NULL, --Comma separated listof databases to be iterated and permissions scripted. Supports Like wildcards
+    @database                   nvarchar(max)   = NULL, --Comma separated list of databases to be iterated and permissions scripted. Supports Like wildcards
     @scriptClass                nvarchar(max)   = NULL, --Comma separated list of permission classes to script. NULL = ALL
     @printOnly                  bit             = 1     --When 1 then only script is printed on screen, when 0 then also script is executed, when NULL, script is only executed and not printed
 AS
@@ -91,7 +91,7 @@ CREATE TABLE #output (
 
 
 --Set and print the procedure output caption
-RAISERROR(N'PRINT ''sp_CloneRights v0.36 (2017-10-13) (C) 2010-2017 Pavel Pawlowski''', 0, 0) WITH NOWAIT;
+RAISERROR(N'PRINT ''sp_CloneRights v0.37 (2017-10-30) (C) 2010-2017 Pavel Pawlowski''', 0, 0) WITH NOWAIT;
 RAISERROR(N'PRINT ''===============================================================''', 0, 0) WITH NOWAIT;
 
 INSERT INTO @allowedClasses(ClassName, ClassDescription)
@@ -103,11 +103,11 @@ VALUES
         ,(N'OBJECT'                         , 'Scripts permissions on all schema scoped objects')
         ,(N'TABLE'                          , 'Scripts permissions on user tables and/or table columns')
         ,(N'SYSTEM_TABLE'                   , 'Scripts permissions on system tables and/or table columns. SYSTEM_TABLE must be explicitly specified')
-        ,(N'VIEW'                           , 'Scripts permissions on all views/andor view columns')
-        ,(N'STORED_PROCEDURE'               ,  'Scripts permissions on stored procedrues')
-        ,(N'SQL_STORED_PROCEDURE'           , 'Scripts permissions on SQL stored procedrues')
-        ,(N'CLR_STORED_PROCEDURE'           , 'Scripts permissions on CLR stored procedrues')
-        ,(N'EXTENDED_STORED_PROCEDURE'      , 'Scripts permissions on Extended stored procedrues. EXTENDED_STORED_PROCEDURE must be explicitly specified')
+        ,(N'VIEW'                           , 'Scripts permissions on all views and/or view columns')
+        ,(N'STORED_PROCEDURE'               , 'Scripts permissions on stored procedures')
+        ,(N'SQL_STORED_PROCEDURE'           , 'Scripts permissions on SQL stored procedures')
+        ,(N'CLR_STORED_PROCEDURE'           , 'Scripts permissions on CLR stored procedures')
+        ,(N'EXTENDED_STORED_PROCEDURE'      , 'Scripts permissions on Extended stored procedures. EXTENDED_STORED_PROCEDURE must be explicitly specified')
         ,(N'FUNCTION'                       , 'Scripts permissions on all functions')
         ,(N'SQL_FUNCTION'                   , 'Scripts permissions on all SQL functions')
         ,(N'CLR_FUNCTION'                   , 'Scripts permissions on all CLR functions')
@@ -140,7 +140,7 @@ VALUES
         ,(N'XML_SCHEMA_COLLECTION'          , 'Scripts permissions on all XML schema collections')
         
         ,(N''                               ,'')
-        ,(N'SERVICE_BROKER'                 , 'Scripts permissions on all service broker related bojects')
+        ,(N'SERVICE_BROKER'                 , 'Scripts permissions on all service broker related objects')
         ,(N'MESSAGE_TYPE'                   , 'Scripts permissions on all message types')
         ,(N'SERVICE_CONTRACT'               , 'Scripts permissions on all service contracts')
         ,(N'SERVICE'                        , 'Scripts permissions on all services')
@@ -1157,6 +1157,6 @@ DROP TABLE #output;
 END
 GO
 
---Mark Stored Procedure as system object, so it executeds in the context of current database.
+--Mark Stored Procedure as system object, so it executes in the context of current database.
 EXECUTE sp_ms_marksystemobject 'dbo.sp_CloneRights'
 GO

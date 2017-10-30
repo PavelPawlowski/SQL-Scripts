@@ -20,13 +20,13 @@ Description:
 
 Parameters:
      @databases		nvarchar(max)	= NULL	--Comma separated list of databases to retrieve permissions
-											--Supports LIKE Wildcards
+											--Supports LIKE wildcards
 											--names starting with [-] are removed form the list
-											--NULL represetns current database
+											--NULL represents current database
     @principals     nvarchar(max)   = NULL  --Comma separated list of database principal names for which the permissions should be retrieved
-                                            --Supports LIKE Wildcards
+                                            --Supports LIKE wildcards
                                             --Names starting with [-]are removed from the list
-                                            --NULL represetnts all grantees
+                                            --NULL represents all grantees
 
 SAMPLE CALL:
 sp_HelpRights						-- Processes rights for current database
@@ -36,7 +36,7 @@ sp_HelpRights 'DBA, User%, -User1%'	-- Processes rights for database [DBA] and a
 sp_HelpRights '?'					-- Prints this help
 *********************************************************************************************************** */
 ALTER PROCEDURE [dbo].[sp_HelpRights]
-	@databases	    nvarchar(max)	= NULL --Comma separated list of databases to retrieve database permissions. Supports Wildcards, NULL means curent database
+	@databases	    nvarchar(max)	= NULL --Comma separated list of databases to retrieve database permissions. Supports wildcards, NULL means current database
     ,@principals    nvarchar(max)   = NULL --Comma separated list of database principal names for which permissions should be retrieved. Supports wildcards, NULL means any
 AS
 BEGIN
@@ -48,7 +48,7 @@ BEGIN
 	BEGIN
 		RAISERROR(N'Description:
 	Lists database objects Rights assignment overview.
-    It lists all Rights asignments to individual database principals, even those granted through hierarchy of roles membership
+    It lists all Rights assignments to individual database principals, even those granted through hierarchy of roles membership
     and not directly visible for particular database principal
 
 Usage:
@@ -62,7 +62,7 @@ Parameters:
     @principals     nvarchar(max)   = NULL  --Comma separated list of database principal names for which the permissions should be retrieved
                                             --Supports LIKE Wildcards
                                             --Names starting with [-]are removed from the list
-                                            --NULL represetnts all grantees
+                                            --NULL represents all grantees
 
 SAMPLE CALLs:
 sp_HelpRights                       -- Processes rights for current database
@@ -79,8 +79,8 @@ CREATE TABLE #rightsHelp (
   	 [DatabaseName]                          nvarchar(128)   NULL       --Name of the database
 	,[PermissionOjectType]                   nvarchar(60)    NULL       --Type of the Permission object
 	,[DatabaseObjectType]                    nvarchar(60)    NOT NULL   --Type of the Database object with which the permission is associated
-	,[DatabaseObjectSchemaName]              sysname         NULL       --Schema name for schema bound database objectsd
-	,[DatabaseObjectName]                    sysname         NULL       --Datbase object to which the permission is related
+	,[DatabaseObjectSchemaName]              sysname         NULL       --Schema name for schema bound database objects
+	,[DatabaseObjectName]                    sysname         NULL       --Database object to which the permission is related
 	,[ColumnID]                              int             NOT NULL   --ID of column in case the permission is related to a column
 	,[DatabasePrincipalName]                 sysname         NULL       --Name of the database principal to which the permission is associated. The one to which the permission is finally granted or revoked.
 	,[DatabasePrincipalTypeName]             nvarchar(60)    NULL       --Name of the database principal Type
@@ -88,15 +88,15 @@ CREATE TABLE #rightsHelp (
 	,[PermissionStateName]                   nvarchar(60)    NULL       --Name of the permission state GRANT,DENY,..
 	,[GranteePrincipalName]                  sysname         NULL       --Database principal to which the permission is originally granted/denied.', 0, 0) WITH NOWAIT;
 RAISERROR(N'	,[GranteePrincipalTypeName]              nvarchar(60)    NULL       --Type of the grantee principal
-	,[PermissionInheritancePath]             nvarchar(max)   NULL       --Thecomplete inheritance path from the Grantee to the DatabasePrincipal
+	,[PermissionInheritancePath]             nvarchar(max)   NULL       --The complete inheritance path from the Grantee to the DatabasePrincipal
 	,[ServerPrincipalName]                   sysname         NULL       --Name of Server principal corresponding to database principal if available
 	,[GrantedByDatabasePrincipalName]        sysname         NULL       --Name of the database principal which granted the permission to the grantee
-	,[GrantedByDatabasePrincipalTypeName]    nvarchar(60)    NULL       --Type of the datbase principal which granted the permission to the grantee
+	,[GrantedByDatabasePrincipalTypeName]    nvarchar(60)    NULL       --Type of the database principal which granted the permission to the grantee
 	,[DatabaseID]                            smallint        NULL       --ID of the database
-	,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema boudn objects
-	,[DatabaseObjectID]                      int             NOT NULL   --ID of the dtabase object with which the permission is associated
-	,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.Theone to which the permission is finally granted orrevoked.', 0, 0) WITH NOWAIT;
-RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principla
+	,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema bound objects
+	,[DatabaseObjectID]                      int             NOT NULL   --ID of the database object with which the permission is associated
+	,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.The one to which the permission is finally granted orrevoked.', 0, 0) WITH NOWAIT;
+RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principal
 	,[PermissionType]                        char(4)         NOT NULL   --Type of the permission
 	,[PermissionState]                       char(1)         NOT NULL   --State of the permission
 	,[GranteePrincipalID]                    int             NOT NULL   --ID of the grantee database principal
@@ -111,7 +111,7 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
 
 	DECLARE @xml xml;						--variable for storing XML to split database names
 	DECLARE @sql nvarchar(max);				--variable tor store dynamic SQL
-	DECLARE @dbName nvarchar(128);			--variable tor store actual DB name to retrive rights
+	DECLARE @dbName nvarchar(128);			--variable tor store actual DB name to retrieve rights
 
 
     --Create temp table for storing the rights overview
@@ -119,7 +119,7 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
   	     [DatabaseName]                          nvarchar(128)   NULL       --Name of the database
 	    ,[PermissionOjectType]                   nvarchar(60)    NULL       --Type of the Permission object
 	    ,[DatabaseObjectType]                    nvarchar(60)    NOT NULL   --Type of the Database object with which the permission is associated
-	    ,[DatabaseObjectSchemaName]              sysname         NULL       --Schema name for schema bound database objectsd
+	    ,[DatabaseObjectSchemaName]              sysname         NULL       --Schema name for schema bound database objects
 	    ,[DatabaseObjectName]                    sysname         NULL       --Database object to which the permission is related
 	    ,[ColumnID]                              int             NOT NULL   --ID of column in case the permission is related to a column
 	    ,[DatabasePrincipalName]                 sysname         NULL       --Name of the database principal to which the permission is associated. The one to which the permission is finally granted or revoked.
@@ -128,15 +128,15 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
 	    ,[PermissionStateName]                   nvarchar(60)    NULL       --Name of the permission state GRANT,DENY,..
 	    ,[GranteePrincipalName]                  sysname         NULL       --Database principal to which the permission is originally granted/denied.
 	    ,[GranteePrincipalTypeName]              nvarchar(60)    NULL       --Type of the grantee principal
-	    ,[PermissionInheritancePath]             nvarchar(max)   NULL       --Thecomplete inheritance path from the Grantee to the DatabasePrincipal
+	    ,[PermissionInheritancePath]             nvarchar(max)   NULL       --The complete inheritance path from the Grantee to the DatabasePrincipal
 	    ,[ServerPrincipalName]                   sysname         NULL       --Name of Server principal corresponding to database principal if available
 	    ,[GrantedByDatabasePrincipalName]        sysname         NULL       --Name of the database principal which granted the permission to the grantee
-	    ,[GrantedByDatabasePrincipalTypeName]    nvarchar(60)    NULL       --Type of the datbase principal which granted the permission to the grantee
+	    ,[GrantedByDatabasePrincipalTypeName]    nvarchar(60)    NULL       --Type of the database principal which granted the permission to the grantee
 	    ,[DatabaseID]                            smallint        NULL       --ID of the database
-	    ,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema boudn objects
-	    ,[DatabaseObjectID]                      int             NOT NULL   --ID of the dtabase object with which the permission is associated
-	    ,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.Theone to which the permission is finally granted orrevoked.
-	    ,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principla
+	    ,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema bound objects
+	    ,[DatabaseObjectID]                      int             NOT NULL   --ID of the database object with which the permission is associated
+	    ,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.The one to which the permission is finally granted orrevoked.
+	    ,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principal
 	    ,[PermissionType]                        char(4)         NOT NULL   --Type of the permission
 	    ,[PermissionState]                       char(1)         NOT NULL   --State of the permission
 	    ,[GranteePrincipalID]                    int             NOT NULL   --ID of the grantee database principal
@@ -146,7 +146,7 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
 	    ,[GrantedByDatabasePrincipalType]        char(1)         NULL       --Type of the database principal by which the permission was granted/denied
     )
 
-    --Temp table to hold disticnt principal names wildcards
+    --Temp table to hold distinct principal names wildcards
     CREATE TABLE #principals (PrincipalNameWildcard nvarchar(128) PRIMARY KEY CLUSTERED);
 
     --Extract principals wildcards (in case of NULL use %)
@@ -158,7 +158,7 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
 
 
 
-    --Base query for rigths extraction
+    --Base query for rights extraction
 	DECLARE @baseQuery nvarchar(max) = N'
 WITH FilteredPrincipals AS (
     SELECT DISTINCT
@@ -298,7 +298,7 @@ WHERE dp.DatabasePrincipalID IN (SELECT principal_id FROM FilteredPrincipals)
 	INNER JOIN DBNames dn ON  d.name LIKE dn.DBName
 	WHERE Left(dn.DBName, 1) <> '-'
 
-	EXCEPT --remove datbases which match pattern starting with -
+	EXCEPT --remove databases which match pattern starting with -
 
 	SELECT DISTINCT
 		QUOTENAME(d.name) AS DBName
@@ -310,7 +310,7 @@ WHERE dp.DatabasePrincipalID IN (SELECT principal_id FROM FilteredPrincipals)
 
 	FETCH NEXT FROM dbc INTO @dbName;
 
-	--processRights for each selected database
+	--process Rights for each selected database
 	WHILE @@FETCH_STATUS = 0
 	BEGIN
 		RAISERROR('Fetching Rights for Database %s...', 0, 0, @dbName) WITH NOWAIT;
