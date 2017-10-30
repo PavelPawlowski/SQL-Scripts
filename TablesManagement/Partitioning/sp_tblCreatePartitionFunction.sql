@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID('[dbo].[sp_t
 	EXEC (N'CREATE PROCEDURE [dbo].[sp_tblCreatePartitionFunction] AS PRINT ''Container''')
 GO
 /* ****************************************************
-sp_tblCreatePartitionFunction v 0.3 (2016-10-15)
+sp_tblCreatePartitionFunction v 0.32 (2016-10-30)
 (C) 2014 - 2016 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -21,14 +21,14 @@ Usage:
     sp_tblCreatePartitionFunction [parameters]
 
 Parameters:
-     @pfName            nvarchar(128)   = NULL      --PartitionFunctionname
-    ,@rangeStart        sql_variant     = NULL      --Start of the Range. you should pass proper data type or strig in proper formant
+     @pfName            nvarchar(128)   = NULL      --Partition function name
+    ,@rangeStart        sql_variant     = NULL      --Start of the Range. you should pass proper data type or string in proper format
     ,@rangeEnd          sql_variant     = NULL      --End of the Range. You should pass proper data type or string in proper format
     ,@boundaryType      nvarchar(5)     = ''RIGHT''   --Range Boundary Type (RIGHT or LEFT)
     ,@incrementValue    int             = 1         --Specifies how many increment units should be incremented in each step
-    ,@incrementUnit     nvarchar(10)    = ''MONTH''   --Range Increment Type eg. YAER, MONTH, WEEK, ISO_WEEK, DAY. 
+    ,@incrementUnit     nvarchar(10)    = ''MONTH''   --Range Increment Type eg. YEAR, MONTH, WEEK, ISO_WEEK, DAY. 
                                                     --Used only for date ranges
-    ,@useIntegerDates   bit             = 1         --Specifies whether dates should be interpreted as integers or as origianl range date data type in case of Dates
+    ,@useIntegerDates   bit             = 1         --Specifies whether dates should be interpreted as integers or as original range date data type in case of Dates
     ,@integerFormatType tinyint         = 2         --Specifies how the int data type is being formatted. 1 or 2. 
                                                     --1 = format is yyyymmdd and 
                                                     --2 = format using yyyxx(x) where xx(x) represents month, week or day
@@ -39,7 +39,7 @@ Range parameters specification:
 
 If string value passed as @rageStart or @Range end is convertible into a datetime data type, the datetime data type will be used for the partition function.
 
-In additon a Format specifier can be used as firt character of the string:
+In addition a Format specifier can be used as first character of the string:
 (D = date, T = datetime, B = bigint, I = int, S = smallint)
 
 ''2016-01-01''      - converted to:     datetime    2016-01-01
@@ -53,13 +53,13 @@ In additon a Format specifier can be used as firt character of the string:
 Modifications: 
 * ***************************************************** */ 
 ALTER PROCEDURE [dbo].[sp_tblCreatePartitionFunction]
-     @pfName            nvarchar(128)   = NULL      --PartitionFunctionname
-    ,@rangeStart        sql_variant     = NULL      --Start of the Range. you should pass proper data type or strig in proper formant
+     @pfName            nvarchar(128)   = NULL      --Partition function name
+    ,@rangeStart        sql_variant     = NULL      --Start of the Range. you should pass proper data type or string in proper formant
     ,@rangeEnd          sql_variant     = NULL      --End of the Range. You should pass proper data type or string in proper format
     ,@boundaryType      nvarchar(5)     = 'RIGHT'   --Range Boundary Type (RIGHT or LEFT)
     ,@incrementValue    int             = 1         --Specifies how many increment units should be incremented
-    ,@incrementUnit     nvarchar(10)    = 'MONTH'   --Range Increment Type eg. YAER, MONTH, WEEK, ISO_WEEK, DAY. Used only for date ranges
-    ,@useIntegerDates   bit             = 1         --Specifies whether dates should be interpreted as integers or as origianl range date data type
+    ,@incrementUnit     nvarchar(10)    = 'MONTH'   --Range Increment Type eg. YEAR, MONTH, WEEK, ISO_WEEK, DAY. Used only for date ranges
+    ,@useIntegerDates   bit             = 1         --Specifies whether dates should be interpreted as integers or as original range date data type
     ,@integerFormatType tinyint         = 2         --Specifies how the int data type is being formatted. 1 or 2. 1 = format is yyyymmdd and 2 = format using yyyxx(x) where xx(x) represents month, week or day
     ,@printScriptOnly   bit             = 1         --Specifies whether script should be printed or the function should be automatically created. Default is print script
 AS
@@ -77,7 +77,7 @@ BEGIN
 		,@msg                   nvarchar(max)                                   --message
 		,@printHelp             bit             = 0		                        --Specifies whether to print help
         ,@isDateRange           bit             = 0                             --indicates whether we are operating with date ranges
-        ,@rangeBaseType         nvarchar(10)                                    --stores the data type fo the input @erangeStart
+        ,@rangeBaseType         nvarchar(10)                                    --stores the data type fo the input @rangeStart
         ,@typeConvert           char(1)                                         --Type of conversion in input Range in case string is passed
         ,@strRangeStart         nvarchar(50)
         ,@strRangeEnd           nvarchar(50)
@@ -112,7 +112,7 @@ BEGIN
             ELSE
                 SET @typeConvert = 'T'
                              
-            --if dates or nubmers are passed, try hanle conversion
+            --if dates or numbers are passed, try handle conversion
             IF (ISDATE(@strRangeStart) = 1 AND ISDATE(@strRangeEnd) = 1) OR (ISNUMERIC(CONVERT(nvarchar(50), @strRangeStart)) = 1 AND ISNUMERIC(@strRangeEnd) = 1)
             BEGIN
                 BEGIN TRY
@@ -194,14 +194,14 @@ Usage:
     sp_tblCreatePartitionFunction [parameters]
 
 Parameters:
-     @pfName            nvarchar(128)   = NULL      --PartitionFunctionname
-    ,@rangeStart        sql_variant     = NULL      --Start of the Range. you should pass proper data type or strig in proper formant
+     @pfName            nvarchar(128)   = NULL      --Partition function name
+    ,@rangeStart        sql_variant     = NULL      --Start of the Range. you should pass proper data type or string in proper formant
     ,@rangeEnd          sql_variant     = NULL      --End of the Range. You should pass proper data type or string in proper format
     ,@boundaryType      nvarchar(5)     = ''RIGHT''   --Range Boundary Type (RIGHT or LEFT)
     ,@incrementValue    int             = 1         --Specifies how many increment units should be incremented in each step
-    ,@incrementUnit     nvarchar(10)    = ''MONTH''   --Range Increment Type eg. YAER, MONTH, WEEK, ISO_WEEK, DAY. 
+    ,@incrementUnit     nvarchar(10)    = ''MONTH''   --Range Increment Type eg. YEAR, MONTH, WEEK, ISO_WEEK, DAY. 
                                                     --Used only for date ranges
-    ,@useIntegerDates   bit             = 1         --Specifies whether dates should be interpreted as integers or as origianl range date data type in case of Dates
+    ,@useIntegerDates   bit             = 1         --Specifies whether dates should be interpreted as integers or as original range date data type in case of Dates
     ,@integerFormatType tinyint         = 2         --Specifies how the int data type is being formatted. 1 or 2. 
                                                     --1 = format is yyyymmdd and 
                                                     --2 = format using yyyxx(x) where xx(x) represents month, week or day
@@ -215,7 +215,7 @@ Range parameters specification:
 
 If string value passed as @rageStart or @Range end is convertible into a datetime data type, the datetime data type will be used for the partition function.
 
-In additon a Format specifier can be used as firt character of the string:
+In addition a Format specifier can be used as first character of the string:
 (D = date, T = datetime, B = bigint, I = int, S = smallint)
 
 ''2016-01-01''      - converted to:     datetime    2016-01-01
