@@ -4,8 +4,8 @@ IF NOT EXISTS(SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID('[dbo].[sp_t
 	EXEC (N'CREATE PROCEDURE [dbo].[sp_tblCreatePartitionFunction] AS PRINT ''Container''')
 GO
 /* ****************************************************
-sp_tblCreatePartitionFunction v 0.32 (2016-10-30)
-(C) 2014 - 2016 Pavel Pawlowski
+sp_tblCreatePartitionFunction v 0.33 (2017-10-30)
+(C) 2014 - 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -82,8 +82,8 @@ BEGIN
         ,@strRangeStart         nvarchar(50)
         ,@strRangeEnd           nvarchar(50)
 
-	SET @caption = N'--sp_tblCreatePartitionFunction v 0.3 (2016-10-15) (C) 2014 - 2016 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
-				   N'--================================================================================' + NCHAR(13) + NCHAR(10);
+	SET @caption = N'--sp_tblCreatePartitionFunction v 0.33 (2017-10-30) (C) 2014 - 2017 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+				   N'--=================================================================================' + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
 
 

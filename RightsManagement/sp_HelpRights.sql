@@ -4,8 +4,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_HelpRights] AS BEGIN PRINT ''Container for sp_HelpRights (C) Pavel Pawlowski'' END');
 GO
 /* *********************************************************************************************************
-sp_HelpRights v0.61 (2016-10-17)
-(C) 2015 - 2016 Pavel Pawlowski
+sp_HelpRights v0.62 (2017-10-30)
+(C) 2015 - 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -41,7 +41,7 @@ ALTER PROCEDURE [dbo].[sp_HelpRights]
 AS
 BEGIN
 	SET NOCOUNT ON;
-	RAISERROR(N'sp_HelpRights v0.61 (2016-10-17) (C) 2015-2016 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_HelpRights v0.62 (2017-10-30) (C) 2015-2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
     RAISERROR(N'==============================================================', 0, 0) WITH NOWAIT;
 
 	IF @databases = '?'
@@ -74,7 +74,7 @@ sp_HelpRights ''?''                   -- Prints this help
 
 ', 0, 0) WITH NOWAIT;
 
-RAISERROR(N'--Table Strcuture for output collection
+RAISERROR(N'--Table Strycture for output collection
 CREATE TABLE #rightsHelp (
   	 [DatabaseName]                          nvarchar(128)   NULL       --Name of the database
 	,[PermissionOjectType]                   nvarchar(60)    NULL       --Type of the Permission object
@@ -95,7 +95,7 @@ RAISERROR(N'	,[GranteePrincipalTypeName]              nvarchar(60)    NULL      
 	,[DatabaseID]                            smallint        NULL       --ID of the database
 	,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema bound objects
 	,[DatabaseObjectID]                      int             NOT NULL   --ID of the database object with which the permission is associated
-	,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.The one to which the permission is finally granted orrevoked.', 0, 0) WITH NOWAIT;
+	,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.The one to which the permission is finally granted', 0, 0) WITH NOWAIT;
 RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principal
 	,[PermissionType]                        char(4)         NOT NULL   --Type of the permission
 	,[PermissionState]                       char(1)         NOT NULL   --State of the permission
@@ -108,6 +108,13 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
 ', 0, 0) WITH NOWAIT;
 		RETURN;
 	END;
+    ELSE
+    BEGIN
+        RAISERROR(N'', 0, 0) WITH NOWAIT;
+        RAISERROR(N'sp_HelpRights ''?'' for help', 0, 0) WITH NOWAIT;
+        RAISERROR(N'', 0, 0) WITH NOWAIT;
+    END
+
 
 	DECLARE @xml xml;						--variable for storing XML to split database names
 	DECLARE @sql nvarchar(max);				--variable tor store dynamic SQL
@@ -135,7 +142,7 @@ RAISERROR(N'	,[DatabasePrincipalType]                 char(1)         NULL      
 	    ,[DatabaseID]                            smallint        NULL       --ID of the database
 	    ,[DatabaseObjectSchemaID]                int             NULL       --ID of the schema for the schema bound objects
 	    ,[DatabaseObjectID]                      int             NOT NULL   --ID of the database object with which the permission is associated
-	    ,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated.The one to which the permission is finally granted orrevoked.
+	    ,[DatabasePrincipalID]                   int             NULL       --ID of the database principal to which the permission is associated The one to which the permission is finally granted.
 	    ,[DatabasePrincipalType]                 char(1)         NULL       --Type of the database principal
 	    ,[PermissionType]                        char(4)         NOT NULL   --Type of the permission
 	    ,[PermissionState]                       char(1)         NOT NULL   --State of the permission

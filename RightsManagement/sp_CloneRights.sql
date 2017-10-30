@@ -4,7 +4,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_CloneRights] AS BEGIN PRINT ''Container for sp_CloneRights (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_CloneRights v0.37 (2017-10-30)
+sp_CloneRights v0.39 (2017-10-30)
 (C) 2010 - 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -19,9 +19,7 @@ Description:
     Clones rights and/or group membership for specified user(s)
 
 Parameters:
-     @user                      sysname         = NULL  - Comma separated list of user names to script rights. 
-                                                        - Supports wildcards when eg ''%%'' means all users
-                                                        - [-] prefix means except
+     @user                      nvarchar(max)   = NULL  - Supports LIKE wildcards
     ,@newUser                   sysname         = NULL  - New user to which copy rights. If New users is provided, @Old user must return exactly one record
     ,@database                  nvarchar(max)   = NULL  - Comma separated list of databases to be iterated and permissions scripted. 
                                                         - Supports Like wildcards. NULL means current database
@@ -33,9 +31,9 @@ Parameters:
 
 * ***************************************************** */ 
 ALTER PROCEDURE [dbo].[sp_CloneRights] 
-    @user                       sysname         = NULL, --Old user from which to copy right 
+    @user                       nvarchar(max)   = NULL, --Comma separated list of database principals to script he rights. Supports LIKE wildcards
     @newUser                    sysname         = NULL, --New user to which copy rights
-    @database                   nvarchar(max)   = NULL, --Comma separated list of databases to be iterated and permissions scripted. Supports Like wildcards
+    @database                   nvarchar(max)   = NULL, --Comma separated list of databases to be iterated and permissions scripted. Supports Like wildcards NULL Means current database
     @scriptClass                nvarchar(max)   = NULL, --Comma separated list of permission classes to script. NULL = ALL
     @printOnly                  bit             = 1     --When 1 then only script is printed on screen, when 0 then also script is executed, when NULL, script is only executed and not printed
 AS
@@ -91,7 +89,7 @@ CREATE TABLE #output (
 
 
 --Set and print the procedure output caption
-RAISERROR(N'PRINT ''sp_CloneRights v0.37 (2017-10-30) (C) 2010-2017 Pavel Pawlowski''', 0, 0) WITH NOWAIT;
+RAISERROR(N'PRINT ''sp_CloneRights v0.39 (2017-10-30) (C) 2010-2017 Pavel Pawlowski''', 0, 0) WITH NOWAIT;
 RAISERROR(N'PRINT ''===============================================================''', 0, 0) WITH NOWAIT;
 
 INSERT INTO @allowedClasses(ClassName, ClassDescription)
@@ -226,7 +224,6 @@ SELECT
 FROM @inputClasses c
 INNER JOIN @allowedClasses ac ON ac.ClassName LIKE LTRIM(RTRIM(c.ClassName))
 
-
 IF @user IS NULL OR @printHelp = 1
 BEGIN
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -236,11 +233,11 @@ BEGIN
     RAISERROR(N'[sp_CloneRights] parameters', 0, 0)
     RAISERROR(N'', 0, 0)
     SET @msg = N'Parameters:
-     @user          sysname         = NULL  - Comma separated list of user names to sciprt rights.
+     @user          nvarchar(max)   = NULL  - Comma separated list of database principals to script the rights
                                             - Supports wildcards when eg ''%%'' means all users
                                             - [-] prefix means except
-    ,@newUser       sysname         = NULL  - New user to which copy rights. If New users is provided, @Old user must return exactly one record
-    ,@database      nvarchar(max)   = NULL  - Comma separated listof databases to be iterated and permissions scripted. 
+    ,@newUser       sysname         = NULL  - New database principal to which copy rights. If @newUser is provided, @user must match exactly one database principal
+    ,@database      nvarchar(max)   = NULL  - Comma separated list of databases to be iterated and permissions scripted. 
                                             - Supports Like wildcards. NULL means current database
                                             - [-] prefix means except
     ,@scriptClass   nvarchar(max)   = NULL  - Comma separated list of permission classes to script. NULL = ALL
