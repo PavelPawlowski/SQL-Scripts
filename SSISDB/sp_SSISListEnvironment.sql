@@ -129,7 +129,7 @@ BEGIN
                                                       Eg. Updating to new password.
     ,@exactValue            nvarchar(max)    = NULL - Exact value of variables to be matched. Only one of @exactValue and @value can be specified at a time
     ,@decryptSensitive      bit              = 0    - Specifies whether sensitive data should be decrypted.
-                                                      Caller must be member of [db_owner] or [ssis_sensitive_access] database role or memver of [sysadmin] server role
+                                                      Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
                                                       to be able to decrypt sensitive information
     ', 0, 0) WITH NOWAIT;
 RAISERROR(N'

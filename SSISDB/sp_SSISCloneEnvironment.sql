@@ -193,8 +193,8 @@ Variables can be filtered by names as well as values.
                                                          It sets the default value for the script
     ,@destinationEnvironment    nvarchar(128)   = ''%%''  - Pattern for naming destination Environment. %% in the destination environment name is replaced by the source environment name.
                                                          Allows easy cloning of multiple folders by prefixing or suffixing the %% pattern
-                                                         It sets the default value for the script
-    ,@autoCreate                bit             = 0    - Specifies whether the destination Folder/Environment should be auto-created if not exists. 
+                                                         It sets the default value for the script', 0, 0) WITH NOWAIT;
+RAISERROR(N'    ,@autoCreate                bit             = 0    - Specifies whether the destination Folder/Environment should be auto-created if not exists. 
                                                          It sets default value for the script
     ,@overwrite                 bit             = 0    - Specifies whether destination environment variables should be overwritten. 
                                                          It sets default value for the script 
@@ -203,7 +203,7 @@ Variables can be filtered by names as well as values.
     ,@exactValue                nvarchar(max)   = NULL - Exact value of variables to be matched. Have priority above @value
                                                          Only variables which value exactly matching the @exactValue are scripted.
     ,@decryptSensitive          bit             = 0    - Specifies whether sensitive data should be decrypted.
-                                                         Caller must be member of [db_owner] or [ssis_sensitive_access] database role or memver of [sysadmin] server role
+                                                         Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
                                                          to be able to decrypt sensitive information
 ', 0, 0) WITH NOWAIT;
 RAISERROR(N'

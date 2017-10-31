@@ -923,7 +923,7 @@ RAISERROR(N'
   (E)XECUTABLE              - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
   
   DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive execution parameters will be decrypted and the values provided
-                              Caller must be member of [db_owner] or [ssis_sensitive_access] database role or memver of [sysadmin] server role
+                              Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
                               to be able to decrypt sensitive information
 
   AGENT_REFERENCES (AGR)    - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval). Runs in caller context. Caller must have permissions to msdb.
