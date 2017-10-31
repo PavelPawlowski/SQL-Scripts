@@ -1,10 +1,11 @@
 USE [SSISDB]
 GO
+RAISERROR('Creating procedure [dbo].[sp_ssisdb]', 0, 0) WITH NOWAIT;
 IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[sp_ssisdb]'))
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.51 (2017-10-30)
+sp_ssisdb v 0.55 (2017-10-31)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -99,9 +100,15 @@ DECLARE
     ,@durationCondition                 nvarchar(max)   = NULL  --condition for duration
     ,@tms                               nvarchar(30)    = NULL  --variable to store timestamp data
     ,@debugLevel                        smallint        = 0
+    ,@sensitiveAccess                   bit             = 0     --Indicates whether caller have access to senstive infomration
+
+    EXECUTE AS CALLER;
+        IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
+            SET @sensitiveAccess = 1
+    REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.51 (2017-10-30) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.55 (2017-10-31) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -115,8 +122,8 @@ DECLARE @valModifiers TABLE (
 
 INSERT INTO @valModifiers(Val, Modifier, LeftChars)
 VALUES
-     ('L'       ,'L'                    ,1)      --Last
-    ,('L'       ,'LAST'                 ,4)      --Last
+     ('L'       ,'L'                    ,1)         --Last
+    ,('L'       ,'LAST'                 ,4)         --Last
     ,('FLD'     ,'FLD'                  ,NULL)      --Per Folder
     ,('FLD'     ,'FOLDER'               ,NULL)      --Per Folder
     ,('P'       ,'P'                    ,NULL)      --Per Project
@@ -630,7 +637,7 @@ BEGIN
     END
 
     --Decrypting sensitive
-    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'DS')
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'DS' AND @sensitiveAccess = 1)
     BEGIN
         SET @decryptSensitive = 1;
         RAISERROR(N'   - DECRYPTING SENSITIVE DATA', 0, 0) WITH NOWAIT;
@@ -916,6 +923,8 @@ RAISERROR(N'
   (E)XECUTABLE              - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
   
   DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive execution parameters will be decrypted and the values provided
+                              Caller must be member of [db_owner] or [ssis_sensitive_access] database role or memver of [sysadmin] server role
+                              to be able to decrypt sensitive information
 
   AGENT_REFERENCES (AGR)    - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval). Runs in caller context. Caller must have permissions to msdb.
   AGENT_JOB (AGT)           - If available, Retrieve information about agent Job which started the execution. (Slow-down the retrieval). Runs in caller context. Caller must have permissions to msdb.
@@ -2731,6 +2740,24 @@ BEGIN
     END --ELSE IF @includeECP = 1
 END
 GO
+IF NOT EXISTS(SELECT 1 FROM sys.database_principals WHERE TYPE = 'R' AND name = 'ssis_sensitive_access')
+BEGIN
+    RAISERROR(N'Creating database role [ssis_sensitive_access]...', 0, 0) WITH NOWAIT;
+    CREATE ROLE [ssis_sensitive_access]
+END
+ELSE
+BEGIN
+    RAISERROR(N'Database role [ssis_sensitive_access] exists.', 0, 0) WITH NOWAIT;
+END
+GO
+RAISERROR('[ssis_sensitive_access] database role allows using DECRYPT_SENSITIVE (DS) option to decrypt sensitive information', 0, 0) WITH NOWAIT;
+GO
+--
+RAISERROR(N'Adding [ssis_admin] to [ssis_sensitive_access]', 0, 0) WITH NOWAIT;
+ALTER ROLE [ssis_sensitive_access] ADD MEMBER [ssis_admin]
+GO
+
 --GRANT EXECUTE permission on the stored procedure to [ssis_admin] role
+RAISERROR(N'Granting EXECUTE permission to [ssis_admin]', 0, 0) WITH NOWAIT;
 GRANT EXECUTE ON [dbo].[sp_ssisdb] TO [ssis_admin]
 GO

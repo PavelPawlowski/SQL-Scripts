@@ -1,10 +1,11 @@
 USE [SSISDB]
 GO
+RAISERROR('Creating procedure [dbo].[sp_SSISCloneEnvironment]', 0, 0) WITH NOWAIT;
 IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[sp_SSISCloneEnvironment]'))
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneEnvironment]''')
 GO
 /* ****************************************************
-sp_SSISCloneEnvironment v 0.53 (2017-10-30)
+sp_SSISCloneEnvironment v 0.55 (2017-10-31)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -98,6 +99,12 @@ BEGIN
         ,@prefix                        nvarchar(10)
         ,@sensitiveInt                  int
         ,@valStr                        nvarchar(max)
+        ,@sensitiveAccess               bit             = 0     --Indicates whether caller have access to senstive infomration
+
+    EXECUTE AS CALLER;
+        IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
+            SET @sensitiveAccess = 1
+    REVERT;
 
     --Table variable for holding parsed folder names list
     DECLARE @folders TABLE (
@@ -149,7 +156,7 @@ BEGIN
         SET @printHelp = 1
     END
 
-    SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'sp_SSISCloneEnvironment v0.53 (2017-10-30) (C) 2017 Pavel Pawlowski' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
+    SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'sp_SSISCloneEnvironment v0.55 (2017-10-31) (C) 2017 Pavel Pawlowski' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
 	RAISERROR(@msg, 0, 0) WITH NOWAIT;
     SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'===================================================================' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
 	RAISERROR(@msg, 0, 0) WITH NOWAIT;
@@ -196,6 +203,8 @@ Variables can be filtered by names as well as values.
     ,@exactValue                nvarchar(max)   = NULL - Exact value of variables to be matched. Have priority above @value
                                                          Only variables which value exactly matching the @exactValue are scripted.
     ,@decryptSensitive          bit             = 0    - Specifies whether sensitive data should be decrypted.
+                                                         Caller must be member of [db_owner] or [ssis_sensitive_access] database role or memver of [sysadmin] server role
+                                                         to be able to decrypt sensitive information
 ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 Wildcards:
@@ -758,6 +767,24 @@ DEALLOCATE cr;', 0, 0) WITH NOWAIT;
 
 END
 GO
+IF NOT EXISTS(SELECT 1 FROM sys.database_principals WHERE TYPE = 'R' AND name = 'ssis_sensitive_access')
+BEGIN
+    RAISERROR(N'Creating database role [ssis_sensitive_access]...', 0, 0) WITH NOWAIT;
+    CREATE ROLE [ssis_sensitive_access]
+END
+ELSE
+BEGIN
+    RAISERROR(N'Database role [ssis_sensitive_access] exists.', 0, 0) WITH NOWAIT;
+END
+GO
+RAISERROR('[ssis_sensitive_access] database role allows using @decryptSensitive paramter to decrypt sensitive information', 0, 0) WITH NOWAIT;
+GO
+--
+RAISERROR(N'Adding [ssis_admin] to [ssis_sensitive_access]', 0, 0) WITH NOWAIT;
+ALTER ROLE [ssis_sensitive_access] ADD MEMBER [ssis_admin]
+GO
+
 --GRANT EXECUTE permission on the stored procedure to [ssis_admin] role
+RAISERROR(N'Granting EXECUTE permission to [ssis_admin]', 0, 0) WITH NOWAIT;
 GRANT EXECUTE ON [dbo].[sp_SSISCloneEnvironment] TO [ssis_admin]
 GO

@@ -1,10 +1,11 @@
 USE [SSISDB]
 GO
+RAISERROR('Creating procedure [dbo].[sp_SSISListEnvironment]', 0, 0) WITH NOWAIT;
 IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[sp_SSISListEnvironment]'))
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISListEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISListEnvironment]''')
 GO
 /* ****************************************************
-sp_SSISListEnvironment v 0.37 (2017-10-30)
+sp_SSISListEnvironment v 0.40 (2017-10-31)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -61,6 +62,12 @@ BEGIN
         ,@src_environment_name          nvarchar(128)
         ,@src_folder_name               nvarchar(128)
         ,@variable_id                   bigint
+        ,@sensitiveAccess               bit             = 0     --Indicates whether caller have access to senstive infomration
+
+    EXECUTE AS CALLER;
+        IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
+            SET @sensitiveAccess = 1
+    REVERT;
 
     --Table variable for holding parsed folder names list
     DECLARE @folders TABLE (
@@ -90,7 +97,7 @@ BEGIN
     IF @folder IS NULL OR @environment IS NULL
         SET @printHelp = 1
 
-	RAISERROR(N'sp_SSISListEnvironment v0.37 (2017-10-30) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_SSISListEnvironment v0.40 (2017-10-31) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 	RAISERROR(N'==================================================================' , 0, 0) WITH NOWAIT;
 
     --Check @value and @exactValue
@@ -121,7 +128,10 @@ BEGIN
                                                       Ideal when need to find all environments and variables using particular value.
                                                       Eg. Updating to new password.
     ,@exactValue            nvarchar(max)    = NULL - Exact value of variables to be matched. Only one of @exactValue and @value can be specified at a time
-    ,@decryptSensitive      bit              = 0    - Specifies whether sensitive data should be decrypted.', 0, 0) WITH NOWAIT;
+    ,@decryptSensitive      bit              = 0    - Specifies whether sensitive data should be decrypted.
+                                                      Caller must be member of [db_owner] or [ssis_sensitive_access] database role or memver of [sysadmin] server role
+                                                      to be able to decrypt sensitive information
+    ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 Wildcards:
     Wildcards are standard wildcards for the LIKE statement
@@ -270,8 +280,8 @@ CREATE TABLE #outputTable (
             ,ev.[value] AS v
             ,ev.[sensitive_value]
             ,CASE 
-                WHEN ev.[sensitive] = 0                            THEN [value]
-                WHEN ev.[sensitive] = 1 AND @decryptSensitive = 1   THEN [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N'MS_Cert_Env_' + CONVERT(nvarchar(20), ev.environment_id)), NULL, ev.[sensitive_value]), ev.[type])
+                WHEN ev.[sensitive] = 0                                                     THEN [value]
+                WHEN ev.[sensitive] = 1 AND @decryptSensitive = 1 AND @sensitiveAccess = 1  THEN [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N'MS_Cert_Env_' + CONVERT(nvarchar(20), ev.environment_id)), NULL, ev.[sensitive_value]), ev.[type])
                 ELSE NULL
              END                        AS Value
             ,ev.[description]           AS VariableDescription
@@ -341,6 +351,24 @@ CREATE TABLE #outputTable (
 END
 
 GO
+IF NOT EXISTS(SELECT 1 FROM sys.database_principals WHERE TYPE = 'R' AND name = 'ssis_sensitive_access')
+BEGIN
+    RAISERROR(N'Creating database role [ssis_sensitive_access]...', 0, 0) WITH NOWAIT;
+    CREATE ROLE [ssis_sensitive_access]
+END
+ELSE
+BEGIN
+    RAISERROR(N'Database role [ssis_sensitive_access] exists.', 0, 0) WITH NOWAIT;
+END
+GO
+RAISERROR('[ssis_sensitive_access] database role allows using @decryptSensitive paramter to decrypt sensitive information', 0, 0) WITH NOWAIT;
+GO
+--
+RAISERROR(N'Adding [ssis_admin] to [ssis_sensitive_access]', 0, 0) WITH NOWAIT;
+ALTER ROLE [ssis_sensitive_access] ADD MEMBER [ssis_admin]
+GO
+
 --GRANT EXECUTE permission on the stored procedure to [ssis_admin] role
+RAISERROR(N'Granting EXECUTE permission to [ssis_admin]', 0, 0) WITH NOWAIT;
 GRANT EXECUTE ON [dbo].[sp_SSISListEnvironment] TO [ssis_admin]
 GO
