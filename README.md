@@ -41,6 +41,11 @@ Stored procedure for cloning SSIS server variables from one environment to anoth
 Stored procedure cones SSIS project configuration from one project to another.
 Allows simple scripting of existing configuration for easy transfer among environments or backup purposes.
 
+### sp_SSISClonePermissions
+
+Stored procedure clones permissions on objects in SSISDB catalog.
+Allows easy scripting of existing granular permissions on Folders, Project and Environments.
+
 ### sp_SSISCloneProject
 
 Stored procedure for cloning SSIS project(s) among folders and servers.
