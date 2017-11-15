@@ -137,7 +137,7 @@ BEGIN
     ,@targetFolderName          nvarchar(128)   = ''%%''                           - Defines the target folder name. The %% wildcard is replaced by the original folder name
     ,@targetObjectName          nvarchar(128)   = ''%%''                           - Defines the target object name. The %% wildcard is replaced by the original object name.
                                                                                   It is shared for both Project and Environment names.
-                                                                                  For different names of prjects and environments it is necessary 
+                                                                                  For different names of projects and environments it is necessary 
                                                                                   to script permissions for those separately.
 
         ', 0, 0) WITH NOWAIT;
