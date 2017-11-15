@@ -5,7 +5,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISClonePermissions] AS PRINT ''Placeholder for [dbo].[sp_SSISClonePermissions]''')
 GO
 /* ****************************************************
-sp_SSISClonePermissions v 0.10 (2017-11-13)
+sp_SSISClonePermissions v 0.20 (2017-11-14)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -23,11 +23,15 @@ Parameters:
      @folder                    nvarchar(max)   = NULL  --Comma separated list of folders to script Permissions. Supports wildcards
 	,@object                    nvarchar(max)	= '%'	--Comma separated list of object names (project or environment). Supports wildcards
     ,@type                      nvarchar(MAX)   = 'FOLDER,PROJECT,ENVIRONMENT'  --Comma separate list of object types to script permissions.
+    ,@targetFolderName          nvarchar(128)   = '%'   --Defines the target folder name. The % wildcard is replaced by the original folder name
+    ,@targetObjectName          nvarchar(128)   = '%'   --Defines the target object name. The % wildcard is replaced by the original object name.
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISClonePermissions]
      @folder                    nvarchar(max)   = NULL  --Comma separated list of folders to script Permissions. Supports wildcards
 	,@object                    nvarchar(max)	= '%'	--Comma separated list of object names (project or environment). Supports wildcards
     ,@type                      nvarchar(MAX)   = 'FOLDER,PROJECT,ENVIRONMENT'  --Comma separate list of object types to script permissions.
+    ,@targetFolderName          nvarchar(128)   = '%'   --Defines the target folder name. The % wildcard is replaced by the original folder name
+    ,@targetObjectName          nvarchar(128)   = '%'   --Defines the target object name. The % wildcard is replaced by the original object name.
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 BEGIN
@@ -50,6 +54,7 @@ BEGIN
         ,@PrincipalName                 nvarchar(128)
         ,@GrantorPrincipalName          nvarchar(128)
         ,@PermissionType                smallint
+        ,@permissionDesc                nvarchar(50)
         ,@IsDeny                        bit
         ,@last_object_type              smallint
         ,@last_object_folder            nvarchar(128)
@@ -83,11 +88,10 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISClonePermissions v0.10 (2017-11-13) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISClonePermissions v0.20 (2017-11-14) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'===================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
-
 
 
     --get object types to script permissions
@@ -130,6 +134,12 @@ BEGIN
 	,@object                    nvarchar(max)	= ''%%''	                        - Comma separated list of object names (project or environment). Supports wildcards
     ,@type                      nvarchar(MAX)   = ''FOLDER,PROJECT,ENVIRONMENT''  - Comma separate list of object types to script permissions.
                                                                                   Currently Supports FOLDER, PROJECT and ENVIRONMENT
+    ,@targetFolderName          nvarchar(128)   = ''%%''                           - Defines the target folder name. The %% wildcard is replaced by the original folder name
+    ,@targetObjectName          nvarchar(128)   = ''%%''                           - Defines the target object name. The %% wildcard is replaced by the original object name.
+                                                                                  It is shared for both Project and Environment names.
+                                                                                  For different names of prjects and environments it is necessary 
+                                                                                  to script permissions for those separately.
+
         ', 0, 0) WITH NOWAIT;
 RAISERROR(N'Wildcards:
 ----------
@@ -179,6 +189,10 @@ Samples:
         LTRIM(RTRIM(F.value('.', 'nvarchar(128)'))) AS ObjectName
     FROM @xml.nodes(N'/i') T(F);
 
+RAISERROR(N'
+DECLARE
+     @targetFolderName          nvarchar(128)   = ''%s''    --Specify name for target folder. %% wildcard is replaced by original folder name
+    ,@targetObjectName          nvarchar(128)   = ''%s''    --Specify name for target object. %% wildcard is replaced by original object name', 0, 0, @targetFolderName, @targetObjectName) WITH NOWAIT;
 
 RAISERROR(N'
 -- Declarations:
@@ -301,6 +315,20 @@ SET NOCOUNT ON;
             ,@GrantorPrincipalName      = N'N''' + REPLACE(@GrantorPrincipalName, '''', '''''') + ''''
             ,@ObjectTypeQuoted          = N'N''' + REPLACE(@ObjectType, '''', '''''') + ''''
             ,@isDenyInt                 = @IsDeny
+            ,@permissionDesc = 
+                                        CASE @PermissionType
+                                            WHEN 1      THEN N'READ'
+                                            WHEN 2      THEN N'MODIFY'
+                                            WHEN 3      THEN N'EXECUTE'
+                                            WHEN 4      THEN N'MANAGE_PERMISSIONS'
+                                            WHEN 100    THEN N'CREATE_OBJECTS'
+                                            WHEN 101    THEN N'READ_OBJECTS'
+                                            WHEN 102    THEN N'MODIFY_OBJECTS'
+                                            WHEN 103    THEN N'EXECUTE_OBJECTS'
+                                            WHEN 104    THEN N'MANAGE_OBJECT_PERMISSIONS'
+                                            ELSE N'Unknown'
+                                        END
+
 
 
         IF @last_object_type IS NULL OR @last_object_type <> @object_type
@@ -327,10 +355,12 @@ SET NOCOUNT ON;
         IF @firstInGroup = 0
             RAISERROR(N'-- ---------------', 0, 0) WITH NOWAIT;
 
+
+
         RAISERROR(N'SET @ObjectName             = %s', 0, 0, @ObjectName           ) WITH NOWAIT;
         RAISERROR(N'SET @PrincipalName          = %s', 0, 0, @PrincipalName        ) WITH NOWAIT;
         RAISERROR(N'SET @GrantorPrincipalName   = %s', 0, 0, @GrantorPrincipalName ) WITH NOWAIT;
-        RAISERROR(N'SET @PermissionType         = %d', 0, 0, @PermissionType       ) WITH NOWAIT;
+        RAISERROR(N'SET @PermissionType         = %d --%s', 0, 0, @PermissionType, @permissionDesc) WITH NOWAIT;
         RAISERROR(N'SET @IsDeny                 = %d', 0, 0, @IsDenyInt            ) WITH NOWAIT;
 
         IF @object_type <> 1
@@ -379,6 +409,8 @@ DECLARE
     ,@object_type           smallint
     ,@isDenyInt             int
     ,@permissionDesc        nvarchar(50)
+    ,@targetFolder          nvarchar(128)
+    ,@targetObject          nvarchar(128)
 
 DECLARE cr CURSOR FAST_FORWARD FOR
 SELECT
@@ -408,15 +440,20 @@ BEGIN ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
     SET @isDenyInt = @IsDeny
 
+    SELECT
+        @targetFolder   = REPLACE(@targetFolderName, ''%%'', @ObjectFolder)
+        ,@targetObject  = REPLACE(CASE WHEN @ObjectType = ''FOLDER'' THEN @targetFolderName ELSE @targetObjectName END, ''%%'', @ObjectName)
+
     IF @lastObjectType IS NULL OR @lastObjectType <> @ObjectType
     BEGIN
-        SET @lastObjectFolder   = NULL;
-        SET @lastObjectName     = NULL;
-        SET @lastPrincipal      = NULL
-        SET @processFld         = 1
-        SET @processObj         = 1
-        SET @processPrinc       = 1
-        SET @object_type = CASE @ObjectType
+        SELECT
+            @lastObjectFolder   = NULL
+           ,@lastObjectName     = NULL
+           ,@lastPrincipal      = NULL
+           ,@processFld         = 1
+           ,@processObj         = 1
+           ,@processPrinc       = 1
+           ,@object_type = CASE @ObjectType
                                 WHEN N''FOLDER'' THEN 1
                                 WHEN N''PROJECT'' THEN 2
                                 WHEN ''ENVIRONMENT'' THEN 3
@@ -434,23 +471,24 @@ RAISERROR(N'
 
     IF @ObjectType <> N''FOLDER'' AND @lastObjectFolder IS NULL OR @lastObjectFolder <> @ObjectFolder
     BEGIN
-        SET @processFld         = 1
-        SET @processObj         = 1
-        SET @processPrinc       = 1
-        SET @lastObjectName = NULL;
-        SET @lastPrincipal = NULL
+        SELECT
+            @processFld         = 1
+           ,@processObj         = 1
+           ,@processPrinc       = 1
+           ,@lastObjectName     = NULL
+           ,@lastPrincipal      = NULL
 
         IF @lastObjectFolder IS NOT NULL
             RAISERROR(N''*******************************************************************'', 0, 0) WITH NOWAIT;
 
-        IF NOT EXISTS(SELECT 1 FROM [SSISDB].[catalog].[folders] f WHERE f.[name] = @ObjectFolder)
+        IF NOT EXISTS(SELECT 1 FROM [SSISDB].[catalog].[folders] f WHERE f.[name] = @targetFolder)
         BEGIN
             SET @processFld = 0;
-            RAISERROR(N''Destination folder [%%s] does not exist. Ignoring objects in folder.'', 11, 0, @ObjectFolder) WITH NOWAIT;
+            RAISERROR(N''Destination folder [%%s] does not exist. Ignoring objects in folder.'', 11, 0, @targetFolder) WITH NOWAIT;
         END
         ELSE
         BEGIN
-            RAISERROR(N''Processing folder [%%s]'', 0, 0, @ObjectFolder) WITH NOWAIT;
+            RAISERROR(N''Processing folder [%%s]'', 0, 0, @targetFolder) WITH NOWAIT;
         END
         RAISERROR(N''*******************************************************************'', 0, 0) WITH NOWAIT;
     END', 0, 0) WITH NOWAIT;
@@ -466,45 +504,45 @@ RAISERROR(N'
 
             IF @ObjectType = N''FOLDER''
             BEGIN
-                SELECT @object_id = folder_id FROM [SSISDB].[catalog].[folders] f WHERE f.[name] = @ObjectName
+                SELECT @object_id = folder_id FROM [SSISDB].[catalog].[folders] f WHERE f.[name] = @targetObject
 
                 IF @object_id IS NULL
                 BEGIN
                     SET @processFld = 0;
-                    RAISERROR(N''Destination folder [%%s] does not exist. Ignoring Folder Permissions.'', 11, 0, @ObjectName) WITH NOWAIT;
+                    RAISERROR(N''Destination folder [%%s] does not exist. Ignoring Folder Permissions.'', 11, 0, @targetObject) WITH NOWAIT;
                 END
                 ELSE
-                    RAISERROR(N''Setting Permissions on Folder [%%s]'', 0, 0, @ObjectName) WITH NOWAIT;
+                    RAISERROR(N''Setting Permissions on Folder [%%s]'', 0, 0, @targetObject) WITH NOWAIT;
             END', 0, 0) WITH NOWAIT;
 RAISERROR(N'            ELSE IF @ObjectType = N''PROJECT''
             BEGIN
-                SELECT @object_id = project_id FROM [SSISDB].[catalog].[projects] p WHERE p.[name] = @ObjectName
+                SELECT @object_id = project_id FROM [SSISDB].[catalog].[projects] p INNER JOIN [SSISDB].[catalog].[folders] f ON f.folder_id = p.folder_id WHERE p.[name] = @targetObject AND f.[name] = @targetFolder
 
                 IF @object_id IS NULL
                 BEGIN
                     SET @processFld = 0;
-                    RAISERROR(N''Destination Project [%%s]\[%%s] does not exist. Ignoring Project Permissions.'', 11, 0, @ObjectFolder, @ObjectName) WITH NOWAIT;
+                    RAISERROR(N''Destination Project [%%s]\[%%s] does not exist. Ignoring Project Permissions.'', 11, 0, @targetFolder, @targetObject) WITH NOWAIT;
                 END
                 ELSE
-                RAISERROR(N''Setting Permissions on Project [%%s]'', 0, 0, @ObjectName) WITH NOWAIT;
+                RAISERROR(N''Setting Permissions on Project [%%s]\[%%s]'', 0, 0, @targetFolder, @ObjectName) WITH NOWAIT;
             END
             ELSE IF @objectType = N''ENVIRONMENT''
             BEGIN
-                SELECT @object_id = environment_id FROM [SSISDB].[catalog].[environments] e WHERE e.[name] = @ObjectName
+                SELECT @object_id = environment_id FROM [SSISDB].[catalog].[environments] e INNER JOIN [SSISDB].[catalog].[folders] f ON f.folder_id = e.folder_id WHERE e.[name] = @targetObject AND f.[name] = @targetFolder
 
                 IF @object_id IS NULL
                 BEGIN
                     SET @processFld = 0;
-                    RAISERROR(N''Destination Environment [%%s]\[%%s] does not exist. Ignoring Environment Permissions.'', 11, 0, @ObjectFolder, @ObjectName) WITH NOWAIT;
+                    RAISERROR(N''Destination Environment [%%s]\[%%s] does not exist. Ignoring Environment Permissions.'', 11, 0, @targetFolder, @targetObject) WITH NOWAIT;
                 END
                 ELSE
-                RAISERROR(N''Setting Permissions on Environment [%%s]'', 0, 0, @ObjectName) WITH NOWAIT;
+                RAISERROR(N''Setting Permissions on Environment [%%s]\[%%s]'', 0, 0, @targetFolder, @targetObject) WITH NOWAIT;
             END
 
             RAISERROR(N''-------------------------------------------------------------------'', 0, 0) WITH NOWAIT;
         END', 0, 0) WITH NOWAIT;
 RAISERROR(N'
-        IF @lastPrincipal IS NULL OR @lastPrincipal <> @PrincipalName
+        IF @processFld = 1 AND @lastPrincipal IS NULL OR @lastPrincipal <> @PrincipalName
         BEGIN
             SET @principal_id = NULL
             SELECT @principal_id = principal_id FROM [SSISDB].sys.database_principals WHERE name = @PrincipalName
@@ -519,7 +557,7 @@ RAISERROR(N'
         END', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 
-        IF @processPrinc = 1
+        IF @processFld = 1 AND @processPrinc = 1
         BEGIN
             SET  @permissionDesc = 
                 CASE @PermissionType
