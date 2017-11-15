@@ -5,7 +5,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISClonePermissions] AS PRINT ''Placeholder for [dbo].[sp_SSISClonePermissions]''')
 GO
 /* ****************************************************
-sp_SSISClonePermissions v 0.20 (2017-11-14)
+sp_SSISClonePermissions v 0.21 (2017-11-14)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -78,6 +78,17 @@ BEGIN
         ,[Type]     smallint
     )
 
+    DECLARE @permissions TABLE (
+        object_type             smallint
+        ,ObjectType             nvarchar(20)
+        ,ObjectFolder           nvarchar(128)
+        ,ObjectName             nvarchar(128)
+        ,PrincipalName          nvarchar(128)
+        ,GrantorPrincipalName   nvarchar(128)
+        ,PermissionType         smallint
+        ,IsDeny                 bit
+    )
+
     IF @folder IS NULL
         SET @printHelp = 1
 
@@ -88,7 +99,7 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISClonePermissions v0.20 (2017-11-14) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISClonePermissions v0.21 (2017-11-14) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'===================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -149,6 +160,26 @@ RAISERROR(N'Wildcards:
 Samples:
 --------
 
+Clones permission for all folders and projects and environments.
+
+sp_SSISClonePermission
+     @folder      = ''%%'' 
+
+
+Clones permission for all folders and projects and environments in that folders which name starts with `DEV_`
+
+sp_SSISClonePermission
+     @folder      = ''DEV_%%'' 
+
+
+Clone permission for projects and environments from all folders. Only permissions for projects and environments which name starts with `DEV_` but not ending by `_copy` will be cloned.
+
+sp_SSISClonePermission
+     @folder      = ''%%'' 
+     ,@object           = ''DEV_%%,-%%_copy''
+     ,@type             = ''PROJECT,ENVIRONMENT''
+
+
     ', 0, 0) WITH NOWAIT;
 
         RETURN;
@@ -189,39 +220,7 @@ Samples:
         LTRIM(RTRIM(F.value('.', 'nvarchar(128)'))) AS ObjectName
     FROM @xml.nodes(N'/i') T(F);
 
-RAISERROR(N'
-DECLARE
-     @targetFolderName          nvarchar(128)   = ''%s''    --Specify name for target folder. %% wildcard is replaced by original folder name
-    ,@targetObjectName          nvarchar(128)   = ''%s''    --Specify name for target object. %% wildcard is replaced by original object name', 0, 0, @targetFolderName, @targetObjectName) WITH NOWAIT;
 
-RAISERROR(N'
--- Declarations:
--- -------------
-
-DECLARE
-         @ObjectType                    nvarchar(20)
-        ,@ObjectFolder                  nvarchar(128)
-        ,@ObjectName                    nvarchar(128)
-        ,@PrincipalName                 nvarchar(128)
-        ,@GrantorPrincipalName          nvarchar(128)
-        ,@PermissionType                smallint
-        ,@IsDeny                        bit;
-
-DECLARE @permissions TABLE (
-    ObjectType              nvarchar(20)
-    ,ObjectFolder           nvarchar(128)
-    ,ObjectName             nvarchar(128)
-    ,PrincipalName          nvarchar(128)
-    ,GrantorPrincipalName   nvarchar(128)
-    ,PermissionType         smallint
-    ,IsDeny                 bit
-)
-
-SET NOCOUNT ON;
-
-', 0, 0) WITH NOWAIT;
-
-    DECLARE cr CURSOR FAST_FORWARD FOR
     WITH ObjectPermissions AS (
         SELECT
             op.object_type
@@ -264,6 +263,16 @@ SET NOCOUNT ON;
         WHERE
             op.object_type IN (SELECT [Type] FROM @types)
     )
+    INSERT INTO @permissions (
+        object_type
+        ,ObjectType
+        ,ObjectFolder
+        ,ObjectName
+        ,PrincipalName
+        ,GrantorPrincipalName
+        ,PermissionType
+        ,IsDeny
+    )
     SELECT
          op.object_type
         ,op.ObjectType
@@ -289,8 +298,58 @@ SET NOCOUNT ON;
     FROM ObjectPermissions op
     INNER JOIN @folders f ON f.folder_id = op.ObjectFolderID
     INNER JOIN @objectNames o ON op.ObjectName LIKE RIGHT(o.object_name, LEN(o.object_name) - 1) AND LEFT(o.object_name, 1) = '-'   
-    ORDER BY object_type, ObjectFolder, ObjectName, PrincipalName
 
+
+    IF NOT EXISTS(SELECT 1 FROM @permissions)
+    BEGIN
+        RAISERROR(N'No object matching input criteria @folder = ''%s'', @object = ''%s'' was found', 15, 0, @folder, @object) WITH NOWAIT;
+        RETURN;
+    END
+
+RAISERROR(N'
+DECLARE
+     @targetFolderName          nvarchar(128)   = ''%s''    --Specify name for target folder. %% wildcard is replaced by original folder name
+    ,@targetObjectName          nvarchar(128)   = ''%s''    --Specify name for target object. %% wildcard is replaced by original object name', 0, 0, @targetFolderName, @targetObjectName) WITH NOWAIT;
+
+RAISERROR(N'
+-- Declarations:
+-- -------------
+
+DECLARE
+         @ObjectType                    nvarchar(20)
+        ,@ObjectFolder                  nvarchar(128)
+        ,@ObjectName                    nvarchar(128)
+        ,@PrincipalName                 nvarchar(128)
+        ,@GrantorPrincipalName          nvarchar(128)
+        ,@PermissionType                smallint
+        ,@IsDeny                        bit;
+
+DECLARE @permissions TABLE (
+    ObjectType              nvarchar(20)
+    ,ObjectFolder           nvarchar(128)
+    ,ObjectName             nvarchar(128)
+    ,PrincipalName          nvarchar(128)
+    ,GrantorPrincipalName   nvarchar(128)
+    ,PermissionType         smallint
+    ,IsDeny                 bit
+)
+
+SET NOCOUNT ON;
+
+', 0, 0) WITH NOWAIT;
+
+    DECLARE cr CURSOR FAST_FORWARD FOR
+    SELECT
+         object_type
+        ,ObjectType
+        ,ObjectFolder
+        ,ObjectName
+        ,PrincipalName
+        ,GrantorPrincipalName
+        ,PermissionType
+        ,IsDeny
+    FROM @permissions
+    ORDER BY object_type, ObjectFolder, ObjectName, PrincipalName
 
     OPEN cr;
 
