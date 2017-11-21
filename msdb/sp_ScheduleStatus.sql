@@ -3,7 +3,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ScheduleStatus] AS PRINT ''Placeholder for [dbo].[sp_ScheduleStatus]''')
 GO
 /* ****************************************************
-sp_ScheduleStatus v 0.15 (2017-11-21)
+sp_ScheduleStatus v 0.16 (2017-11-21)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -15,7 +15,7 @@ License:
     written consent.
 
 Description:
-    Generates script for enabling or disabling jobschedules
+    Generates script for enabling or disabling job schedules
 
 Parameters:
     @filter         nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules. When not provided all schedules are scripted
@@ -45,9 +45,14 @@ DECLARE @jobSchedules TABLE (
     schedule_id int NOT NULL PRIMARY KEY CLUSTERED
 );
 
-RAISERROR(N'--sp_ScheduleStatus v0.15 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+DECLARE @schedules TABLE (
+    schedule_id int             NOT NULL PRIMARY KEY CLUSTERED
+    ,name       nvarchar(128)
+)
+
+RAISERROR(N'--sp_ScheduleStatus v0.16 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'--=============================================================', 0, 0) WITH NOWAIT;
-RAISERROR(N'--sp_ScheduleStatus Generates script for enabling or disabling jobschedules', 0, 0) WITH NOWAIT;
+RAISERROR(N'--sp_ScheduleStatus Generates script for enabling or disabling job schedules', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
 
 IF @filter = N'?'
@@ -128,18 +133,11 @@ BEGIN
     INNER JOIN jobs j ON j.job_id = js.job_id
 END
 
+
 SET @filter = ISNULL(NULLIF(@filter, N''), N'%')
 SET @xml = N'<i>' + REPLACE(@filter, N',', N'</i><i>') + N'</i>'
 
 
-SET @msg ='DECLARE @enabled bit = ' + CASE WHEN @status = 0 THEN N'0' ELSE N'1' END + N'    --Specify status to set 1 = Enabled, 0 = Disabled'
-RAISERROR(@msg, 0, 0) WITH NOWAIT;
-
-RAISERROR(N'', 0,0) WITH NOWAIT;
-RAISERROR(N'DECLARE @status nvarchar(10) = CASE WHEN @enabled = 0 THEN N''Disabling'' ELSE N''Enabling'' END', 0,0) WITH NOWAIT;
-
-
-DECLARE cr CURSOR FAST_FORWARD FOR
 WITH Schedules AS (
     SELECT DISTINCT
         schedule_id
@@ -161,12 +159,29 @@ WITH Schedules AS (
         AND
         LEFT(F.n, 1) = '-'
 )
+INSERT INTO @schedules(schedule_id, name)
 SELECT
     schedule_id
     ,name
 FROM Schedules s
 WHERE
     (@job IS NULL AND @category IS NULL) OR EXISTS(SELECT 1 FROM @jobSchedules js WHERE js.schedule_id = s.schedule_id)
+
+
+IF NOT EXISTS(SELECT 1 FROM @schedules)
+BEGIN
+    RAISERROR(N'No job schedules matching provided criteria exists', 15, 0) WITH NOWAIT;
+    RETURN;
+END
+
+SET @msg ='DECLARE @enabled bit = ' + CASE WHEN @status = 0 THEN N'0' ELSE N'1' END + N'    -- Specify status to set: 1 = Enabled, 0 = Disabled'
+RAISERROR(@msg, 0, 0) WITH NOWAIT;
+
+RAISERROR(N'', 0,0) WITH NOWAIT;
+RAISERROR(N'DECLARE @status nvarchar(10) = CASE WHEN @enabled = 0 THEN N''Disabling'' ELSE N''Enabling'' END', 0,0) WITH NOWAIT;
+
+
+DECLARE cr CURSOR FAST_FORWARD FOR
 
 OPEN cr;
 
