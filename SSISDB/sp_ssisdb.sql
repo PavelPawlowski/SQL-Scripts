@@ -5,7 +5,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.55 (2017-10-31)
+sp_ssisdb v 0.56 (2017-11-21)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -101,6 +101,7 @@ DECLARE
     ,@tms                               nvarchar(30)    = NULL  --variable to store timestamp data
     ,@debugLevel                        smallint        = 0
     ,@sensitiveAccess                   bit             = 0     --Indicates whether caller have access to senstive infomration
+    ,@opValCount                        int             = 0     --Count of operator modifier values
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -108,7 +109,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.55 (2017-10-31) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.56 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -262,10 +263,12 @@ SELECT
         ,MaxIntVal      bigint
         ,StrVal         nvarchar(max)
         ,DurationDate   datetime2(3)
+        ,OPValCount     int
 	)
 
     DECLARE @opValData TABLE (
          Modifier       nvarchar(30)
+        ,ValModifier    nvarchar(30)
         ,Val            varchar(10)
         ,DateVal        datetime
         ,IntVal         bigint
@@ -273,64 +276,76 @@ SELECT
         ,DurationDate   datetime2(3)
     )
 
-	;WITH OP AS (
-        SELECT DISTINCT
+	;WITH OPBase AS (
+        SELECT
             NULLIF(LTRIM(RTRIM(n.value('.','nvarchar(128)'))), '') AS Modifier
         FROM @xml.nodes('/i') T(N)
-	)
-    INSERT INTO @opValData(Modifier, Val, DateVal, IntVal, StrVal, DurationDate)
-	SELECT
+	), OP AS (
+	    SELECT
+            OP.Modifier
+            ,VM.Modifier AS ValModifier
+            ,CASE 
+                WHEN VM.Val IS NOT NULL THEN VM.Val
+                WHEN TRY_CONVERT(bigint, OP.Modifier) IS NOT NULL THEN 'I'
+                WHEN TRY_CONVERT(datetime, OP.Modifier) IS NOT NULL THEN 'D'
+                ELSE NULL 
+            END AS Val
+            ,CASE 
+                WHEN TRY_CONVERT(datetime, OP.Modifier) IS NOT NULL THEN
+                    CASE
+                        WHEN CONVERT(date, CONVERT(datetime, OP.Modifier)) = '1900-01-01' THEN CONVERT(datetime, CONVERT(date, GETDATE())) + CONVERT(datetime, CONVERT(time, CONVERT(datetime, OP.Modifier)))
+                        ELSE CONVERT(datetime, OP.Modifier)
+                    END
+                ELSE NULL
+                END AS DateVal
+            ,CASE 
+                WHEN VM.LeftChars IS NOT NULL THEN TRY_CONVERT(bigint, RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))
+                ELSE TRY_CONVERT(int, OP.Modifier) 
+            END AS IntVal
+            ,CASE 
+                WHEN VM.LeftChars IS NOT NULL THEN CONVERT(nvarchar(50), RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))
+                ELSE CONVERT(nvarchar(50), OP.Modifier) 
+            END AS StrVal
+            ,CASE 
+                WHEN VM.VAL IN (N'>', N'>=', N'<', N'<=', N'=') THEN 
+                    CASE
+                        WHEN CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))) > 0 THEN  DATEADD(
+                                                                        MILLISECOND, 
+                                                                        DATEDIFF(MILLISECOND, 0, TRY_CONVERT(datetime2(3), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))))))                                                        
+                                                                        ,DATEADD(DAY, TRY_CONVERT(int, SUBSTRING(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), 1, CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))) - 1)), 0)
+                                                                    ) 
+                        ELSE TRY_CONVERT(datetime2(3), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)))))
+                    END
+
+                ELSE NULL
+            END AS DurationDate
+	    FROM OPBase OP
+        LEFT JOIN @valModifiers VM ON (OP.Modifier = VM.Modifier AND VM.LeftChars IS NULL) OR (LEFT(OP.Modifier, VM.LeftChars) = VM.Modifier)
+    )
+    INSERT INTO @opValData(Modifier, ValModifier, Val, DateVal, IntVal, StrVal, DurationDate)
+    SELECT
         OP.Modifier
-        ,CASE 
-            WHEN VM.Val IS NOT NULL THEN VM.Val
-            WHEN TRY_CONVERT(bigint, OP.Modifier) IS NOT NULL THEN 'I'
-            WHEN TRY_CONVERT(datetime, OP.Modifier) IS NOT NULL THEN 'D'
-            ELSE NULL 
-        END AS Val
-        ,CASE 
-            WHEN TRY_CONVERT(datetime, OP.Modifier) IS NOT NULL THEN
-                CASE
-                    WHEN CONVERT(date, CONVERT(datetime, OP.Modifier)) = '1900-01-01' THEN CONVERT(datetime, CONVERT(date, GETDATE())) + CONVERT(datetime, CONVERT(time, CONVERT(datetime, OP.Modifier)))
-                    ELSE CONVERT(datetime, OP.Modifier)
-                END
-            ELSE NULL
-            END AS DateVal
-        ,CASE 
-            WHEN VM.LeftChars IS NOT NULL THEN TRY_CONVERT(bigint, RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))
-            ELSE TRY_CONVERT(int, OP.Modifier) 
-        END AS IntVal
-        ,CASE 
-            WHEN VM.LeftChars IS NOT NULL THEN CONVERT(nvarchar(50), RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))
-            ELSE CONVERT(nvarchar(50), OP.Modifier) 
-        END AS StrVal
-        ,CASE 
-            WHEN VM.VAL IN (N'>', N'>=', N'<', N'<=', N'=') THEN 
-                CASE
-                    WHEN CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))) > 0 THEN  DATEADD(
-                                                                    MILLISECOND, 
-                                                                    DATEDIFF(MILLISECOND, 0, TRY_CONVERT(datetime2(3), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))))))                                                        
-                                                                    ,DATEADD(DAY, TRY_CONVERT(int, SUBSTRING(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), 1, CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))) - 1)), 0)
-                                                                ) 
-                    ELSE TRY_CONVERT(datetime2(3), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)))))
-                END
-
-            ELSE NULL
-        END AS DurationDate
-
-	FROM OP
-    LEFT JOIN @valModifiers VM ON (OP.Modifier = VM.Modifier AND VM.LeftChars IS NULL) OR (LEFT(OP.Modifier, VM.LeftChars) = VM.Modifier)
+        ,OP.ValModifier
+        ,OP.Val
+        ,OP.DateVal
+        ,OP.IntVal
+        ,OP.StrVal
+        ,OP.DurationDate
+    FROM OP
     WHERE 
         OP.Modifier IS NOT NULL
         AND
         (
-            VM.Modifier NOT IN (N'<', N'>')
+            OP.ValModifier NOT IN (N'<', N'>')
             OR
             (
-                VM.Modifier IN (N'<', N'>')
+                OP.ValModifier IN (N'<', N'>')
                 AND
                 SUBSTRING(OP.Modifier, 2, 1) <> '='
             )
-        )
+            OR
+            OP.ValModifier IS NULL AND OP.Val IS NOT NULL
+       )
 
     --Check if we have a help modifier
     IF EXISTS(SELECT 1 FROM @opValData WHERE Val = '?')
@@ -345,28 +360,7 @@ SELECT
 
 IF @help <> 1
 BEGIN
-    IF EXISTS(SELECT 1 FROM @opValData WHERE Val IS NULL) 
-    BEGIN
-        SET @msg = 'There are unsupported values, keywords or modifiers passed in the @op parameter. Check the parameters and/or formatting: ' + NCHAR(13) +
-            QUOTENAME(STUFF((SELECT ', ' + op.Modifier FROM  @opValData op WHERE Val IS NULL FOR XML PATH('')), 1, 2, ''), '"') + NCHAR(13);
-        RAISERROR(@msg, 11, 0) WITH NOWAIT;
-
-        SET @help = 1
-    END
-
-    IF EXISTS (SELECT 1 FROM @opValData WHERE Val IN (N'>', N'>=', N'<', N'<=', N'=') AND DurationDate IS NULL)
-    BEGIN
-        SET @msg = 'There are unsupported duration modifiers passed in the @op parameter. Check parameters and/or formatting: ' + NCHAR(13) +
-            QUOTENAME(REPLACE(REPLACE(STUFF((SELECT ', ' + op.Modifier FROM  @opValData op WHERE Val IN (N'>', N'>=', N'<', N'<=', N'=') AND DurationDate IS NULL FOR XML PATH(N'')), 1, 2, N''), N'&gt;', N'>'), N'&lt;', N'<'), '"') + NCHAR(13);
-        RAISERROR(@msg, 11, 0) WITH NOWAIT;
-
-        SET @help = 1
-    END
-END
-
-IF @help <> 1
-BEGIN
-	INSERT INTO @opVal (Val,  MinDateVal, MaxDateVal, MinIntVal, MaxIntVal, StrVal, DurationDate)
+	INSERT INTO @opVal (Val,  MinDateVal, MaxDateVal, MinIntVal, MaxIntVal, StrVal, DurationDate, OPValCount)
     SELECT
         Val
         ,CASE WHEN Val = 'D' THEN MIN(ISNULL(DateVal, '1900-01-01')) ELSE NULL END AS MinDateVal
@@ -385,6 +379,7 @@ BEGIN
             WHEN Val IN (N'<', N'<=', N'=') THEN MIN(ISNULL(DurationDate, '1900-01-01')) 
             ELSE NULL
         END AS DurationDate
+        ,COUNT(1) AS OPValCount
     FROM @opValData
     	WHERE 
             (
@@ -407,10 +402,28 @@ BEGIN
         SET @debugLevel = ISNULL(NULLIF((SELECT MaxIntVal FROM @opVal WHERE Val = N'DBG'), 0), 1)
         
         if(@debugLevel > 2)
-            SELECT * FROM @opValData
+            SELECT '@opValData' AS TableName, * FROM @opValData
 
         if (@debugLevel > 1)
-            SELECT * FROM @opVal
+            SELECT '@opVal' AS TableName,  * FROM @opVal
+    END
+
+    IF EXISTS(SELECT 1 FROM @opValData WHERE Val IS NULL) 
+    BEGIN
+        SET @msg = 'There are unsupported values, keywords or modifiers passed in the @op parameter. Check the parameters and/or formatting: ' + NCHAR(13) +
+            QUOTENAME(STUFF((SELECT ', ' + op.Modifier FROM  @opValData op WHERE Val IS NULL FOR XML PATH('')), 1, 2, ''), '"') + NCHAR(13);
+        RAISERROR(@msg, 11, 0) WITH NOWAIT;
+
+        SET @help = 1
+    END
+
+    IF EXISTS (SELECT 1 FROM @opValData WHERE Val IN (N'>', N'>=', N'<', N'<=', N'=') AND DurationDate IS NULL)
+    BEGIN
+        SET @msg = 'There are unsupported duration modifiers passed in the @op parameter. Check parameters and/or formatting: ' + NCHAR(13) +
+            QUOTENAME(REPLACE(REPLACE(STUFF((SELECT ', ' + op.Modifier FROM  @opValData op WHERE Val IN (N'>', N'>=', N'<', N'<=', N'=') AND DurationDate IS NULL FOR XML PATH(N'')), 1, 2, N''), N'&gt;', N'>'), N'&lt;', N'<'), '"') + NCHAR(13);
+        RAISERROR(@msg, 11, 0) WITH NOWAIT;
+
+        SET @help = 1
     END
 END
 
@@ -555,19 +568,28 @@ BEGIN
 
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN ('I'))
             BEGIN                
-	            SET @minInt = ISNULL((SELECT MinIntVal FROM @opVal WHERE Val = 'I'), 1)
-	            SET @maxInt = ISNULL((SELECT MaxIntVal FROM @opVal WHERE Val = 'I'), 1)
-                IF @minInt < 0
+                SELECT
+                    @minInt         = MinIntVal
+                    ,@maxInt        = MaxIntVal
+                    ,@opValCount    = OPValCount
+                FROM @opVal
+                WHERE Val = 'I'
+
+
+                IF ISNULL(@minInt, -1) < 0
                     SET @minInt = 0
-                IF @maxInt < 0
+                IF ISNULL(@maxInt, -1) < 0
                     SET @maxInt = 0
             END
 
             IF @maxInt IS NOT NULL AND @minInt IS NOT NULL
             BEGIN
                 
-                IF @maxInt = @minInt
-                    RAISERROR('   - From execution_id @I64d', 0, 0, @minInt) WITH NOWAIT;
+                IF @maxInt = @minInt 
+                    IF @opValCount > 1
+                        RAISERROR('   - For execution_id %I64d', 0, 0, @minInt) WITH NOWAIT;
+                    ELSE
+                        RAISERROR('   - From execution_id %I64d', 0, 0, @minInt) WITH NOWAIT;
                 ELSE
                     RAISERROR('   - Execution_id(s) Between %I64d and %I64d', 0, 0, @minInt, @maxInt) WITH NOWAIT;
             END
@@ -1203,7 +1225,7 @@ Data AS (
                 N' AND ' + Val
 
             FROM (VALUES
-                (CASE WHEN @id IS NOT NULL THEN 'e.execution_id = @id' ELSE NULL END)
+                (CASE WHEN @id IS NOT NULL THEN N'e.execution_id = @id' ELSE NULL END)
                 ,(CASE
                     WHEN @id IS NOT NULL THEN NULL
                     WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useStartTime =1 THEN N'(ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'(end_time' ELSE N'(created_time' END + N' BETWEEN  @fromTZ AND @toTZ)'
@@ -1212,8 +1234,9 @@ Data AS (
                 )
                 ,(CASE
                     WHEN @id IS NOT NULL THEN NULL
-                    WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL AND @minInt = @maxInt THEN '(e.execution_id >= @minInt)'
-                    WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL THEN '(execution_id BETWEEN @minInt AND @maxInt)'
+                    WHEN @maxInt IS NOT NULL AND @maxInt = @minInt AND @opValCount > 1 THEN N'(e.execution_id = @minInt)'
+                    WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL AND @minInt = @maxInt THEN N'(e.execution_id >= @minInt)'
+                    WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL THEN N'(execution_id BETWEEN @minInt AND @maxInt)'
                   END
                 )
                 ,(@durationCondition)
@@ -1626,12 +1649,14 @@ ORDER BY d.rank, d.row_no
 IF @debugLevel > 0
 BEGIN
     SELECT
-        @debugLevel             [@debugLevel]
+        'VariableValues'        [TableName]
+        ,@debugLevel            [@debugLevel]
         ,@id                    [@id]
         ,@opLastCnt             [@opLastCnt]
         ,@totalMaxRows          [@totalMaxRows]
         ,@minInt                [@minInt]
         ,@maxInt                [@maxInt]
+        ,@opValCount            [@opValCount]
         ,@opLastGrp             [@opLastGrp]
         ,@opFrom                [@opFrom]  
         ,@opTo                  [@opTo]
