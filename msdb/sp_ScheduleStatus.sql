@@ -4,15 +4,30 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
 GO
 /* ****************************************************
 sp_ScheduleStatus v 0.16 (2017-11-21)
-(C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
-License: 
-    sp_ScheduleStatus is free to download and use for personal, educational, and internal 
-    corporate purposes, provided that this header is preserved. Redistribution or sale 
-    of sp_ScheduleStatus, in whole or in part, is prohibited without the author's express 
-    written consent.
+MIT License
+
+Copyright (c) 2017 Pavel Pawlowski
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 Description:
     Generates script for enabling or disabling job schedules
@@ -134,8 +149,8 @@ BEGIN
 END
 
 
-SET @filter = ISNULL(NULLIF(@filter, N''), N'%')
-SET @xml = N'<i>' + REPLACE(@filter, N',', N'</i><i>') + N'</i>'
+SET @filter = ISNULL(NULLIF(@filter, N''), N'%');
+SET @xml = N'<i>' + REPLACE(@filter, N',', N'</i><i>') + N'</i>';
 
 
 WITH Schedules AS (
@@ -174,7 +189,7 @@ BEGIN
     RETURN;
 END
 
-SET @msg ='DECLARE @enabled bit = ' + CASE WHEN @status = 0 THEN N'0' ELSE N'1' END + N'    -- Specify status to set: 1 = Enabled, 0 = Disabled'
+SET @msg ='DECLARE @enabled bit = ' + CASE WHEN @status = 0 THEN N'0' ELSE N'1' END + N'    --Specify status to set: 1 = Enabled, 0 = Disabled'
 RAISERROR(@msg, 0, 0) WITH NOWAIT;
 
 RAISERROR(N'', 0,0) WITH NOWAIT;
@@ -182,6 +197,10 @@ RAISERROR(N'DECLARE @status nvarchar(10) = CASE WHEN @enabled = 0 THEN N''Disabl
 
 
 DECLARE cr CURSOR FAST_FORWARD FOR
+SELECT
+    schedule_id
+    ,name
+FROM @schedules
 
 OPEN cr;
 
