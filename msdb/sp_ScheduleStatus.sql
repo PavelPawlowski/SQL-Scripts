@@ -3,7 +3,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ScheduleStatus] AS PRINT ''Placeholder for [dbo].[sp_ScheduleStatus]''')
 GO
 /* ****************************************************
-sp_ScheduleStatus v 0.10 (2017-11-21)
+sp_ScheduleStatus v 0.15 (2017-11-21)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -15,15 +15,19 @@ License:
     written consent.
 
 Description:
-    Provides information about processes in SSISDB
+    Generates script for enabling or disabling jobschedules
 
 Parameters:
-    @filter     nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed
-    ,@status    bit             = 1         --Status of the schedule to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    @filter         nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules. When not provided all schedules are scripted
+    ,@status        bit             = 1         --Status of the schedule to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    ,@job           nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job names
+    ,@category      nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job categories
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_ScheduleStatus]
-    @filter     nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed
-    ,@status    bit             = 1         --Status of the schedule to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    @filter         nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules. When not provided all schedules are scripted
+    ,@status        bit             = 1         --Status of the schedule to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    ,@job           nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job names
+    ,@category      nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job categories
 AS
 SET NOCOUNT ON;
 DECLARE
@@ -32,9 +36,18 @@ DECLARE
     ,@msg           nvarchar(max)
     ,@xml           xml
 
-RAISERROR(N'--sp_ScheduleStatus v0.10 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+
+DECLARE @categories TABLE (
+    category_id INT NOT NULL PRIMARY KEY CLUSTERED
+)
+
+DECLARE @jobSchedules TABLE (
+    schedule_id int NOT NULL PRIMARY KEY CLUSTERED
+);
+
+RAISERROR(N'--sp_ScheduleStatus v0.15 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'--=============================================================', 0, 0) WITH NOWAIT;
-RAISERROR(N'--sp_ScheduleStatus enables or disables job schedules', 0, 0) WITH NOWAIT;
+RAISERROR(N'--sp_ScheduleStatus Generates script for enabling or disabling jobschedules', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
 
 IF @filter = N'?'
@@ -43,10 +56,15 @@ BEGIN
 Usage: sp_ScheduleStatus [parameters]
 
 Params:
-    @filter     nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules. When not provided all schedules are printed.
-                                              filter prefixed by [-] removes schedules from selection
-    ,@status    bit             = 1         --Status of the schedules to be printed. 1 = Enabled, 0 - Disabled, NULL = both disabled and enabled
+    @filter         nvarchar(max)   = NULL      - Comma separated list of LIKE filter to limit schedules. When not provided all schedules are printed.
+                                                  filter prefixed by [-] removes schedules from selection
+    ,@status        bit             = 1         - Status of the schedules to be printed. 1 = Enabled, 0 - Disabled, NULL = both disabled and enabled
+    ,@job           nvarchar(max)   = NULL      - Comma separated list of LIKE filter to limit schedules by job names.
+                                                  If provided then only schedules for jobs with matching names are scripted
+    ,@category      nvarchar(max)   = NULL      - Comma separated list of LIKE filter to limit schedules by job categories.
+                                                  If provided then only schedules for jobs from matching job categories are scripted
 
+@filter, @status, @job and @category are combined with AND when provided together.
 ', 0, 0) WITH NOWAIT;
     RETURN;
 END
@@ -54,6 +72,60 @@ ELSE
 BEGIN
     RAISERROR(N'--sp_ScheduleStatus ''?'' for help
     ', 0, 0) WITH NOWAIT;
+END
+
+IF @job IS NOT NULL OR @category IS NOT NULL
+BEGIN
+    IF @category IS NOT NULL
+    BEGIN
+        SET @xml = N'<i>' + REPLACE(ISNULL(@category, N'%'), N',', N'</i><i>') + N'</i>';
+        WITH CategoryNames AS (
+            SELECT DISTINCT
+                LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) AS Categoryname
+            FROM @xml.nodes('/i') T(n)
+        )
+        INSERT INTO @categories(category_id)
+        SELECT DISTINCT
+            c.category_id
+        FROM msdb.dbo.syscategories c
+        INNER JOIN CategoryNames cn  ON c.name LIKE cn.Categoryname AND LEFT(cn.Categoryname, 1) <> '-'
+        EXCEPT
+        SELECT DISTINCT
+            c.category_id
+        FROM msdb.dbo.syscategories c
+        INNER JOIN CategoryNames cn  ON c.name LIKE RIGHT(cn.Categoryname, LEN(cn.Categoryname) - 1) AND LEFT(cn.Categoryname, 1) = '-'
+    END
+
+    SET @xml = N'<i>' + REPLACE(ISNULL(@job, N'%'), N',', N'</i><i>') + N'</i>';
+
+    WITH JobNames AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) AS JobName
+        FROM @xml.nodes('/i') T(n)
+    ),JobsBase AS (
+        SELECT DISTINCT
+            job_id
+            ,category_id
+        FROM msdb.dbo.sysjobs j
+        INNER JOIN JobNames jn ON j.name LIKE jn.JobName AND LEFT(jn.JobName, 1) <> '-'
+        EXCEPT
+        SELECT DISTINCT
+            job_id
+            ,category_id
+        FROM msdb.dbo.sysjobs j
+        INNER JOIN JobNames jn ON j.name LIKE RIGHT(jn.JobName, LEN(jn.JobName) - 1) AND LEFT(jn.JobName, 1) = '-'
+    ), Jobs AS(
+        SELECT
+            job_id
+        FROM JobsBase j 
+        WHERE
+            @category IS NULL OR EXISTS(SELECT 1 FROM @categories c WHERE c.category_id = j.category_id)
+    )
+    INSERT INTO @jobSchedules(schedule_id)
+    SELECT DISTINCT 
+        js.schedule_id
+    FROM msdb.dbo.sysjobschedules js
+    INNER JOIN jobs j ON j.job_id = js.job_id
 END
 
 SET @filter = ISNULL(NULLIF(@filter, N''), N'%')
@@ -68,26 +140,33 @@ RAISERROR(N'DECLARE @status nvarchar(10) = CASE WHEN @enabled = 0 THEN N''Disabl
 
 
 DECLARE cr CURSOR FAST_FORWARD FOR
-SELECT DISTINCT
-    schedule_id
-    ,name
-FROM msdb.dbo.sysschedules s
-INNER JOIN (SELECT LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) FROM @xml.nodes('/i') T(n)) F(n) ON s.name LIKE F.n
-WHERE 
-    enabled = @status OR @status IS NULL
-    AND
-    LEFT(F.n, 1) <> '-'
-EXCEPT
+WITH Schedules AS (
+    SELECT DISTINCT
+        schedule_id
+        ,name
+    FROM msdb.dbo.sysschedules s
+    INNER JOIN (SELECT LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) FROM @xml.nodes('/i') T(n)) F(n) ON s.name LIKE F.n
+    WHERE 
+        enabled = @status OR @status IS NULL
+        AND
+        LEFT(F.n, 1) <> '-'
+    EXCEPT
+    SELECT
+        schedule_id
+        ,name
+    FROM msdb.dbo.sysschedules s
+    INNER JOIN (SELECT LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) FROM @xml.nodes('/i') T(n)) F(n) ON s.name LIKE RIGHT(F.n, LEN(F.n) - 1) AND LEFT(F.n, 1) = '-'
+    WHERE 
+        enabled = @status OR @status IS NULL
+        AND
+        LEFT(F.n, 1) = '-'
+)
 SELECT
     schedule_id
     ,name
-FROM msdb.dbo.sysschedules s
-INNER JOIN (SELECT LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) FROM @xml.nodes('/i') T(n)) F(n) ON s.name LIKE RIGHT(F.n, LEN(F.n) - 1) AND LEFT(F.n, 1) = '-'
-WHERE 
-    enabled = @status OR @status IS NULL
-    AND
-    LEFT(F.n, 1) = '-'
-
+FROM Schedules s
+WHERE
+    (@job IS NULL AND @category IS NULL) OR EXISTS(SELECT 1 FROM @jobSchedules js WHERE js.schedule_id = s.schedule_id)
 
 OPEN cr;
 
