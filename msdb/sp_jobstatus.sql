@@ -3,7 +3,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_JobStatus] AS PRINT ''Placeholder for [dbo].[sp_JobStatus]''')
 GO
 /* ****************************************************
-sp_JobStatus v 0.20 (2017-03-02)
+sp_JobStatus v 0.25 (2017-11-21)
 (C) 2017 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
@@ -15,15 +15,17 @@ License:
     written consent.
 
 Description:
-    Provides information about processes in SSISDB
+    Generates script for enabling or disabling jbos
 
 Parameters:
-    @filter     nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed
-    ,@status    bit             = 1         --Status of the jobs to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    @filter         nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed
+    ,@status        bit             = 1         --Status of the jobs to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    ,@category      nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job categories
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_JobStatus]
-    @filter     nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed
-    ,@status    bit             = 1         --Status of the jobs to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    @filter         nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed
+    ,@status        bit             = 1         --Status of the jobs to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    ,@category      nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job categories
 AS
 SET NOCOUNT ON;
 DECLARE
@@ -33,9 +35,18 @@ DECLARE
     ,@job_id_str    nvarchar(50)
     ,@xml           xml
 
-RAISERROR(N'--sp_JobStatus v0.21 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+DECLARE @categories TABLE (
+    category_id INT NOT NULL PRIMARY KEY CLUSTERED
+)
+
+DECLARE @jobs TABLE (
+    job_id  uniqueidentifier NOT NULL PRIMARY KEY CLUSTERED
+    ,name   nvarchar(128)
+)
+
+RAISERROR(N'--sp_JobStatus v0.25 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'--========================================================', 0, 0) WITH NOWAIT;
-RAISERROR(N'--sp_JobStatus enables or disables jobs', 0, 0) WITH NOWAIT;
+RAISERROR(N'--sp_JobStatus Generates script for enabling or disabling jobs', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
 
 IF @filter = N'?'
@@ -44,9 +55,13 @@ BEGIN
 Usage: sp_JobStatus [parameters]
 
 Params:
-    @filter     nvarchar(max)   = NULL  --Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed.
+    @filter     nvarchar(max)   = NULL  - Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed.
                                           filter prefixed by [-] removes jobs from selection
-    ,@status    bit             = 1     --Status of the jobs to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    ,@status    bit             = 1     - Status of the jobs to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
+    ,@category  nvarchar(max)   = NULL  - Comma separated list of LIKE filter to limit schedules by job categories.
+                                          If provided then only jobs from matching job categories are scripted.
+
+@filter, @status and @category are combined with AND when provided together.
 
 ', 0, 0) WITH NOWAIT;
     RETURN;
@@ -57,11 +72,71 @@ BEGIN
     ', 0, 0) WITH NOWAIT;
 END
 
-SET @filter = ISNULL(NULLIF(@filter, N''), N'%')
-SET @xml = N'<i>' + REPLACE(@filter, N',', N'</i><i>') + N'</i>'
+IF @category IS NOT NULL
+BEGIN
+    IF @category IS NOT NULL
+    BEGIN
+        SET @xml = N'<i>' + REPLACE(ISNULL(@category, N'%'), N',', N'</i><i>') + N'</i>';
+        WITH CategoryNames AS (
+            SELECT DISTINCT
+                LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) AS Categoryname
+            FROM @xml.nodes('/i') T(n)
+        )
+        INSERT INTO @categories(category_id)
+        SELECT DISTINCT
+            c.category_id
+        FROM msdb.dbo.syscategories c
+        INNER JOIN CategoryNames cn  ON c.name LIKE cn.Categoryname AND LEFT(cn.Categoryname, 1) <> '-'
+        EXCEPT
+        SELECT DISTINCT
+            c.category_id
+        FROM msdb.dbo.syscategories c
+        INNER JOIN CategoryNames cn  ON c.name LIKE RIGHT(cn.Categoryname, LEN(cn.Categoryname) - 1) AND LEFT(cn.Categoryname, 1) = '-'
+    END
+END
+
+SET @filter = ISNULL(NULLIF(@filter, N''), N'%');
+SET @xml = N'<i>' + REPLACE(@filter, N',', N'</i><i>') + N'</i>';
+
+WITH Jobs AS (
+    SELECT DISTINCT
+        job_id
+        ,name
+        ,category_id
+    FROM msdb.dbo.sysjobs j
+    INNER JOIN (SELECT LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) FROM @xml.nodes('/i') T(n)) F(n) ON j.name LIKE F.n
+    WHERE 
+        enabled = @status OR @status IS NULL
+        AND
+        LEFT(F.n, 1) <> '-'
+    EXCEPT
+    SELECT
+        job_id
+        ,name
+        ,category_id
+    FROM msdb.dbo.sysjobs j
+    INNER JOIN (SELECT LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) FROM @xml.nodes('/i') T(n)) F(n) ON j.name LIKE RIGHT(F.n, LEN(F.n) - 1) AND LEFT(F.n, 1) = '-'
+    WHERE 
+        enabled = @status OR @status IS NULL
+        AND
+        LEFT(F.n, 1) = '-'
+)
+INSERT INTO @jobs(job_id, name)
+SELECT
+    job_id
+    ,name
+FROM Jobs j
+WHERE
+    @category IS NULL OR EXISTS(SELECT 1 FROM @categories c WHERE c.category_id = j.category_id)
 
 
-SET @msg ='DECLARE @enabled bit = ' + CASE WHEN @status = 0 THEN N'0' ELSE N'1' END + N'    --Specify status to set 1 = Enabled, 0 = Disabled'
+IF NOT EXISTS(SELECT 1 FROM @jobs)
+BEGIN
+    RAISERROR(N'No jobs matching provided criteria exists', 15, 0) WITH NOWAIT;
+    RETURN;
+END
+
+SET @msg ='DECLARE @enabled bit = ' + CASE WHEN @status = 0 THEN N'0' ELSE N'1' END + N'    --Specify status to set: 1 = Enabled, 0 = Disabled'
 RAISERROR(@msg, 0, 0) WITH NOWAIT;
 
 RAISERROR(N'', 0,0) WITH NOWAIT;
@@ -69,26 +144,10 @@ RAISERROR(N'DECLARE @status nvarchar(10) = CASE WHEN @enabled = 0 THEN N''Disabl
 
 
 DECLARE cr CURSOR FAST_FORWARD FOR
-SELECT DISTINCT
-    job_id
-    ,name
-FROM msdb.dbo.sysjobs j
-INNER JOIN (SELECT LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) FROM @xml.nodes('/i') T(n)) F(n) ON j.name LIKE F.n
-WHERE 
-    enabled = @status OR @status IS NULL
-    AND
-    LEFT(F.n, 1) <> '-'
-EXCEPT
 SELECT
     job_id
     ,name
-FROM msdb.dbo.sysjobs j
-INNER JOIN (SELECT LTRIM(RTRIM(n.value('.', 'nvarchar(128)'))) FROM @xml.nodes('/i') T(n)) F(n) ON j.name LIKE RIGHT(F.n, LEN(F.n) - 1) AND LEFT(F.n, 1) = '-'
-WHERE 
-    enabled = @status OR @status IS NULL
-    AND
-    LEFT(F.n, 1) = '-'
-
+FROM @jobs
 
 OPEN cr;
 
