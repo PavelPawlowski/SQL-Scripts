@@ -1,6 +1,8 @@
 IF NOT EXISTS(SELECT 1 FROM sys.databases where name = 'SSISDB')
+BEGIN
     RAISERROR(N'SSIS Database Does not Exists', 15, 0)
     SET NOEXEC ON;
+END
 GO
 USE [SSISDB]
 GO
@@ -9,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.56 (2017-11-21)
+sp_ssisdb v 0.57 (2017-11-22)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -116,6 +118,11 @@ DECLARE
     ,@includeAgentReferences            bit             = 0     --Identifies whether to include Agent Job referencing packages
     ,@includeAgentJob                   bit             = 0     --Identifies whether to include information about agent job which executed the package
     ,@decryptSensitive                  bit             = 0     --Identifies whether Decryption of sensitive values in verbose mode should be handled
+    ,@processID                         bit             = 0     --Identifies whether filter on process_id should be applied
+    ,@callerName                        bit             = 0     --Identifies whether filter on caller names
+    ,@stoppedBy                         bit             = 0     --Identifies whether filter on Stopped By Name Filter
+    ,@useX86                            bit             = NULL  --Identifies whether filter on the X32 or X64 engine is used
+    ,@includeParams                     bit             = 0     --Identifies whether to include execution parameters in execution details
     ,@durationCondition                 nvarchar(max)   = NULL  --condition for duration
     ,@tms                               nvarchar(30)    = NULL  --variable to store timestamp data
     ,@debugLevel                        smallint        = 0
@@ -128,7 +135,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.56 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.57 (2017-11-22) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -203,6 +210,18 @@ VALUES
     ,('<'       ,'<'                    ,1)         --Duration shorter than
     ,('<='      ,'<='                   ,2)         --Duration shorter or equal to
     ,('='       ,'='                    ,1)         --Duration equal to
+    ,('PI'      ,'PI'                   ,2)         --Process ID
+    ,('PI'      ,'PROCESS_ID'           ,10)        --ProcessID
+    ,('CN'      ,'CN'                   ,2)         --Caller Name
+    ,('CN'      ,'CALLER_NAME '         ,11)        --Caller Name
+    ,('SB'      ,'SB'                   ,2)         --Stopped By
+    ,('SB'      ,'STOPPED_BY'           ,10)        --Stopped By
+    ,('32B'     ,'32B'                  ,NULL)      --X86 filter
+    ,('32B'     ,'32BIT'                ,NULL)      --X86 filter
+    ,('64B'     ,'64B'                  ,NULL)      --X64 filter
+    ,('64B'     ,'64BIT'                ,NULL)      --X64 filter
+    ,('PM'      ,'PM'                   ,NULL)      --Include parameters in execution details
+    ,('PM'      ,'PARAMS'               ,NULL)      --Include parameters in execution details
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -444,6 +463,88 @@ BEGIN
 
         SET @help = 1
     END
+
+    --process_id filter
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'PI')
+    BEGIN
+        SET @msg = STUFF((
+            SELECT
+                N',' + StrVal
+            FROM @opValData
+            WHERE 
+                Val = N'PI'
+                AND
+                IntVal IS NULL
+            FOR XML PATH('')
+        ), 1, 1, N'')
+
+        IF @msg IS NOT NULL
+        BEGIN
+            RAISERROR(N'"%s" values are not valid integer values for PROCESS_ID filter', 11, 0, @msg) WITH NOWAIT;
+            SET @help = 1
+        END
+        ELSE
+        BEGIN
+            CREATE TABLE #ProcessID (
+                process_id int NOT NULL PRIMARY KEY CLUSTERED
+            );
+
+            INSERT INTO #ProcessID(process_id)
+            SELECT DISTINCT
+                IntVal
+            FROM @opValData
+            WHERE 
+                Val = N'PI'
+                AND
+                IntVal IS NOT NULL
+
+            SET @processID = 1;
+        END
+    END
+
+    --created by filter
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'CN')
+    BEGIN
+        SET @callerName = 1;
+        CREATE TABLE #callers (
+            caller_name nvarchar(128) NOT NULL PRIMARY KEY CLUSTERED
+        )
+
+        INSERT INTO #callers (caller_name)
+        SELECT DISTINCT
+            StrVal
+        FROM @opValData
+        WHERE 
+            Val = N'CN'
+    END
+
+    --stopped by filter
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'SB')
+    BEGIN
+        SET @stoppedBy = 1;
+        CREATE TABLE #stoppedBy (
+            stopped_by_name nvarchar(128) NOT NULL PRIMARY KEY CLUSTERED
+        )
+
+        INSERT INTO #stoppedBy (stopped_by_name)
+        SELECT DISTINCT
+            StrVal
+        FROM @opValData
+        WHERE 
+            Val = N'SB'
+    END
+
+    --X32 and X64 filter
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'32B' OR Val = N'64B')
+    BEGIN
+        IF NOT (EXISTS(SELECT 1 FROM @opVal WHERE Val = N'32B') AND EXISTS(SELECT 1 FROM @opVal WHERE Val = N'64B'))
+        BEGIN
+            IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'32B')
+                SET @useX86 = 1
+            ELSE
+                SET @useX86 = 0
+        END
+    END
 END
 
 IF @help <> 1
@@ -536,6 +637,52 @@ BEGIN
                     RAISERROR(N' - All Operations', 0, 0) WITH NOWAIT;
             END
 
+            --PROCESS_ID filter
+            IF @processID = 1
+            BEGIN
+                SET @msg = STUFF((
+                    SELECT
+                        N', ' + CONVERT(nvarchar(10), process_id)
+                    FROM #ProcessID
+                    FOR XML PATH(N'')
+                ), 1, 2, N'')
+
+                RAISERROR(N'   - Process ID(s): %s', 0, 0, @msg) WITH NOWAIT;
+            END
+            
+            --Caller Name Filter
+            IF @callerName = 1
+            BEGIN
+                SET @msg = STUFF((
+                    SELECT
+                        N', ' + caller_name
+                    FROM #callers
+                    FOR XML PATH(N'')
+                ), 1, 2, N'')
+
+                RAISERROR(N' - Callers: %s', 0, 0, @msg) WITH NOWAIT;
+            END
+
+            --Stopped By Name Filter
+            IF @stoppedBy = 1
+            BEGIN
+                SET @msg = STUFF((
+                    SELECT
+                        N', ' + stopped_by_name
+                    FROM #stoppedBy
+                    FOR XML PATH(N'')
+                ), 1, 2, N'')
+
+                RAISERROR(N' - Callers: %s', 0, 0, @msg) WITH NOWAIT;
+            END
+
+            --X32 and X64 filters
+            IF @useX86 IS NOT NULL
+            BEGIN
+                SET @msg = CASE WHEN @useX86 = 1 THEN '32' ELSE N'64' END;
+                RAISERROR(N' - %s bit executions only', 0, 0, @msg) WITH NOWAIT;
+            END
+            
             --duration was specified
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN (N'>', N'>=', N'<', N'<=', N'='))
             BEGIN
@@ -556,7 +703,7 @@ BEGIN
                         FOR XML PATH('')
                     ), 1, 5, N''), N'&lt;', N'<'), N'&gt;', N'>')
 
-                RAISERROR(N' - Duration: %s', 0, 0, @msg) WITH NOWAIT;
+                RAISERROR(N'   - Duration: %s', 0, 0, @msg) WITH NOWAIT;
 
                 IF @debugLevel > 2
                     SELECT @durationCondition AS DurationCondition
@@ -671,14 +818,21 @@ BEGIN
         RAISERROR(N' - Including information about Agent Job Step invoking the execution', 0, 0) WITH NOWAIT;
     END
 
-    IF @id IS NULL AND @opLastCnt IS NULL AND @opFromTZ IS NULL AND @minInt IS NULL  AND @lastSpecified = 0
+    IF @id IS NULL AND @opLastCnt IS NULL AND @opFromTZ IS NULL AND @minInt IS NULL AND @lastSpecified = 0 AND @processID = 0
     BEGIN
         SET @opLastCnt = @defaultLastOp;
         RAISERROR(N' - default Last %d operations', 0, 0, @opLastCnt) WITH NOWAIT;
     END
 
+    --Include parameters
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'PM')
+    BEGIN
+        SET @includeParams = 1
+        RAISERROR(N'   - Including Execution Paramteres in details', 0, 0) WITH NOWAIT;
+    END
+
     --Decrypting sensitive
-    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'DS' AND @sensitiveAccess = 1)
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'DS' AND @sensitiveAccess = 1)
     BEGIN
         SET @decryptSensitive = 1;
         RAISERROR(N'   - DECRYPTING SENSITIVE DATA', 0, 0) WITH NOWAIT;
@@ -951,22 +1105,28 @@ RAISERROR(N'
 
 RAISERROR(N'  
   >|>=|<|<=|=dddddd         - Duration Specifier. If provided then only operations with duration corresponding to the specifier are returned. Multiple specifiers are combined with AND.
-                            - If multiple durations are specified for the same specifier, MAX duration is used for [>] and [>=] and and MIN durtion for [<], [<=], [=]
+                              If multiple durations are specified for the same specifier, MAX duration is used for [>] and [>=] and and MIN durtion for [<], [<=], [=]
   dddddd                    - Specifies duration in below allowed formats
   hh:MM[:ss[.fff]]          - If only time is specified, it represents duration in hours, minutes, seconds and fraction of second
   iiid[hh:MM[:ss[.fff]]]    - iii specifies followed by d specifies number of days. Optional additional time can follow
 
-', 0, 0) WITH NOWAIT;
+  PROCESS_ID(PI)iiiiii      - ProcessID specifier. If provided then only operations with specific process_id are returned. iiiiii is integer value representing process_id.
+                              Multiple declarations can be specified to filter for multiple process_ids.
+  CALLER_NAME(CN)xxxxxxxx   - Caller Name specifier. If provided then only operations which caller corresponds to provided value. xxxxxxxx is string representing caller name.
+                              Multiple declarations can be specified to filter for multiple callers. Caller name supports LIKE wildcards.
+  (32B)IT                   - Filter only 32 bit executions
+  (64B)IT                   - Filter only 64 bit executions', 0, 0) WITH NOWAIT;
 
+RAISERROR(N'  PARAMS(PM)                - Include Execution Parameters in Execution Details.
+  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive execution parameters will be decrypted and the values provided
+                              Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
+                              to be able to decrypt sensitive information
+', 0, 0) WITH NOWAIT;
 RAISERROR(N'
   FOLDER (FLD)              - Optional keyword which specifies the result will be grouped by FOLDER. Nunmber of last records is per folder.
   (P)ROJECT                 - Optional keyword which specifeis the result will be grouped by FOLDER, PROJECT. Number of last records is per project
   (E)XECUTABLE              - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
   
-  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive execution parameters will be decrypted and the values provided
-                              Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
-                              to be able to decrypt sensitive information
-
   AGENT_REFERENCES (AGR)    - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval). Runs in caller context. Caller must have permissions to msdb.
   AGENT_JOB (AGT)           - If available, Retrieve information about agent Job which started the execution. (Slow-down the retrieval). Runs in caller context. Caller must have permissions to msdb.
 
@@ -1153,8 +1313,25 @@ SET @sql = CONVERT(nvarchar(max), N'
 WITH BaseOperations AS (
     SELECT
         DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), 0)) durationDate
-        ,*
-    FROM internal.operations WITH(NOLOCK)
+        ,o.*
+    FROM internal.operations o WITH(NOLOCK)' 
++
+CASE 
+    WHEN @id IS NULL AND @processID = 0 THEN N''
+    ELSE N' INNER JOIN #ProcessID p ON p.process_id = o.process_id'
+END 
++
+CASE 
+    WHEN @id IS NULL AND @callerName = 0 THEN N''
+    ELSE N' INNER JOIN #callers c ON o.caller_name LIKE c.caller_name collate database_default'
+END 
++
+CASE 
+    WHEN @id IS NULL AND @stoppedBy = 0 THEN N''
+    ELSE N' INNER JOIN #stoppedBy s ON o.stopped_by_name LIKE s.stopped_by_name collate database_default'
+END 
+
++ N'
 ),
 Data AS (
     SELECT ' + CASE WHEN @id IS NOT NULL THEN N'TOP (1) ' WHEN @totalMaxRows IS NOT NULL THEN N'TOP (@totalMaxRows) ' ELSE N'' END + N'
@@ -1191,6 +1368,8 @@ Data AS (
         ,e.reference_type
         ,e.executed_as_name
         ,e.executed_as_sid
+        ,o.stopped_by_name
+        ,o.stopped_by_sid
 ') + CASE 
         WHEN @id IS NULL AND @opLastCnt IS NOT NULL AND @opLastGrp IS NOT NULL THEN
             N',ROW_NUMBER() OVER(PARTITION BY ' +
@@ -1257,6 +1436,12 @@ Data AS (
                     WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL AND @minInt = @maxInt THEN N'(e.execution_id >= @minInt)'
                     WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL THEN N'(execution_id BETWEEN @minInt AND @maxInt)'
                   END
+                )
+                ,(CASE
+                    WHEN @id IS NOT NULL OR @useX86 IS NULL THEN NULL
+                    WHEN @useX86 = 1 THEN N'(e.use32bitruntime = 1)'
+                    WHEN @useX86 = 0 THEN N'(e.use32bitruntime = 0)'
+                END
                 )
                 ,(@durationCondition)
                 )T(val)
@@ -1555,7 +1740,9 @@ N'
 
         ,d.status_code              ''Operation/@status_code''
         ,d.process_id               ''Operation/@process_id''
-        ,d.project_lsn              ''Execution/@project_lsn''
+        ,d.stopped_by_name          ''Operation/@stopped_by_name''
+        ,d.stopped_by_sid           ''Operation/@stopped_by_sid''
+        ,d.project_lsn              ''Execution/@project_lsn''        
         ,d.use32bitruntime          ''Execution/@use32BitRuntime''
         ,d.environment_name         ''Execution/Environment/@name''
         ,d.environment_folder_name  ''Execution/Environment/@folder''
@@ -1572,7 +1759,10 @@ N'
             FROM internal.operation_os_sys_info os WITH(NOLOCK) 
             WHERE os.operation_id = d.execution_id
             FOR XML PATH(''os_info''), TYPE
-        ))                          ''Execution''
+        ))                          ''Execution'' ' +
+
+CASE WHEN @includeParams = 0 THEN N''
+ELSE N'
 
         ,(SELECT 
              [execution_parameter_id]     ''@id''
@@ -1611,9 +1801,9 @@ N'
         FROM [internal].[execution_parameter_values] epv
         WHERE epv.execution_id = d.execution_id
         ORDER BY [object_type], [parameter_name]
-        FOR XML PATH(''Parameter''), ROOT(''Parameters''), TYPE)
-
-
+        FOR XML PATH(''Parameter''), ROOT(''Parameters''), TYPE)'
+END +
+N'
         ,(SELECT 
                [property_id]        ''@id''
               ,[property_path]      ''@property_path''
