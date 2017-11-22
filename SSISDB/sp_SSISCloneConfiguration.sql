@@ -1,3 +1,7 @@
+IF NOT EXISTS(SELECT 1 FROM sys.databases where name = 'SSISDB')
+    RAISERROR(N'SSIS Database Does not Exists', 15, 0)
+    SET NOEXEC ON;
+GO
 USE [SSISDB]
 GO
 RAISERROR('Creating procedure [dbo].[sp_SSISCloneConfiguration]', 0, 0) WITH NOWAIT;
