@@ -1,6 +1,8 @@
 IF NOT EXISTS(SELECT 1 FROM sys.databases where name = 'SSISDB')
+BEGIN
     RAISERROR(N'SSIS Database Does not Exists', 15, 0)
     SET NOEXEC ON;
+END
 GO
 USE [SSISDB]
 GO
