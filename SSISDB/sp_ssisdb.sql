@@ -1114,6 +1114,8 @@ RAISERROR(N'
                               Multiple declarations can be specified to filter for multiple process_ids.
   CALLER_NAME(CN)xxxxxxxx   - Caller Name specifier. If provided then only operations which caller corresponds to provided value. xxxxxxxx is string representing caller name.
                               Multiple declarations can be specified to filter for multiple callers. Caller name supports LIKE wildcards.
+  STOPPED_BY(SB)xxxxxxxx    - Stopped By specifier. if provided then only operations which were stopped by user with provided name are returned. xxxxxxxx is string representing user name.
+                              Multiple declarations can be specified to filter for multiple user names. Stopped by name suppors LIKE wildcards.
   (32B)IT                   - Filter only 32 bit executions
   (64B)IT                   - Filter only 64 bit executions', 0, 0) WITH NOWAIT;
 
