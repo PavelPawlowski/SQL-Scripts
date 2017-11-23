@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.58 (2017-11-23)
+sp_ssisdb v 0.59 (2017-11-23)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -123,6 +123,9 @@ DECLARE
     ,@stoppedBy                         bit             = 0     --Identifies whether filter on Stopped By Name Filter
     ,@useX86                            bit             = NULL  --Identifies whether filter on the X32 or X64 engine is used
     ,@includeParams                     bit             = 0     --Identifies whether to include execution parameters in execution details
+    ,@folderDetail                      bit             = 0     --Identifies whether to include folder details
+    ,@projectDetail                     bit             = 0     --Identifies whether to include project details
+    ,@objectDetail                      bit             = 0     --Identifies whether to include object details (package details)
     ,@durationCondition                 nvarchar(max)   = NULL  --condition for duration
     ,@tms                               nvarchar(30)    = NULL  --variable to store timestamp data
     ,@debugLevel                        smallint        = 0
@@ -222,6 +225,12 @@ VALUES
     ,('64B'     ,'64BIT'                ,NULL)      --X64 filter
     ,('PM'      ,'PM'                   ,NULL)      --Include parameters in execution details
     ,('PM'      ,'PARAMS'               ,NULL)      --Include parameters in execution details
+    ,('FD'      ,'FD'                   ,NULL)      --Include folder details
+    ,('FD'      ,'FOLDER_DETAILS'       ,NULL)      --Include folder details
+    ,('PRD'     ,'PRD'                  ,NULL)      --Include Project details
+    ,('PRD'     ,'PROJECT_DETAILS'      ,NULL)      --Include Project Details
+    ,('OD'      ,'OD'                   ,NULL)      --Include Object Details
+    ,('OD'      ,'OBJECT_DETAILS'       ,NULL)      --Include Object Details
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -838,6 +847,28 @@ BEGIN
         RAISERROR(N'   - DECRYPTING SENSITIVE DATA', 0, 0) WITH NOWAIT;
     END
 
+    --Folder Detail
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'FD')
+    BEGIN
+        SET @folderDetail = 1;
+        RAISERROR(N'   - Including Folder Details', 0, 0) WITH NOWAIT;
+    END
+
+    --Project Detail
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'PRD')
+    BEGIN
+        SET @projectDetail = 1;
+        RAISERROR(N'   - Including Project Details', 0, 0) WITH NOWAIT;
+    END
+
+    --Object Detail
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'OD')
+    BEGIN
+        SET @objectDetail = 1;
+        RAISERROR(N'   - Including Object Details', 0, 0) WITH NOWAIT;
+    END
+
+
     --Soring processing
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'ST')
     BEGIN
@@ -1119,10 +1150,16 @@ RAISERROR(N'
   (32B)IT                   - Filter only 32 bit executions
   (64B)IT                   - Filter only 64 bit executions', 0, 0) WITH NOWAIT;
 
-RAISERROR(N'  PARAMS(PM)                - Include Execution Parameters in Execution Details.
-  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive execution parameters will be decrypted and the values provided
+RAISERROR(N'  PARAMS(PM)                - Include Execution Parameters in Execution Details. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
+  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive data will be decrypted and the values provided
                               Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
                               to be able to decrypt sensitive information
+ FOLDER_DETAILS(FD)         - Include detailed information about folder from which the executed package originates. Information is provided in form of xml in the objects_details column.
+                              Included is information about projects and environments in the folder.
+ PROJECT_DETAILS(PRD)       - Include detailed information about project from which the executed package originates. Information is provided in form of xml in the objects_details column.
+                              Included is information about project parameters and packages in the project. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
+ OBJECT_DETAILS(OD)         - Include detailed information about the executed pacakge. Information is provided in form of xml in the objects_details column.
+                              Included is information about package parameters. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
 ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
   FOLDER (FLD)              - Optional keyword which specifies the result will be grouped by FOLDER. Nunmber of last records is per folder.
@@ -1723,6 +1760,151 @@ N'
         ELSE N'
 '
     END +
+    CASE WHEN @folderDetail = 1 OR @projectDetail = 1 OR @objectDetail = 1 THEN N'
+,(SELECT 
+    f.name                  ''@name''
+    ,f.folder_id            ''@folder_id''
+    ,f.created_by_name      ''@created_by_name''
+    ,f.created_time         ''@created_time''
+    ,f.created_by_sid       ''@created_by_sid''
+    ,f.description          ''@description''
+    ,(
+        SELECT
+             pd.name                    ''@name''
+            ,pd.project_id              ''@project_id''
+            ,pd.created_time            ''@created_time''
+            ,pd.deployed_by_name        ''@deployed_by_name''
+            ,pd.last_deployed_time      ''@last_deployed_time''
+            ,pd.object_version_lsn      ''@object_version_lsn''
+            ,pd.last_validation_time    ''@last_validation_time''
+            ,pd.validation_status       ''@validation_status''
+            ,pd.description             ''@description''
+            ,pd.project_format_version  ''@project_format_version''
+            ,CASE WHEN pd.object_version_lsn = p.object_version_lsn AND @projectDetail = 1 THEN
+                (SELECT
+                    op.parameter_name               ''@parameter_name''
+                    ,op.description                 ''@description''
+                    ,op.parameter_data_type         ''@parameter_data_type''
+                    ,op.last_validation_time        ''@last_validation_time''
+                    ,op.validation_status           ''@validation_status''
+                    ,op.sensitive                   ''values/@sensitive''
+                    ,op.value_set                   ''values/@value_set''
+                    ,op.value_type                  ''values/@value_type''
+                    ,op.referenced_variable_name    ''values/@referenced_variable_name''
+                    ,op.design_default_value        ''values/design_default_value/processing-instruction(value)''
+                    ,CASE
+                        WHEN op.sensitive = 1 AND @decryptSensitive = 1 THEN
+                            (SELECT
+                            CASE [parameter_data_type]
+                                WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Proj_'' + CONVERT(nvarchar(20), op.project_id)), NULL, op.sensitive_default_value), [parameter_data_type]), 126)
+                                ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Proj_'' + CONVERT(nvarchar(20), op.project_id)), NULL, op.sensitive_default_value), [parameter_data_type]))
+                            END ''values/default_value/processing-instruction(sensitive-value)''
+                            FOR XML PATH(''''), TYPE
+                            ) 
+                    
+                        ELSE 
+                            (SELECT op.default_value  ''values/devalue_value/processing-instruction(value)'' FOR XML PATH(''''), TYPE)
+                    END
+                FROM internal.object_parameters op
+                WHERE
+                    op.project_version_lsn = pd.object_version_lsn
+                    AND
+                    op.object_name = pd.name
+                FOR XML PATH(''parameter''), ROOT(''parameters''), TYPE
+                )
+                ELSE NULL
+            END
+            ,CASE WHEN pd.object_version_lsn = p.object_version_lsn  AND (@projectDetail = 1 OR @objectDetail = 1) THEN
+                (
+                SELECT
+                    pk.name                     ''@name''
+                    ,pk.package_id              ''@package_id''
+                    ,PK.entry_point             ''@entry_point''
+                    ,pk.package_guid            ''@package_guid''
+                    ,pk.description             ''@description''
+                    ,pk.package_format_version  ''@package_format_version''
+                    ,pk.version_major           ''@version_major''
+                    ,pk.version_minor           ''@version_minor''
+                    ,pk.version_build           ''@version_build''
+                    ,pk.version_guid            ''@version_guid''
+                    ,pk.version_comments        ''@version_comments''
+                    ,pk.last_validation_time    ''@last_validation_time''
+                    ,pk.validation_status       ''@validation_status''
+                    ,CASE WHEN @objectDetail = 1 AND pk.name = d.package_name THEN
+                        (SELECT
+                            op.parameter_name               ''@parameter_name''
+                            ,op.description                 ''@description''
+                            ,op.parameter_data_type         ''@parameter_data_type''
+                            ,op.last_validation_time        ''@last_validation_time''
+                            ,op.validation_status           ''@validation_status''
+                            ,op.sensitive                   ''values/@sensitive''
+                            ,op.value_set                   ''values/@value_set''
+                            ,op.value_type                  ''values/@value_type''
+                            ,op.referenced_variable_name    ''values/@referenced_variable_name''
+                            ,op.design_default_value        ''values/design_default_value/processing-instruction(value)''
+                            ,CASE
+                                WHEN op.sensitive = 1 AND @decryptSensitive = 1 THEN
+                                    (SELECT
+                                    CASE [parameter_data_type]
+                                        WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Proj_'' + CONVERT(nvarchar(20), op.project_id)), NULL, op.sensitive_default_value), [parameter_data_type]), 126)
+                                        ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Proj_'' + CONVERT(nvarchar(20), op.project_id)), NULL, op.sensitive_default_value), [parameter_data_type]))
+                                    END ''values/default_value/processing-instruction(sensitive-value)''
+                                    FOR XML PATH(''''), TYPE
+                                    ) 
+                    
+                                ELSE 
+                                    (SELECT op.default_value  ''values/devalue_value/processing-instruction(value)'' FOR XML PATH(''''), TYPE)
+                            END
+                        FROM internal.object_parameters op
+                        WHERE
+                            op.project_version_lsn = pk.project_version_lsn
+                            AND
+                            op.object_name = pk.name
+                        FOR XML PATH(''parameter''), ROOT(''parameters''), TYPE
+                        )
+                        ELSE NULL
+                    END
+                FROM internal.packages pk
+                WHERE 
+                    pk.project_version_lsn = p.object_version_lsn
+                    AND
+                    (@projectDetail = 1 OR pk.name = d.package_name)
+                FOR XML PATH(''package''), ROOT(''packages''), TYPE
+            )
+            ELSE NULL
+           END
+        FROM internal.projects pd
+        WHERE 
+            pd.folder_id = f.folder_id
+            AND
+            (@folderDetail = 1 OR pd.object_version_lsn = p.object_version_lsn)
+        FOR XML PATH(''project''), ROOT(''projects''), TYPE
+    )
+    ,CASE WHEN @folderDetail = 1 THEN
+        (
+            SELECT
+                e.environment_name          ''@environment_name''
+                ,e.environment_id           ''@environment_id''
+                ,e.created_by_name          ''@created_by_name''
+                ,e.created_time             ''@created_time''
+                ,e.created_by_sid           ''@created_by_sid''
+                ,e.description              ''@description''
+            FROM internal.environments e
+            WHERE e.folder_id = f.folder_id
+            FOR XML PATH(''environment''), ROOT(''environments''), TYPE
+        )
+        ELSE NULL
+    END
+FROM internal.projects p
+INNER JOIN internal.folders f ON f.folder_id = p.folder_id
+WHERE 
+    p.object_version_lsn = d.project_lsn
+FOR XML PATH(''Folder''), TYPE
+) AS objects_details
+'
+        ELSE N''
+    END
+    +
 N'
     ,(
     SELECT 
@@ -2289,8 +2471,8 @@ SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
 RAISERROR(N'%s - Starting retrieving SSISDB core operations data...', 0, 0, @tms) WITH NOWAIT;
 
 /* EXECUTION OF THE MAIN QUERY */
-EXEC sp_executesql @sql, N'@opLastCnt int, @messages_inrow int, @fromTZ datetimeoffset, @toTZ datetimeoffset, @minInt bigint, @maxInt bigint, @id bigint, @totalMaxRows int, @decryptSensitive bit', 
-    @opLastCnt, @max_messages, @opFromTZ, @opToTZ, @minInt, @maxInt, @id, @totalMaxRows, @decryptSensitive
+EXEC sp_executesql @sql, N'@opLastCnt int, @messages_inrow int, @fromTZ datetimeoffset, @toTZ datetimeoffset, @minInt bigint, @maxInt bigint, @id bigint, @totalMaxRows int, @decryptSensitive bit, @folderDetail bit, @projectDetail bit, @objectDetail bit', 
+    @opLastCnt, @max_messages, @opFromTZ, @opToTZ, @minInt, @maxInt, @id, @totalMaxRows, @decryptSensitive, @folderDetail, @projectDetail, @objectDetail
 
 SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
 RAISERROR(N'%s - SSISDB core operations data retrieval completed...', 0, 0, @tms) WITH NOWAIT;
