@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.57 (2017-11-22)
+sp_ssisdb v 0.58 (2017-11-23)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -135,7 +135,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.57 (2017-11-22) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.58 (2017-11-23) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -1832,7 +1832,7 @@ N'
     ,d.created_time
 ' +
     CASE
-        WHEN @id IS NULL THEN N',''sp_ssisdb ''''V'' + FORMAT(d.execution_ID, ''G'') + N'' ES1000 EM1000 EDS1000 ECP1000'''',@package = '''''''', @msg_type = '''''''', @event_filter = '''''''', @phase_filter = '''''''', @task_filter = '''''''',
+        WHEN @id IS NULL THEN N',''sp_ssisdb ''''V'' + FORMAT(d.execution_ID, ''G'') + N'' PM ES1000 EM1000 EDS1000 ECP1000'''',@package = '''''''', @msg_type = '''''''', @event_filter = '''''''', @phase_filter = '''''''', @task_filter = '''''''',
 @subcomponent_filter = '''''''', @package_path = '''''''', @execution_path = '''''''', @msg_filter = '''''''' '' as execution_details_command'
         ELSE N''
     END + N'
