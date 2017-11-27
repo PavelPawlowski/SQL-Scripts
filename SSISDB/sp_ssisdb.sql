@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.59 (2017-11-23)
+sp_ssisdb v 0.60 (2017-11-27)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -54,6 +54,8 @@ Parameters:
     ,@package_path          nvarchar(max)   = NULL                  --LIKE filter to be applied on package path fields. Used only for detailed results filtering
     ,@execution_path        nvarchar(max)   = NULL                  --LIKE filter to be applied on execution path fields. Used only for detailed results filtering
     ,@msg_filter            nvarchar(max)   = NULL                  --LIKE filter to be applied on message text. Used only for detailed results filtering
+    ,@src_component_name    nvarchar(max)   = NULL                  --LIKE filter to be applied on data statistics as srouce_component_name. Used only for detailed results filtering
+    ,@dst_component_name    nvarchar(max)   = NULL                  --LIKE filter to be applied on execution data statistics as destination_component_name. Used only for detailed results filtering
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_ssisdb]
      @op                    nvarchar(max)	= NULL                  --Operator parameter - universal operator for setting large range of conditions and filters
@@ -69,6 +71,8 @@ ALTER PROCEDURE [dbo].[sp_ssisdb]
     ,@package_path          nvarchar(max)   = NULL                  --LIKE filter to be applied on package path fields. Used only for detailed results filtering
     ,@execution_path        nvarchar(max)   = NULL                  --LIKE filter to be applied on execution path fields. Used only for detailed results filtering
     ,@msg_filter            nvarchar(max)   = NULL                  --LIKE filter to be applied on message text. Used only for detailed results filtering
+    ,@src_component_name    nvarchar(max)   = NULL                  --LIKE filter to be applied on data statistics as srouce_component_name. Used only for detailed results filtering
+    ,@dst_component_name    nvarchar(max)   = NULL                  --LIKE filter to be applied on execution data statistics as destination_component_name. Used only for detailed results filtering
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 SET NOCOUNT ON;
@@ -127,10 +131,13 @@ DECLARE
     ,@projectDetail                     bit             = 0     --Identifies whether to include project details
     ,@objectDetail                      bit             = 0     --Identifies whether to include object details (package details)
     ,@durationCondition                 nvarchar(max)   = NULL  --condition for duration
+    ,@durationMsg                       nvarchar(max)   = NULL  --message for duration condition
     ,@tms                               nvarchar(30)    = NULL  --variable to store timestamp data
     ,@debugLevel                        smallint        = 0
     ,@sensitiveAccess                   bit             = 0     --Indicates whether caller have access to senstive infomration
     ,@opValCount                        int             = 0     --Count of operator modifier values
+    ,@datetimeMsg                       nvarchar(max)   = NULL  --message for datetime
+    ,@dateField                         nvarchar(128)   = NULL  --name of date field
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -138,7 +145,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.58 (2017-11-23) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.60 (2017-11-28) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -213,12 +220,12 @@ VALUES
     ,('<'       ,'<'                    ,1)         --Duration shorter than
     ,('<='      ,'<='                   ,2)         --Duration shorter or equal to
     ,('='       ,'='                    ,1)         --Duration equal to
-    ,('PI'      ,'PI'                   ,2)         --Process ID
-    ,('PI'      ,'PROCESS_ID'           ,10)        --ProcessID
-    ,('CN'      ,'CN'                   ,2)         --Caller Name
-    ,('CN'      ,'CALLER_NAME '         ,11)        --Caller Name
-    ,('SB'      ,'SB'                   ,2)         --Stopped By
-    ,('SB'      ,'STOPPED_BY'           ,10)        --Stopped By
+    ,('PI'      ,'PID:'                 ,4)         --Process ID
+    ,('PI'      ,'PROCESS_ID:'          ,11)        --ProcessID
+    ,('CN'      ,'CN:'                  ,3)         --Caller Name
+    ,('CN'      ,'CALLER_NAME:'         ,12)        --Caller Name
+    ,('SB'      ,'SB:'                  ,2)         --Stopped By
+    ,('SB'      ,'STOPPED_BY:'          ,10)        --Stopped By
     ,('32B'     ,'32B'                  ,NULL)      --X86 filter
     ,('32B'     ,'32BIT'                ,NULL)      --X86 filter
     ,('64B'     ,'64B'                  ,NULL)      --X64 filter
@@ -295,6 +302,8 @@ SELECT
     ,@package_path          = NULLIF(@package_path, N'')
     ,@execution_path        = NULLIF(@execution_path, N'')
     ,@msg_filter            = NULLIF(@msg_filter, N'')
+    ,@src_component_name    = NULLIF(@src_component_name, N'')
+    ,@dst_component_name    = NULLIF(@dst_Component_name, N'')
 
     /* =================================
              OPERATION Retrieval 
@@ -304,12 +313,12 @@ SELECT
 
 	DECLARE @opVal TABLE (	--Operation Validities
 		Val			    varchar(10) NOT NULL PRIMARY KEY CLUSTERED
-		,MinDateVal	    datetime
-        ,MaxDateVal     datetime
+		,MinDateVal	    datetime2(7)
+        ,MaxDateVal     datetime2(7)
 		,MinIntVal	    bigint
         ,MaxIntVal      bigint
         ,StrVal         nvarchar(max)
-        ,DurationDate   datetime2(3)
+        ,DurationDate   datetime2(7)
         ,OPValCount     int
 	)
 
@@ -317,10 +326,10 @@ SELECT
          Modifier       nvarchar(30)
         ,ValModifier    nvarchar(30)
         ,Val            varchar(10)
-        ,DateVal        datetime
+        ,DateVal        datetime2(7)
         ,IntVal         bigint
         ,StrVal         nvarchar(50)
-        ,DurationDate   datetime2(3)
+        ,DurationDate   datetime2(7)
     )
 
 	;WITH OPBase AS (
@@ -334,14 +343,15 @@ SELECT
             ,CASE 
                 WHEN VM.Val IS NOT NULL THEN VM.Val
                 WHEN TRY_CONVERT(bigint, OP.Modifier) IS NOT NULL THEN 'I'
-                WHEN TRY_CONVERT(datetime, OP.Modifier) IS NOT NULL THEN 'D'
+                WHEN TRY_CONVERT(datetime2(7), OP.Modifier) IS NOT NULL THEN 'D'
                 ELSE NULL 
             END AS Val
             ,CASE 
-                WHEN TRY_CONVERT(datetime, OP.Modifier) IS NOT NULL THEN
+                WHEN TRY_CONVERT(datetime2(7), OP.Modifier) IS NOT NULL THEN
                     CASE
-                        WHEN CONVERT(date, CONVERT(datetime, OP.Modifier)) = '1900-01-01' THEN CONVERT(datetime, CONVERT(date, GETDATE())) + CONVERT(datetime, CONVERT(time, CONVERT(datetime, OP.Modifier)))
-                        ELSE CONVERT(datetime, OP.Modifier)
+                        WHEN CONVERT(date, CONVERT(datetime2(7), OP.Modifier)) = '19000101' THEN DATEADD(NANOSECOND, DATEDIFF(NANOSECOND, DATEADD(SECOND, DATEDIFF(SECOND, '19000101', OP.Modifier), '19000101'), OP.Modifier) ,DATEADD(SECOND, DATEDIFF(SECOND, '19000101', OP.Modifier), CONVERT(datetime2(7), CONVERT(date, SYSDATETIME()))))
+                        --CONVERT(datetime, CONVERT(date, GETDATE())) + CONVERT(datetime, CONVERT(time, CONVERT(datetime, OP.Modifier)))
+                        ELSE CONVERT(datetime2(7), OP.Modifier)
                     END
                 ELSE NULL
                 END AS DateVal
@@ -358,10 +368,10 @@ SELECT
                     CASE
                         WHEN CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))) > 0 THEN  DATEADD(
                                                                         MILLISECOND, 
-                                                                        DATEDIFF(MILLISECOND, 0, TRY_CONVERT(datetime2(3), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))))))                                                        
+                                                                        DATEDIFF(MILLISECOND, 0, TRY_CONVERT(datetime2(7), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))))))                                                        
                                                                         ,DATEADD(DAY, TRY_CONVERT(int, SUBSTRING(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), 1, CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars))) - 1)), 0)
                                                                     ) 
-                        ELSE TRY_CONVERT(datetime2(3), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)))))
+                        ELSE TRY_CONVERT(datetime2(7), RIGHT(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars), LEN(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)) - CHARINDEX('D', UPPER(RIGHT(OP.Modifier, LEN(OP.Modifier) - VM.LeftChars)))))
                     END
 
                 ELSE NULL
@@ -516,7 +526,7 @@ BEGIN
     BEGIN
         SET @callerName = 1;
         CREATE TABLE #callers (
-            caller_name nvarchar(128) NOT NULL PRIMARY KEY CLUSTERED
+            caller_name nvarchar(128) COLLATE DATABASE_DEFAULT NOT NULL PRIMARY KEY CLUSTERED
         )
 
         INSERT INTO #callers (caller_name)
@@ -532,7 +542,7 @@ BEGIN
     BEGIN
         SET @stoppedBy = 1;
         CREATE TABLE #stoppedBy (
-            stopped_by_name nvarchar(128) NOT NULL PRIMARY KEY CLUSTERED
+            stopped_by_name nvarchar(128) COLLATE DATABASE_DEFAULT NOT NULL PRIMARY KEY CLUSTERED
         )
 
         INSERT INTO #stoppedBy (stopped_by_name)
@@ -560,6 +570,30 @@ IF @help <> 1
 BEGIN
         RAISERROR(N'Information to Retrieve:', 0, 0) WITH NOWAIT;
         RAISERROR(N'------------------------', 0, 0) WITH NOWAIT;
+
+        --duration was specified - build duration condition and message
+        IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN (N'>', N'>=', N'<', N'<=', N'='))
+        BEGIN
+            SELECT 
+                @durationCondition = 
+                    N'(' + REPLACE(REPLACE(STUFF((
+                        SELECT
+                            N' AND durationDate ' + Val + N' ''' + CONVERT(varchar(27), DurationDate, 121) + N''''
+                        FROM @opVal
+                        FOR XML PATH('')
+                    ), 1, 5, N''), N'&lt;', N'<'), N'&gt;', N'>') + N')'
+
+            SET @durationMsg = 
+                REPLACE(REPLACE(STUFF((
+                    SELECT
+                        N' AND ' + Val + N' ''' + CONVERT(nvarchar(10), DATEDIFF(DAY, 0, DurationDate)) + 'd ' + CONVERT(varchar(16), CONVERT(time, DurationDate)) + N''''
+                    FROM @opVal
+                    FOR XML PATH('')
+                ), 1, 5, N''), N'&lt;', N'<'), N'&gt;', N'>')
+
+            RAISERROR(N'   - Duration: %s', 0, 0, @msg) WITH NOWAIT;
+        END
+
 
         IF @id IS NOT NULL OR EXISTS(SELECT 1 FROM @opVal WHERE Val = 'V')
         BEGIN   /*Verbose params processing */      
@@ -595,6 +629,8 @@ BEGIN
                     SET @edsRows = NULL
                 ELSE IF @edsRows = 0
                     SET @edsRows = 1000
+                SET @msg = CASE WHEN @edsRows IS NULL THEN N'' ELSE N' (last ' + CONVERT(nvarchar(10), @edsRows) + N' rows)' END
+                RAISERROR(N'   - Including Executable Data Statistics%s', 0, 0, @msg) WITH NOWAIT;
             END
 
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'ECP')
@@ -606,6 +642,8 @@ BEGIN
                     SET @ecpRows = NULL
                 ELSE IF @ecpRows = 0
                     SET @ecpRows = 1000
+                SET @msg = CASE WHEN @edsRows IS NULL THEN N'' ELSE N' (last ' + CONVERT(nvarchar(10), @ecpRows) + N' rows)' END
+                RAISERROR(N'   - Including Execution Component Phases%s', 0, 0, @msg) WITH NOWAIT;
             END
 
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'ES')
@@ -617,7 +655,8 @@ BEGIN
                     SET @execRows = NULL;
                 ELSE IF @execRows = 0
                     SET @execRows = 1000;
-
+                SET @msg = CASE WHEN @edsRows IS NULL THEN N'' ELSE N' (last ' + CONVERT(nvarchar(10), @execRows) + N' rows)' END
+                RAISERROR(N'   - Including Executable Statistics%s', 0, 0, @msg) WITH NOWAIT;
             END
         END 
         ELSE 
@@ -693,29 +732,9 @@ BEGIN
             END
             
             --duration was specified
-            IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN (N'>', N'>=', N'<', N'<=', N'='))
+            IF @durationCondition IS NOT NULL
             BEGIN
-                SELECT 
-                    @durationCondition = 
-                        N'(' + REPLACE(REPLACE(STUFF((
-                            SELECT
-                               N' AND o.durationDate ' + Val + N' ''' + CONVERT(varchar(23), DurationDate, 121) + N''''
-                            FROM @opVal
-                            FOR XML PATH('')
-                        ), 1, 5, N''), N'&lt;', N'<'), N'&gt;', N'>') + N')'
-
-                SET @msg = 
-                    REPLACE(REPLACE(STUFF((
-                        SELECT
-                           N' AND ' + Val + N' ''' + CONVERT(nvarchar(10), DATEDIFF(DAY, 0, DurationDate)) + 'd ' + CONVERT(varchar(12), CONVERT(time, DurationDate)) + N''''
-                        FROM @opVal
-                        FOR XML PATH('')
-                    ), 1, 5, N''), N'&lt;', N'<'), N'&gt;', N'>')
-
-                RAISERROR(N'   - Duration: %s', 0, 0, @msg) WITH NOWAIT;
-
-                IF @debugLevel > 2
-                    SELECT @durationCondition AS DurationCondition
+                RAISERROR(N'   - Duration: %s', 0, 0, @durationMsg) WITH NOWAIT;
             END
 
             --Date values are specified
@@ -869,7 +888,7 @@ BEGIN
     END
 
 
-    --Soring processing
+    --Sorting processing
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'ST')
     BEGIN
         IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'ST' AND StrVal IN ('_A', '_ASC','A','ASC'))
@@ -909,7 +928,7 @@ BEGIN
 
     CREATE TABLE #msgTypes (
          id     smallint        NOT NULL PRIMARY KEY CLUSTERED
-        ,msg    nvarchar(50)    NOT NULL        
+        ,msg    nvarchar(50) COLLATE DATABASE_DEFAULT  NOT NULL
     )
     CREATE INDEX #msgTypes ON #msgTypes (msg)
 
@@ -930,7 +949,7 @@ BEGIN
 
     IF @includeMessages = 1
     BEGIN
-        SET @msg = N'   - Including base Event Messages... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @max_messages), N'All') + N' rows)';
+        SET @msg = N'   - Including Event Messages... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @max_messages), N'All') + N' rows)';
         IF  (@msgTypeFilter = 1)
             SET @msg = @msg + N' (' + STUFF((SELECT ', ' + m.msg FROM #msgTypes m FOR XML PATH('')), 1, 2, '') + N')';
         RAISERROR(@msg, 0, 0) WITH NOWAIT;
@@ -944,7 +963,7 @@ BEGIN
         DROP TABLE #statuses;
     CREATE TABLE #statuses (
         id          int          NOT NULL PRIMARY KEY CLUSTERED
-        ,[status]   nvarchar(50)
+        ,[status]   nvarchar(50) COLLATE DATABASE_DEFAULT
     )
 
     SET @xml = N'<i>' + REPLACE(REPLACE(@status, N',', @xr), N' ', @xr) + N'</i>'
@@ -1104,16 +1123,18 @@ BEGIN
     ,@event_filter          nvarchar(max)   = NULL  - Comma separated list of event LIKE filters. Used only for detailed results filtering
     ,@phase_filter          nvarchar(max)   = NULL  - Comma separated list of phase LIKE filters. Used only for detailed results filtering
     ,@task_filter           nvarchar(max)   = NULL  - Comma separated list of task LIKE filters. Used only for detailed results filtering
-    ,@subcomponent_filter   nvarchar(max)   = NULL  - Comma separated list of sub-component LIKE filters. Used only for detailed results filtering.
+    ,@subcomponent_filter   nvarchar(max)   = NULL  - Comma separated list of sub-component LIKE filters. Used only for detailed results filtering
     ,@package_path          nvarchar(max)   = NULL  - Comma separated list of package_path LIKE filters. Used only for detailed results fitering
     ,@execution_path        nvarchar(max)   = NULL  - Comma separated list of execution_path LIKE filters. Used only for detailed results filtering
     ,@msg_filter            nvarchar(max)   = NULL  - Comma separated list of message LIKE filters. Used only for detailed results filtering
+    ,@src_component_name    nvarchar(max)   = NULL  - Comma separated list of source_component_name LIKE filters. Used only for detailed results filtering in execution_data_statistics
+    ,@dst_component_name    nvarchar(max)   = NULL  - Comma separated list of destination_component_name LIKE filters. Used only for detailed results filtering in execution_data_statistics
     ', 0, 0) WITH NOWAIT
 
 RAISERROR('', 0, 0) WITH NOWAIT;
 RAISERROR('@op - Operator Parameter', 0, 0) WITH NOWAIT;
 RAISERROR('------------------------', 0, 0) WITH NOWAIT;
-RAISERROR('Comma, space separated list of operations parameters. Specifies operations, filtering and grouping of the resuls.', 0, 0) WITH NOWAIT;
+RAISERROR('Comma or space separated list of operations parameters. Specifies operations, filtering and grouping of the resuls.', 0, 0) WITH NOWAIT;
 --RAISERROR('', 0, 0) WITH NOWAIT;
 RAISERROR(N'
   ?                         - Print this help
@@ -1125,27 +1146,29 @@ RAISERROR(N'
                               If Keyword is missing the default LAST 100 records are retrieved
 
   Date/Time                 - If provided then executions since that Date/Time are returned. If multiple Date/Time values are provided then executions between MIN and MAX values are returned.
+                              If provided in verbose mode, then the filter is applied on the executable_statistics, event_messages, execution_data_statistics and execution_component_phases respectively.
   hh:MM[:ss]                - If only time is provided, then the time is interpreted as Time of current day
   yyyy-mm-dd                - If only date is provided, then it is intepreted as midnigth of that day (YYYY-MM-DDTHH:MM:SS)
   yyyy-mm-ddThh:MM:ss       - When Date/Time is passed, then Time is separated by T from date. In that case hours have to be provided as two digits
 
 
-  START_TIME (ST)[_A|_ASC]  - Use Start Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending.
-  END_TIME (ET)[_A|_ASC]    - Use End Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending.
+  START_TIME (ST)[_A|_ASC]  - Use Start Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending. Used also for Data Filters.
+  END_TIME (ET)[_A|_ASC]    - Use End Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending. Used Also for Date Filters.
   CREATE_TIME (CT)[_A|_ASC] - Use Create Time forr searching. This is the default. Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending.', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'  
   >|>=|<|<=|=dddddd         - Duration Specifier. If provided then only operations with duration corresponding to the specifier are returned. Multiple specifiers are combined with AND.
                               If multiple durations are specified for the same specifier, MAX duration is used for [>] and [>=] and and MIN durtion for [<], [<=], [=]
+                              If provided in verbose mode, then the filter is applied on executable statistics, execution_data_statistics and execution_component_phases respecively.
   dddddd                    - Specifies duration in below allowed formats
   hh:MM[:ss[.fff]]          - If only time is specified, it represents duration in hours, minutes, seconds and fraction of second
   iiid[hh:MM[:ss[.fff]]]    - iii specifies followed by d specifies number of days. Optional additional time can follow
 
-  PROCESS_ID(PI)iiiiii      - ProcessID specifier. If provided then only operations with specific process_id are returned. iiiiii is integer value representing process_id.
+  PROCESS_ID(PID):iiiiii    - ProcessID specifier. If provided then only operations with specific process_id are returned. iiiiii is integer value representing process_id.
                               Multiple declarations can be specified to filter for multiple process_ids.
-  CALLER_NAME(CN)xxxxxxxx   - Caller Name specifier. If provided then only operations which caller corresponds to provided value. xxxxxxxx is string representing caller name.
+  CALLER_NAME(CN):xxxxxxxx  - Caller Name specifier. If provided then only operations which caller corresponds to provided value. xxxxxxxx is string representing caller name.
                               Multiple declarations can be specified to filter for multiple callers. Caller name supports LIKE wildcards.
-  STOPPED_BY(SB)xxxxxxxx    - Stopped By specifier. if provided then only operations which were stopped by user with provided name are returned. xxxxxxxx is string representing user name.
+  STOPPED_BY(SB):xxxxxxxx   - Stopped By specifier. if provided then only operations which were stopped by user with provided name are returned. xxxxxxxx is string representing user name.
                               Multiple declarations can be specified to filter for multiple user names. Stopped by name suppors LIKE wildcards.
   (32B)IT                   - Filter only 32 bit executions
   (64B)IT                   - Filter only 64 bit executions', 0, 0) WITH NOWAIT;
@@ -1310,7 +1333,7 @@ RAISERROR(N'
 @task_filter
 ------------
 Used only for detailed results filtering in VERBOSE mode.
-Comma separated lists of task filters. Only events, phases and messages for tasks which name is matching the filter are returned.
+Comma separated lists of task filters. Only events, phases and messages for tasks (source_name in messages) which name is matching the filter are returned.
 Supports LIKE wildcards. Default NULL means filter is not applied.
 
 @subcomponent_filter
@@ -1342,6 +1365,22 @@ Comma separated list of filters which are applied on the message body.
 Supports LIKE filters. Default NULL means filter is not applied.
 ', 0, 0) WITH NOWAIT;
 
+RAISERROR(N'
+@src_component_name
+-------------------
+Used only for detailed results filtering in VERBOSE mode.
+Comma separated list of filters which are applied on field source_component_name for the execution_data_statistics
+Supports LIKE filters. Default NULL means filter is not applied.
+', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+@dst_component_name
+-------------------
+Used only for detailed results filtering in VERBOSE mode.
+Comma separated list of filters which are applied on field destination_component_name for the execution_data_statistics
+Supports LIKE filters. Default NULL means filter is not applied.
+', 0, 0) WITH NOWAIT;
+
 RAISERROR(N'--------------------------------------------- END OF HELP ---------------------------------------------', 0, 0) WITH NOWAIT;
 
 RETURN;
@@ -1351,23 +1390,23 @@ END
 SET @sql = CONVERT(nvarchar(max), N'
 WITH BaseOperations AS (
     SELECT
-        DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), 0)) durationDate
+        DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), CONVERT(datetime2(7), ''19000101''))) durationDate
         ,o.*
     FROM internal.operations o WITH(NOLOCK)' 
 +
 CASE 
-    WHEN @id IS NULL AND @processID = 0 THEN N''
+    WHEN @id IS NOT NULL OR @processID = 0 THEN N''
     ELSE N' INNER JOIN #ProcessID p ON p.process_id = o.process_id'
 END 
 +
 CASE 
-    WHEN @id IS NULL AND @callerName = 0 THEN N''
-    ELSE N' INNER JOIN #callers c ON o.caller_name LIKE c.caller_name collate database_default'
+    WHEN @id IS NOT NULL OR @callerName = 0 THEN N''
+    ELSE N' INNER JOIN #callers c ON o.caller_name LIKE c.caller_name'
 END 
 +
 CASE 
-    WHEN @id IS NULL AND @stoppedBy = 0 THEN N''
-    ELSE N' INNER JOIN #stoppedBy s ON o.stopped_by_name LIKE s.stopped_by_name collate database_default'
+    WHEN @id IS NOT NULL OR @stoppedBy = 0 THEN N''
+    ELSE N' INNER JOIN #stoppedBy s ON o.stopped_by_name LIKE s.stopped_by_name'
 END 
 
 + N'
@@ -1417,8 +1456,8 @@ Data AS (
                     WHEN 'P' THEN 'e.folder_name, e.project_name'
                     WHEN 'E' THEN 'e.folder_name, e.project_name, e.package_name'
                 END
-            + N' ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS row_no'
-        ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS row_no'
+            + N' ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''99991231'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS row_no'
+        ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''99991231'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS row_no'
     END + N'
 ' + CASE 
         WHEN @opLastGrp IS NOT NULL THEN
@@ -1429,7 +1468,7 @@ Data AS (
                     WHEN 'E' THEN 'e.folder_name, e.project_name, e.package_name'
                 END
             + N') AS rank'
-        ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS rank'
+        ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''99991231'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS rank'
     END + N'
     FROM BaseOperations o 
     INNER JOIN internal.executions e WITH(NOLOCK) ON e.execution_id = o.operation_id
@@ -1465,8 +1504,8 @@ Data AS (
                 (CASE WHEN @id IS NOT NULL THEN N'e.execution_id = @id' ELSE NULL END)
                 ,(CASE
                     WHEN @id IS NOT NULL THEN NULL
-                    WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useStartTime =1 THEN N'(ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'(end_time' ELSE N'(created_time' END + N' BETWEEN  @fromTZ AND @toTZ)'
-                    WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useStartTime =1 THEN N'(ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'(ISNULL(end_time, ''9999-12-31'')' ELSE N'(created_time' END +' > @fromTZ)'
+                    WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useStartTime =1 THEN N'(ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'(end_time' ELSE N'(created_time' END + N' BETWEEN  @fromTZ AND @toTZ)'
+                    WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useStartTime =1 THEN N'(ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'(ISNULL(end_time, ''99991231'')' ELSE N'(created_time' END +' > @fromTZ)'
                   END
                 )
                 ,(CASE
@@ -1493,7 +1532,7 @@ Data AS (
   ,N''
   ), N'&gt;', N'>'), N'&lt;', N'<') +
     CASE  
-        WHEN @totalMaxRows IS NOT NULL THEN N' ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''9999-12-31'')' ELSE N'created_time' END + N' DESC ' 
+        WHEN @totalMaxRows IS NOT NULL THEN N' ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''99991231'')' ELSE N'created_time' END + N' DESC ' 
         ELSE N'' 
     END
         + N'
@@ -1628,15 +1667,15 @@ N'
 						ELSE N''Unknown''
 					END                 AS result
 
-					,CONVERT(nvarchar(36), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''0001-01-01'' END, ''0001-01-01''), CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE NULL END))  end_time
+					,CONVERT(nvarchar(36), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE NULL END))  end_time
 					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END, -9999)      result_code
 				FROM internal.executable_statistics es WITH(NOLOCK)
 				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id
 				INNER JOIN  (
 				SELECT
 					 package_name 
-					,ISNULL(MIN(es1.start_time), ''9999-12-31'') AS start_time
-					,ISNULL(MAX(es1.end_time), ''0001-01-01'')  AS end_time
+					,ISNULL(MIN(es1.start_time), ''99991231'') AS start_time
+					,ISNULL(MAX(es1.end_time), ''00010101'')  AS end_time
 				FROM internal.executable_statistics es1 WITH(NOLOCK) 
 				INNER JOIN internal.executables e1 WITH(NOLOCK) ON e1.executable_id = es1.executable_id 
 				WHERE 
@@ -2059,6 +2098,7 @@ BEGIN
         ,@fldFilter             [@fldFilter]
         ,@prjFilter             [@prjFilter]
         ,@statusFilter          [@statusFilter]
+        ,@durationCondition     [@durationCondition]
         ,@sql                   [@sql]
 END
 
@@ -2539,6 +2579,26 @@ BEGIN
     FROM FilterValues
 
 
+    --from/To datetime is specified
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN (N'D'))
+    BEGIN
+	    SET @opFrom = CONVERT(datetime, ISNULL((SELECT MinDateVal FROM @opVal WHERE Val = N'D'), CONVERT(date, GETDATE())))
+
+	    SET @opTo = CONVERT(datetime, ISNULL((SELECT MaxDateVal FROM @opVal WHERE Val = N'D'), CONVERT(date, GETDATE())))
+
+	    SET @opFromTZ = TODATETIMEOFFSET(@opFrom, DATEPART(TZ, SYSDATETIMEOFFSET()))
+	            
+        IF @opFrom <> @opTo
+        BEGIN
+            SET @opToTZ = TODATETIMEOFFSET(@opTo, DATEPART(TZ, SYSDATETIMEOFFSET()))
+            SET @datetimeMsg = '                            - %s: Between ' +  CONVERT(nvarchar(30), @opFromTZ, 120) + N' and ' + CONVERT(nvarchar(30), @opToTZ, 120);
+        END
+        ELSE
+        BEGIN
+            SET @datetimeMsg = '                            - %s: From ' + CONVERT(nvarchar(30), @opFromTZ, 120)    
+        END
+    END
+
 
 
     /*EXECUTABLE STATISTICS */
@@ -2548,8 +2608,30 @@ BEGIN
         SET @msg = N'%s - Starting retrieval of Executable Statistics... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @execRows), N'All') + N' rows)';
         RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
         
+        SET @dateField = CASE WHEN @useEndTime = 1 THEN 'end_time' ELSE 'start_time' END;
+        IF @opFromTZ IS NOT NULL
+            RAISERROR(@datetimeMsg, 0, 0, @dateField) WITH NOWAIT;
+        IF @durationCondition IS NOT NULL
+            RAISERROR(N'                            - Duration: %s', 0, 0, @durationMsg) WITH NOWAIT;
+        IF @execution_path IS NOT NULL
+            RAISERROR(N'                            - Using execution_path Filter(s): %s', 0, 0, @execution_path) WITH NOWAIT;
+        IF @package_path IS NOT NULL
+            RAISERROR(N'                            - Using package_path Filter(s): %s', 0, 0, @package_path) WITH NOWAIT;
+
 
         SET @sql = N'
+            WITH ExecStat AS (
+                SELECT
+                    *
+                    ,DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), CONVERT(datetime2(3), ''19000101''))) durationDate
+                FROM [internal].[executable_statistics] WITH(NOLOCK)
+                WHERE execution_id = @id '+
+                CASE
+                    WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (ISNULL(start_time, ''99991231'')' END + N' BETWEEN  @fromTZ AND @toTZ)'
+                    WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (ISNULL(start_time, ''99991231'')' END +' > @fromTZ)'
+                    ELSE N''
+                  END + N'
+            )
             SELECT ' + CASE WHEN @execRows IS NOT NULL THEN N'TOP (@execRows)' ELSE N'' END + N'
                 es.[statistics_id]
                 ,e.package_name
@@ -2575,14 +2657,18 @@ BEGIN
                 ,e.package_location_type
                 ,e.package_path_full
                 ,e.executable_guid
-             FROM [internal].[executable_statistics] es WITH(NOLOCK)
+             FROM ExecStat es
              INNER JOIN [internal].[executables] e  WITH(NOLOCK) ON e.executable_id = es.executable_id
     ' +
         CASE 
             WHEN @pkgFilter = 1 THEN N' INNER JOIN #packages pkg ON pkg.package_name = e.package_name'
             ELSE ''
         END + N'
-             WHERE es.execution_id = @id' +
+             WHERE 1=1' +
+        CASE
+            WHEN @durationCondition IS NOT NULL THEN N' AND ' + @durationCondition
+            ELSE N''
+        END +
         CASE
             WHEN NULLIF(@execution_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #execution_paths f WHERE es.execution_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #execution_paths f WHERE es.execution_path LIKE f.filter AND f.exclusive = 1))'
             ELSE N''
@@ -2591,11 +2677,14 @@ BEGIN
             WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE e.package_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE e.package_path LIKE f.filter AND f.exclusive = 1))'
             ELSE N''
         END + N'
-             ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(es.start_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(es.end_time, ''9999-12-31'')' ELSE N'es.end_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END
+             ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(es.start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'ISNULL(es.end_time, ''99991231'')' ELSE N'es.end_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END
+
+        IF @debugLevel > 3 
+            SELECT @sql AS [executable_statistics_query]
 
         IF EXISTS(SELECT 1 FROM [internal].[executable_statistics] es WHERE es.execution_id = @id)
         BEGIN
-            EXEC sp_executesql @sql, N'@id bigint, @execRows int, @package_path nvarchar(max), @execution_path nvarchar(max)', @id, @execRows, @package_path, @execution_path
+            EXEC sp_executesql @sql, N'@id bigint, @execRows int, @package_path nvarchar(max), @execution_path nvarchar(max), @fromTZ datetimeoffset, @toTZ datetimeoffset', @id, @execRows, @package_path, @execution_path, @opFromTZ, @opToTZ
         END
         ELSE
         BEGIN
@@ -2865,11 +2954,19 @@ BEGIN
             CASE
                 WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE em.package_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE em.package_path LIKE f.filter AND f.exclusive = 1))'
                 ELSE N''
+            END +
+            CASE
+                WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN N' AND (message_time BETWEEN @fromTZ AND @toTZ)'
+                WHEN @opFromTZ IS NOT NULL THEN N' AND (message_time  > @fromTZ)'
+                ELSE N''
             END + N'
             ORDER BY 
-                 om.message_time' + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N'
-                ,om.operation_message_id' + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END 
+                 om.message_time' + CASE WHEN @useTimeDescending = 1 THEN  N' DESC' ELSE N' ASC' END + N'
+                ,om.operation_message_id' + CASE WHEN @useTimeDescending = 1 THEN  N' DESC' ELSE N' ASC' END 
 
+
+            IF @opFromTZ IS NOT NULL
+                RAISERROR(@datetimeMsg, 0, 0, 'message_time') WITH NOWAIT;
             IF @taskFilter = 1
             BEGIN                             
                 SET @msg = N'                            - Using Task Filter(s): ' + @task_filter
@@ -2885,9 +2982,14 @@ BEGIN
                 SET @msg = N'                            - Using SubComponent Filter(s): ' + @subcomponent_filter
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
             END
+            IF @execution_path IS NOT NULL
+                RAISERROR(N'                            - Using execution_path Filter(s): %s', 0, 0, @execution_path) WITH NOWAIT;
+            IF @package_path IS NOT NULL
+                RAISERROR(N'                            - Using package_path Filter(s): %s', 0, 0, @package_path) WITH NOWAIT;
 
-            EXEC sp_executesql @sql, N'@id bigint, @max_messages int, @execution_path nvarchar(max), @package_path nvarchar(max), @event_filter nvarchar(max), @msg_filter nvarchar(max)', 
-                @id, @max_messages, @execution_path, @package_path, @event_filter, @msg_filter
+
+            EXEC sp_executesql @sql, N'@id bigint, @max_messages int, @execution_path nvarchar(max), @package_path nvarchar(max), @event_filter nvarchar(max), @msg_filter nvarchar(max), @fromTZ datetimeoffset, @toTZ datetimeoffset', 
+                @id, @max_messages, @execution_path, @package_path, @event_filter, @msg_filter, @opFromTZ, @opToTZ
         END
         ELSE
         BEGIN
@@ -2903,6 +3005,63 @@ BEGIN
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
         SET @msg = N'%s - Starting retrieval of Execution Data Statistics... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @edsRows), N'All') + N' rows)';
         RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
+
+        IF @opFromTZ IS NOT NULL
+            RAISERROR(@datetimeMsg, 0, 0, 'created_time') WITH NOWAIT;
+
+
+        --@src_component_name
+        IF @src_component_name IS NOT NULL
+        BEGIN
+            SET @xml = N'<i>' + REPLACE(@src_component_name, N',', @xr) + N'</i>'
+
+            CREATE TABLE #src_component_names (
+                 filter     nvarchar(4000) COLLATE DATABASE_DEFAULT
+                ,exclusive  bit
+            )
+
+            ;WITH FilterValues AS (
+                SELECT DISTINCT
+                    LTRIM(RTRIM(n.value(N'.', 'nvarchar(50)'))) value
+                FROM @xml.nodes('/i') T(n)
+            )
+            INSERT INTO #src_component_names (filter, exclusive)
+            SELECT
+                CASE WHEN LEFT(value, 1) = '-' THEN RIGHT(value, LEN(value) -1) ELSE value END
+                ,CASE WHEN LEFT(value, 1) = '-' THEN 1 ELSE 0 END
+            FROM FilterValues
+
+            RAISERROR(N'                            - Using source_component_name Filter(s): %s', 0, 0, @src_component_name) WITH NOWAIT;
+        END
+
+        --@dst_component_name
+        IF @dst_component_name IS NOT NULL
+        BEGIN
+            SET @xml = N'<i>' + REPLACE(@dst_component_name, N',', @xr) + N'</i>'
+
+            CREATE TABLE #dst_component_names (
+                 filter     nvarchar(4000) COLLATE DATABASE_DEFAULT
+                ,exclusive  bit
+            )
+
+            ;WITH FilterValues AS (
+                SELECT DISTINCT
+                    LTRIM(RTRIM(n.value(N'.', 'nvarchar(50)'))) value
+                FROM @xml.nodes('/i') T(n)
+            )
+            INSERT INTO #dst_component_names (filter, exclusive)
+            SELECT
+                CASE WHEN LEFT(value, 1) = '-' THEN RIGHT(value, LEN(value) -1) ELSE value END
+                ,CASE WHEN LEFT(value, 1) = '-' THEN 1 ELSE 0 END
+            FROM FilterValues
+
+            RAISERROR(N'                            - Using destination_component_name Filter(s): %s', 0, 0, @dst_component_name) WITH NOWAIT;
+        END
+
+        IF @execution_path IS NOT NULL
+            RAISERROR(N'                            - Using execution_path Filter(s): %s', 0, 0, @execution_path) WITH NOWAIT;
+        IF @package_path IS NOT NULL
+            RAISERROR(N'                            - Using package_path Filter(s): %s', 0, 0, @package_path) WITH NOWAIT;
 
         SET @sql = N'
             SELECT ' + CASE WHEN @edsRows IS NOT NULL THEN N' TOP (@edsRows) ' ELSE N'' END + N'
@@ -2930,12 +3089,25 @@ BEGIN
             ELSE N''
         END + 
         CASE
+            WHEN NULLIF(@src_component_name, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #src_component_names f WHERE eds.source_component_name LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #src_component_names f WHERE eds.source_component_name LIKE f.filter AND f.exclusive = 1))'
+            ELSE N''
+        END + 
+        CASE
+            WHEN NULLIF(@dst_component_name, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #dst_component_names f WHERE eds.destination_component_name LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #dst_component_names f WHERE eds.destination_component_name LIKE f.filter AND f.exclusive = 1))'
+            ELSE N''
+        END + 
+        CASE
             WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE eds.package_path_full LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE eds.package_path_full LIKE f.filter AND f.exclusive = 1))'
+            ELSE N''
+        END +
+        CASE
+            WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN N' AND (created_time BETWEEN @fromTZ AND @toTZ)'
+            WHEN @opFromTZ IS NOT NULL THEN N' AND (created_time > @fromTZ)'
             ELSE N''
         END + N'
              ORDER BY created_time ' + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END 
         
-        EXEC sp_executesql @sql, N'@id bigint, @edsRows int, @package_path nvarchar(max), @execution_path nvarchar(max)', @id, @edsRows, @package_path, @execution_path
+        EXEC sp_executesql @sql, N'@id bigint, @edsRows int, @package_path nvarchar(max), @execution_path nvarchar(max), @fromTZ datetimeoffset, @toTZ datetimeoffset', @id, @edsRows, @package_path, @execution_path, @opFromTZ, @opToTZ
 
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
         RAISERROR(N'%s - Execution Data Statistics retrieval completed...', 0, 0, @tms) WITH NOWAIT;
@@ -2960,6 +3132,11 @@ BEGIN
     END
     IF @includeECP = 1 AND EXISTS(SELECT 1 FROM internal.execution_component_phases WHERE execution_id = @id)
     BEGIN
+        
+        SET @dateField = CASE WHEN @useEndTime = 1 THEN 'end_time' ELSE 'start_time' END;
+        IF @opFromTZ IS NOT NULL
+            RAISERROR(@datetimeMsg, 0, 0, @dateField) WITH NOWAIT;
+
         IF (@phase_filter IS NOT NULL)
         BEGIN
             --temp table to hold folders
@@ -3078,9 +3255,16 @@ BEGIN
                 SET @subComponentFilter = 0
         END
 
+        IF @durationCondition IS NOT NULL
+            RAISERROR(N'                            - Duration: %s', 0, 0, @durationMsg) WITH NOWAIT;
+        IF @execution_path IS NOT NULL
+            RAISERROR(N'                            - Using execution_path Filter(s): %s', 0, 0, @execution_path) WITH NOWAIT;
+        IF @package_path IS NOT NULL
+            RAISERROR(N'                            - Using package_path Filter(s): %s', 0, 0, @package_path) WITH NOWAIT;
 
-        SET @sql = N'
-            SELECT ' + CASE WHEN @ecpRows IS NOT NULL THEN N' TOP (@ecpRows) ' ELSE N'' END + N'
+
+        SET @sql = N'WITH ComponentPhases AS (
+            SELECT 
                 sp.phase_stats_id       AS [phase_stats_id]
                 ,sp.package_name        AS [package_name]
                 ,sp.task_name           AS [task_name]
@@ -3088,7 +3272,7 @@ BEGIN
                 ,sp.phase               AS [phase]
                 ,sp.phase_time          AS [start_time]
                 ,ep.phase_time          AS [end_time]
-                ,CONVERT(time, DATEADD(MICROSECOND, DATEDIFF(MILLISECOND, sp.phase_time, ISNULL(ep.phase_time, SYSDATETIMEOFFSET())), CONVERT(datetime2, ''1900-01-01''))) AS Duration
+                ,DATEADD(NANOSECOND, DATEDIFF(NANOSECOND, DATEADD(second, DATEDIFF(second, sp.phase_time, ISNULL(ep.phase_time, SYSDATETIMEOFFSET())), sp.phase_time), ISNULL(ep.phase_time, SYSDATETIMEOFFSET())), DATEADD(second, DATEDIFF(second, sp.phase_time, ISNULL(ep.phase_time, SYSDATETIMEOFFSET())), CONVERT(datetime2(7), ''19000101''))) AS durationDate
                 ,sp.sequence_id         AS [sequence]   
                 ,sp.execution_path      AS [execution_path]
                 ,sp.package_path_full   AS [package_path]
@@ -3128,7 +3312,31 @@ BEGIN
             WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE sp.package_path_full LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE sp.package_path_full LIKE f.filter AND f.exclusive = 1))'
             ELSE N''
         END + N'
-             ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(sp.phase_time, ''9999-12-31'')' WHEN @useEndTime = 1 THEN N'ISNULL(ep.phase_time, ''9999-12-31'')' ELSE N'sp.sequence_id' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END 
+        )
+        SELECT ' + CASE WHEN @ecpRows IS NOT NULL THEN N' TOP (@ecpRows) ' ELSE N'' END + N'
+            [phase_stats_id]
+            ,[package_name]
+            ,[task_name]
+            ,[subcomponent_name]
+            ,[phase]
+            ,[start_time]
+            ,[end_time]
+            ,CONVERT(time, [durationDate]) AS [duration]
+            ,[sequence]   
+            ,[execution_path]
+            ,[package_path]
+        FROM ComponentPhases
+        WHERE (1=1) ' +
+        CASE
+            WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (ISNULL(start_time, ''99991231'')' END + N' BETWEEN  @fromTZ AND @toTZ)'
+            WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (ISNULL(start_time, ''99991231'')' END +' > @fromTZ)'
+            ELSE N''
+        END + 
+        CASE
+            WHEN @durationCondition IS NOT NULL THEN N' AND ' + @durationCondition 
+            ELSE N''
+        END +N'
+        ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''99991231'')' ELSE N'sequence' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END 
         
         IF @phaseFilter = 1
         BEGIN
@@ -3142,8 +3350,11 @@ BEGIN
         BEGIN
             RAISERROR(N'                            - Using SubComponent Filter(s): %s', 0, 0, @subcomponent_filter) WITH NOWAIT;
         END
+
+        IF @debugLevel > 3 
+            SELECT @sql as [Execution_Component_Phases_query]
         
-        EXEC sp_executesql @sql, N'@id bigint, @ecpRows int, @package_path nvarchar(max), @execution_path nvarchar(max)', @id, @ecpRows, @package_path, @execution_path
+        EXEC sp_executesql @sql, N'@id bigint, @ecpRows int, @package_path nvarchar(max), @execution_path nvarchar(max), @fromTZ datetimeoffset, @toTZ datetimeoffset', @id, @ecpRows, @package_path, @execution_path, @opFromTZ, @opToTZ
 
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
         RAISERROR(N'%s - Execution Component Phases retrieval completed...', 0, 0, @tms) WITH NOWAIT;
