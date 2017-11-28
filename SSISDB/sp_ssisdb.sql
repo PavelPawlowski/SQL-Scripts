@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.60 (2017-11-27)
+sp_ssisdb v 0.61 (2017-11-28)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -145,7 +145,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.60 (2017-11-28) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.61 (2017-11-28) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -1605,11 +1605,11 @@ N'
             ,(
 				SELECT
 					ROW_NUMBER() OVER(ORDER BY start_time)  ''@no''
-					,res					AS ''@res''
+					,res					AS ''@result''
 					,start_time				AS ''@start_time''
 					,duration				AS ''@duration''
 					,package_name			AS ''@package_name''
-					,result					AS ''@result''
+					,result					AS ''@result_description''
 					,end_time				AS ''@end_time''
 					,result_code			AS ''@result_code''
 				FROM (
@@ -1639,9 +1639,9 @@ N'
 
 					,CONVERT(nvarchar(36), es.start_time)       AS start_time
     
-					,CONVERT(nvarchar(3), DATEDIFF(SECOND, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''0001-01-01'' END, ''0001-01-01''), 
+					,CONVERT(nvarchar(3), DATEDIFF(SECOND, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
 						CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 86400) + N''d '' +
-					CONVERT(nvarchar(8), CONVERT(time, DATEADD(SECOND, DATEDIFF(SECOND, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''0001-01-01'' END, ''0001-01-01''), 
+					CONVERT(nvarchar(8), CONVERT(time, DATEADD(SECOND, DATEDIFF(SECOND, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
 						CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) % 86400, 0)))  duration
 					,e.package_name              package_name
 
@@ -1671,7 +1671,7 @@ N'
 					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END, -9999)      result_code
 				FROM internal.executable_statistics es WITH(NOLOCK)
 				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id
-				INNER JOIN  (
+				LEFT JOIN  (
 				SELECT
 					 package_name 
 					,ISNULL(MIN(es1.start_time), ''99991231'') AS start_time
@@ -1692,9 +1692,10 @@ N'
 							d.status_code IN (2, 5, 8)
 							AND
 							(
-								es.start_time < MM.start_time
-								OR
-								es.end_time > MM.end_time
+                                MM.start_time IS NULL
+								--es.start_time < MM.start_time 
+								--OR
+								--es.end_time > MM.end_time
 							)
 						)
 					)
