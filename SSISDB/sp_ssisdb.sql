@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.61 (2017-11-28)
+sp_ssisdb v 0.62 (2017-11-29)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -145,7 +145,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.61 (2017-11-28) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.62 (2017-11-29) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -823,15 +823,13 @@ BEGIN
                     SET @max_messages = 100
             END
 
-
-            IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'EP')
-            BEGIN
-                SET @includeExecPackages = 1;
-                RAISERROR(N' - Including information about executed packages', 0, 0) WITH NOWAIT;
-            END
-
         END /*Non Verbose Params processing */
 
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'EP')
+    BEGIN
+        SET @includeExecPackages = 1;
+        RAISERROR(N' - Including information about executed packages', 0, 0) WITH NOWAIT;
+    END
 
     /* General Params processing */  
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'AGR')
@@ -1213,6 +1211,8 @@ RAISERROR(N'
 
 RAISERROR(N'
   EXECUTED_PACKAGES (EP)                - Include information about executed packages per reult in the overview list. (Slow-downs the retrieval)
+                                          In Verbose mode executed packages are always listed as separate result by default.
+                                          When specified in Verbose mode then the executed_pacakges column is not filtered by other filters.
   EXECUTABLE_STATISTICS(ES)iiiii        - Include executablew statistics in the details verbose output.
                                           iiiii specifies max number of rows. If not provided then default 1000 rows are returned.
                                           iiiii < 0 = All rows are returned and is the same as not including the keyword
@@ -1598,7 +1598,7 @@ N'
     ELSE N''
     END + N'
 ' +
-    CASE WHEN @id IS NOT NULL OR @includeExecPackages = 1 THEN N'
+    CASE WHEN @includeExecPackages = 1 THEN N'
     ,(
         SELECT
             CASE WHEN d.status_code <= 2 THEN ''Incomplete Preliminary Information based on already executed tasks'' ELSE NULL END ''@status_info''
@@ -2055,7 +2055,7 @@ N'
 ' +
     CASE
         WHEN @id IS NULL THEN N',''sp_ssisdb ''''V'' + FORMAT(d.execution_ID, ''G'') + N'' PM ES1000 EM1000 EDS1000 ECP1000'''',@package = '''''''', @msg_type = '''''''', @event_filter = '''''''', @phase_filter = '''''''', @task_filter = '''''''',
-@subcomponent_filter = '''''''', @package_path = '''''''', @execution_path = '''''''', @msg_filter = '''''''' '' as execution_details_command'
+@subcomponent_filter = '''''''', @package_path = '''''''', @execution_path = '''''''', @msg_filter = '''''''', @src_component_name = '''''''', @dst_component_name = '''''''' '' as execution_details_command'
         ELSE N''
     END + N'
 FROM Data d
@@ -2601,6 +2601,147 @@ BEGIN
     END
 
 
+    /*EXECUTED PACKAGES */
+
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        SET @msg = N'%s - Starting retrieval of Executed packages';
+        RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
+
+        SET @dateField = CASE WHEN @useEndTime = 1 THEN 'end_time' ELSE 'start_time' END;
+        IF @opFromTZ IS NOT NULL
+            RAISERROR(@datetimeMsg, 0, 0, @dateField) WITH NOWAIT;
+        IF @durationCondition IS NOT NULL
+            RAISERROR(N'                            - Duration: %s', 0, 0, @durationMsg) WITH NOWAIT;
+    
+    SET @sql = N'
+				SELECT
+					ROW_NUMBER() OVER(ORDER BY start_time)  package_no
+					,start_time
+					,end_time
+                    ,RIGHT(''     '' + CONVERT(nvarchar(5), DATEDIFF(DAY, 0, durationDate)) + ''d '', 6) + CONVERT(varchar(12), CONVERT(time, durationDate)) AS duration
+					,package_name
+					,result
+					,result_code
+                    ,status_info
+				FROM (
+				  SELECT
+					 ROW_NUMBER() OVER(PARTITION BY e.package_name ORDER BY CASE WHEN e.package_path = ''\Package'' THEN 0 ELSE 1 END ASC, es.start_time ASC) AS pno
+                    ,CASE WHEN e.package_path = ''\Package'' THEN N''Final'' ELSE N''Preliminary'' END AS status_info
+					,CASE
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END)
+						WHEN -9999 THEN
+							CASE 
+								WHEN d.status = 1 THEN N''T''  --Created
+								WHEN d.status = 2 THEN N''R''  --Running
+								WHEN d.status = 3 THEN N''C''  --Cancelled
+								WHEN d.status = 4 THEN N''F''  --Failed
+								WHEN d.status = 5 THEN N''P''  --Pending
+								WHEN d.status = 6 THEN N''U''  --Unexpected
+								WHEN d.status = 7 THEN N''S''  --Succeeded
+								WHEN d.status = 8 THEN N''G''  --Stopping
+								WHEN d.status = 9 THEN N''O''  --Completed
+								ELSE N''U''
+							END             
+						WHEN 0 THEN N''S''  --Success
+						WHEN 1 THEN N''F''  --Failure
+						WHEN 2 THEN N''O''  --Completed
+						WHEN 3 THEN N''C''  --Cancelled
+						ELSE N''Unknown''
+					END                 AS res
+
+					,es.start_time
+					,ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE NULL END)  end_time
+
+                    ,DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), es.start_time), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), DATEADD(DAY, DATEDIFF(day, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), CONVERT(datetime2(7), ''19000101''))) durationDate
+					,e.package_name              package_name
+
+					,CASE
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END)
+						WHEN -9999 THEN
+							CASE 
+								WHEN d.status = 1 THEN N''Created''
+								WHEN d.status = 2 THEN N''Running''
+								WHEN d.status = 3 THEN N''Cancelled''
+								WHEN d.status = 4 THEN N''Failed''
+								WHEN d.status = 5 THEN N''Pending''
+								WHEN d.status = 6 THEN N''Ended unexpectedly''
+								WHEN d.status = 7 THEN N''Succeeded''
+								WHEN d.status = 8 THEN N''Stopping''
+								WHEN d.status = 9 THEN N''Completed''             
+								ELSE N''Unknown''
+							END             
+						WHEN 0 THEN N''Success''
+						WHEN 1 THEN N''Failure''
+						WHEN 2 THEN N''Completion''
+						WHEN 3 THEN N''Cancelled''
+						ELSE N''Unknown''
+					END                 AS result
+
+					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END, -9999)      result_code
+                FROM internal.operations d WITH(NOLOCK)
+				INNER JOIN internal.executable_statistics es WITH(NOLOCK) ON es.execution_id = d.operation_id 
+				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id
+				LEFT JOIN  (
+				SELECT
+					 package_name 
+					,ISNULL(MIN(es1.start_time), ''99991231'') AS start_time
+					,ISNULL(MAX(es1.end_time), ''00010101'')  AS end_time
+				FROM internal.executable_statistics es1 WITH(NOLOCK) 
+				INNER JOIN internal.executables e1 WITH(NOLOCK) ON e1.executable_id = es1.executable_id 
+				WHERE 
+					e1.package_path = ''\Package'' AND es1.execution_id = @id
+				GROUP BY e1.package_name
+				) MM ON e.package_name = MM.package_name
+				WHERE 
+					d.operation_id = @id
+					AND
+					(
+						e.package_path = ''\Package'' 
+						OR
+						(
+							d.status IN (2, 5, 8)
+							AND
+							(
+                                MM.start_time IS NULL
+							)
+						)
+					)
+		) EPD
+		WHERE EPD.pno = 1 ' +
+        CASE
+            WHEN @durationCondition IS NOT NULL THEN N' AND ' + @durationCondition
+            ELSE N''
+        END +
+        CASE
+            WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (start_time' END + N' BETWEEN  @fromTZ AND @toTZ)'
+            WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (start_time' END +' > @fromTZ)'
+            ELSE N''
+            END + N'
+		ORDER BY package_no DESC
+';
+
+
+        IF @debugLevel > 3 
+            SELECT @sql AS [executed_packages_query]
+
+        IF EXISTS(SELECT 1 FROM [internal].[executable_statistics] es WHERE es.execution_id = @id)
+        BEGIN
+            EXEC sp_executesql @sql, N'@id bigint, @fromTZ datetimeoffset, @toTZ datetimeoffset', @id, @opFromTZ, @opToTZ
+        END
+        ELSE
+        BEGIN
+            SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+            SET @msg = N'%s - No information about executed pacakges was found for execution_id = %I64d'
+            RAISERROR(@msg, 0, 0, @tms, @id) WITH NOWAIT;
+        END
+
+        SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+        RAISERROR(N'%s - Executed pacakges retrieval completed...', 0, 0, @tms) WITH NOWAIT;
+
+    /*EXECUTED PACKAGES END */
 
     /*EXECUTABLE STATISTICS */
     IF @includeExecutableStatistics = 1
