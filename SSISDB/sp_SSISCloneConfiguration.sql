@@ -200,14 +200,14 @@ BEGIN
                                                               Configurations for matching parameters will be scripted
     ,@cloneReferences               bit             = 1     - Specifies whether to clone references to environments
     ,@cloneReferencedEnvironments   bit             = 0     - Specifies whether to clone referenced environments.
-                                                              If provided then also complete referenced environments are scripted
-    ,@destinationFolder             nvarchar(128)   = ''%%''   - Pattern for naming Destination Folder. %% in the destination folder name is replaced by the name of the source folder.
+                                                              If provided then also complete referenced environments are scripted', 0, 0) WITH NOWAIT;
+RAISERROR(N'    ,@destinationFolder             nvarchar(128)   = ''%%''   - Pattern for naming Destination Folder. %% in the destination folder name is replaced by the name of the source folder.
                                                               Allows easy cloning of multiple folders by prefixing or suffixing the %% pattern
                                                               It sets the default value for the script
     ,@destinationProject            nvarchar(128)   = ''%%''   - Pattern for naming destination Project. %% in the destination project name is replaced by the source project name.
                                                               Allows easy cloning of multiple project configurations by prefixing or suffixing the %% pattern
                                                               It sets the default value for the script
-    ,@destinationEnvironment            nvarchar(128)   = ''%%''   - Pattern for naming destination Environment. %% in the destination environment name is replaced by the source environment name.                                                              
+    ,@destinationEnvironment        nvarchar(128)   = ''%%''   - Pattern for naming destination Environment. %% in the destination environment name is replaced by the source environment name.                                                              
                                                               It sets the default value for the script
     ,@decryptSensitive              bit             = 0     - Specifies whether sensitive data should be decrypted.
                                                               Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
