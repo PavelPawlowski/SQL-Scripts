@@ -10,7 +10,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneProject] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneProject]''')
 GO
 /* ****************************************************
-sp_SSISCloneProject v 0.12 (2017-10-30)
+sp_SSISCloneProject v 0.20 (2017-12-06)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -42,22 +42,24 @@ Description:
     For multi server cloning a source server has to have a linked server to destination.
 
 Parameters:
-     @sourceFolder          nvarchar(4000)  = NULL      -- Comma separated list of source folders. Supports wildcards.
-    ,@sourceProject         nvarchar(4000)  = '%'       -- Comma separated list of source project names. Supports wildcards.
-    ,@destinationFolder     nvarchar(128)   = '%'       -- Destination folder name. Supports wildcards.
-    ,@deployToExisting      bit             = 0         -- Specifies whether to deploy new version to existing projects.
-    ,@autoCreateFolders     bit             = 0         -- Specifies whether auto-create non existing folders.
-    ,@infoOnly              bit             = 0         -- Specifies whether only information about processed projects should be printed.
-    ,@destinationServer     nvarchar(128)   = NULL      -- Specifies destination linked server name for cross server deployment.
+     @sourceFolder                  nvarchar(max)   = NULL      -- Comma separated list of source folders. Supports wildcards.
+    ,@sourceProject                 nvarchar(max)   = '%'       -- Comma separated list of source project names. Supports wildcards.
+    ,@destinationFolder             nvarchar(128)   = '%'       -- Destination folder name. Supports wildcards.
+    ,@destinationFolderReplacements nvarchar(max)   = NULL      -- Comma separated list of destination folder replacements. 
+    ,@deployToExisting              bit             = 0         -- Specifies whether to deploy new version to existing projects.
+    ,@autoCreateFolders             bit             = 0         -- Specifies whether auto-create non existing folders.
+    ,@infoOnly                      bit             = 0         -- Specifies whether only information about processed projects should be printed.
+    ,@destinationServer             nvarchar(128)   = NULL      -- Specifies destination linked server name for cross server deployment.
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISCloneProject]
-     @sourceFolder          nvarchar(4000)  = NULL      -- Comma separated list of source folders. Supports wildcards.
-    ,@sourceProject         nvarchar(4000)  = '%'       -- Comma separated list of source project names. Supports wildcards.
-    ,@destinationFolder     nvarchar(128)   = '%'       -- Destination folder name. Supports wildcards.
-    ,@deployToExisting      bit             = 0         -- Specifies whether to deploy new version to existing projects.
-    ,@autoCreateFolders     bit             = 0         -- Specifies whether auto-create non existing folders.
-    ,@infoOnly              bit             = 0         -- Specifies whether only information about processed projects should be printed.
-    ,@destinationServer     nvarchar(128)   = NULL      -- Specifies destination linked server name for cross server deployment.
+     @sourceFolder                  nvarchar(max)   = NULL      -- Comma separated list of source folders. Supports wildcards.
+    ,@sourceProject                 nvarchar(max)   = '%'       -- Comma separated list of source project names. Supports wildcards.
+    ,@destinationFolder             nvarchar(128)   = '%'       -- Destination folder name. Supports wildcards.
+    ,@destinationFolderReplacements nvarchar(max)   = NULL      -- Comma separated list of destination folder replacements. 
+    ,@deployToExisting              bit             = 0         -- Specifies whether to deploy new version to existing projects.
+    ,@autoCreateFolders             bit             = 0         -- Specifies whether auto-create non existing folders.
+    ,@infoOnly                      bit             = 0         -- Specifies whether only information about processed projects should be printed.
+    ,@destinationServer             nvarchar(128)   = NULL      -- Specifies destination linked server name for cross server deployment.
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -81,6 +83,8 @@ BEGIN
         ,@project_exists        bit
         ,@destinationProject    nvarchar(128)   = '%'
         ,@printHelp             bit             = 0
+        ,@oldVal                nvarchar(128)
+        ,@newVal                nvarchar(128)
 
     DECLARE @sourceProjects TABLE (
          row_id                 int             NOT NULL IDENTITY(1,1) PRIMARY KEY CLUSTERED
@@ -101,10 +105,17 @@ BEGIN
         data    varbinary(max)
     )
 
+    DECLARE @replacements TABLE (
+        SortOrder       int             NOT NULL    PRIMARY KEY CLUSTERED
+        ,OldValue       nvarchar(128)
+        ,NewValue       nvarchar(128)
+        ,Replacement    nvarchar(4000)
+    )
+
     IF @sourceFolder IS NULL OR @sourceProject IS NULL OR @destinationFolder IS NULL
         SET @printHelp = 1
 
-	RAISERROR(N'sp_SSISCloneProject v0.12 (2017-10-30) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_SSISCloneProject v0.20 (2017-12-06) (C) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 	RAISERROR(N'===============================================================' , 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
 
@@ -120,23 +131,28 @@ Usage:
 [sp_SSISCloneProject] parameters', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 Parameters:
-     @sourceFolder          nvarchar(4000)  = NULL      - Comma separated list of source folders. Supports Wildcards
-    ,@sourceProject         nvarchar(4000)  = ''%%''       - Comma separated list of source project names. Support wildcards
-    ,@destinationFolder     nvarchar(128)   = ''%%''       - Destination folder name. Support wildcards
-                                                          %% wildcard in the destination folder behaves differently than in @sourceFolder parameter
-                                                          Each occurrence of the %% wildcard is replaced by corresponding source folder name.
-                                                          Default value %% means the destination folder name is the same as source.
-                                                          Wildcard can be utilized to prefix or suffix source folder names when cloning
-    ,@deployToExisting      bit             = 0         - Specifies whether to deploy new version to existing projects.
-                                                          When enabled then if destination project with the same name already exists, then a new version is deployed to that project
-                                                          When not enabled, then an error is raised if the project with the same name exists in destination
-    ,@autoCreateFolders     bit             = 0         - Specifies whether auto-create non existing folders
-                                                          When enabled, destination non-existing folders are automatically created
-                                                          When not enabled an error is printed in case destination folder does not exists', 0, 0) WITH NOWAIT;
-RAISERROR(N'    ,@infoOnly              bit             = 0         - Specifies whether only information about processed projects should be printed
-    ,@destinationServer     nvarchar(128)   = NULL      - Specifies destination linked server name for cross server deployment
-                                                          When destination server is specified, user has to have appropriate permissions on destination server.                                                          
-                                                          RPC has to be enabled for the linked server
+     @sourceFolder                  nvarchar(4000)  = NULL      - Comma separated list of source folders. Supports Wildcards
+    ,@sourceProject                 nvarchar(4000)  = ''%%''       - Comma separated list of source project names. Support wildcards
+    ,@destinationFolder             nvarchar(128)   = ''%%''       - Destination folder name. Support wildcards
+                                                                  %% wildcard in the destination folder behaves differently than in @sourceFolder parameter
+                                                                  Each occurrence of the %% wildcard is replaced by corresponding source folder name.
+                                                                  Default value %% means the destination folder name is the same as source.
+                                                                  Wildcard can be utilized to prefix or suffix source folder names when cloning', 0,0) WITH NOWAIT;
+RAISERROR(N'    ,@destinationFolderReplacements nvarchar(max)   = NULL      - Comma separated list of destination folder replacements. 
+                                                                  Replacements are in format OldVal1=NewVal1,OldVal2=NewVal2
+                                                                  Replacements are applied from left to right. This means if OldVal2 is substring of NewVal1 that substring will be
+                                                                  replaced by the NewVal2.
+                                                                  Replacements are applied on @destinationFolder after widcards replacements.
+    ,@deployToExisting              bit             = 0         - Specifies whether to deploy new version to existing projects.
+                                                                  When enabled then if destination project with the same name already exists, then a new version is deployed to that project
+                                                                  When not enabled, then an error is raised if the project with the same name exists in destination
+    ,@autoCreateFolders             bit             = 0         - Specifies whether auto-create non existing folders
+                                                                  When enabled, destination non-existing folders are automatically created
+                                                                  When not enabled an error is printed in case destination folder does not exists', 0, 0) WITH NOWAIT;
+RAISERROR(N'    ,@infoOnly                      bit             = 0         - Specifies whether only information about processed projects should be printed
+    ,@destinationServer             nvarchar(128)   = NULL      - Specifies destination linked server name for cross server deployment
+                                                                  When destination server is specified, user has to have appropriate permissions on destination server.                                                          
+                                                                  RPC has to be enabled for the linked server
 ', 0, 0) WITH NOWAIT;
     RAISERROR(N'
 Wildcards:
@@ -225,6 +241,28 @@ sp_SSISCloneProject                         - Clones all projects from all folde
         RAISERROR(N'No projects are matching entered criteria...', 0, 0) WITH NOWAIT;
         RETURN
     END
+
+    SET @xml = N'<i>' + REPLACE(@destinationFolderReplacements, ',', '</i><i>') + N'</i>';
+    WITH Replacements AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(F.value('.', 'nvarchar(128)'))) AS Replacement
+            ,ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Ord
+        FROM @xml.nodes(N'/i') T(F)
+    )
+    INSERT INTO @replacements(SortOrder, OldValue, NewValue, Replacement)
+    SELECT
+        Ord
+        ,LEFT(Replacement, CASE WHEN CHARINDEX('=', Replacement, 1) = 0 THEN 0 ELSE CHARINDEX('=', Replacement, 1) - 1 END) AS OldValue
+        ,RIGHT(Replacement, LEN(Replacement) - CHARINDEX('=', Replacement, 1)) AS NewValue
+        ,Replacement
+    FROM Replacements
+
+    IF EXISTS(SELECT 1 FROM @replacements WHERE OldValue IS NULL OR OldValue = N'')
+    BEGIN
+        SET @msg = STUFF((SELECT N',' + Replacement FROM @replacements WHERE OldValue IS NULL OR OldValue = N'' FOR XML PATH('')), 1, 1, '')
+        RAISERROR(N'Following replacements are not valid: %s', 15, 0, @msg) WITH NOWAIT;
+        RETURN;
+    END    
 
     --multiple results - check destination if corresponds
     IF (SELECT COUNT(1) FROM @sourceProjects) > 1
@@ -332,6 +370,30 @@ sp_SSISCloneProject                         - Clones all projects from all folde
         SELECT
             @destination_folder     = REPLACE(@destinationFolder, N'%', @folder_name)
             ,@destination_project   = REPLACE(@destinationProject, N'%', @project_name);
+
+        IF EXISTS(SELECT 1 FROM @replacements)
+        BEGIN
+            DECLARE rc CURSOR FAST_FORWARD FOR
+            SELECT
+                OldValue
+                ,NewValue
+            FROM @replacements
+            ORDER BY SortOrder
+
+            OPEN rc;
+            
+            FETCH NEXT FROM rc INTO @oldVal, @newVal
+
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                SET @destination_folder = REPLACE(@destination_folder, @oldVal, @newVal)
+                FETCH NEXT FROM rc INTO @oldVal, @newVal
+            END
+
+            CLOSE rc;
+            DEALLOCATE rc;
+        END
+
 
         RAISERROR(N'                            - Will Deploy to: [%s]\[%s]', 0, 0, @destination_folder, @destination_project) WITH NOWAIT;
 

@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneConfiguration] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneConfiguration]''')
 GO
 /* ****************************************************
-sp_SSISCloneConfiguration v 0.60 (2017-12-04)
+sp_SSISCloneConfiguration v 0.65 (2017-12-06)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -42,28 +42,32 @@ Description:
     Allows scripting of Parameters configuration for easy transfer among environments.
 
 Parameters:
-     @folder                        nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Supports wildcards
-    ,@project                       nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
-	,@object                        nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be cloned. Supports wildcards.
-    ,@parameter                     nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
-    ,@cloneReferences               bit             = 1     --Specifies whether to clone References to environments
-    ,@cloneReferencedEnvironments   bit             = 0     --Specifies whether to clone referenced environments
-    ,@destinationFolder             nvarchar(128)   = '%'   --Pattern for naming Destination Folder. It is a default value for the script.
-    ,@destinationProject		    nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
-    ,@destinationEnvironment        nvarchar(128)   = '%'   --Pattern for naming destination Environments. It is a default value for the script
-    ,@decryptSensitive              bit             = 0     --Specifies whether sensitive data should be decrypted
+     @folder                                nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Supports wildcards
+    ,@project                               nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
+	,@object                                nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
+    ,@parameter                             nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
+    ,@cloneReferences                       bit             = 1     --Specifies whether to clone References to environments
+    ,@cloneReferencedEnvironments           bit             = 0     --Specifies whether to clone referenced environments
+    ,@destinationFolder                     nvarchar(128)   = '%'   --Pattern for naming Destination Folder. It is a default value for the script.
+    ,@destinationProject		            nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
+    ,@destinationEnvironment                nvarchar(128)   = '%'   --Pattern for naming destination Environments. It is a default value for the script
+    ,@destinationFolderReplacements         nvarchar(max)   = NULL  -- Comma separated list of destination folder replacements. 
+    ,@destinationEnvironmentReplacements    nvarchar(max)   = NULL  -- Comma separated list of destination environment replacements. 
+    ,@decryptSensitive                      bit             = 0     --Specifies whether sensitive data should be decrypted
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISCloneConfiguration]
-     @folder                        nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Supports wildcards
-    ,@project                       nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
-	,@object                        nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
-    ,@parameter                     nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
-    ,@cloneReferences               bit             = 1     --Specifies whether to clone References to environments
-    ,@cloneReferencedEnvironments   bit             = 0     --Specifies whether to clone referenced environments
-    ,@destinationFolder             nvarchar(128)   = '%'   --Pattern for naming Destination Folder. It is a default value for the script.
-    ,@destinationProject		    nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
-    ,@destinationEnvironment        nvarchar(128)   = '%'   --Pattern for naming destination Environments. It is a default value for the script
-    ,@decryptSensitive              bit             = 0     --Specifies whether sensitive data should be decrypted
+     @folder                                nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Supports wildcards
+    ,@project                               nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
+	,@object                                nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
+    ,@parameter                             nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
+    ,@cloneReferences                       bit             = 1     --Specifies whether to clone References to environments
+    ,@cloneReferencedEnvironments           bit             = 0     --Specifies whether to clone referenced environments
+    ,@destinationFolder                     nvarchar(128)   = '%'   --Pattern for naming Destination Folder. It is a default value for the script.
+    ,@destinationProject		            nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
+    ,@destinationEnvironment                nvarchar(128)   = '%'   --Pattern for naming destination Environments. It is a default value for the script
+    ,@destinationFolderReplacements         nvarchar(max)   = NULL  -- Comma separated list of destination folder replacements. 
+    ,@destinationEnvironmentReplacements    nvarchar(max)   = NULL  -- Comma separated list of destination environment replacements. 
+    ,@decryptSensitive                      bit             = 0     --Specifies whether sensitive data should be decrypted
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 BEGIN
@@ -110,7 +114,7 @@ BEGIN
         ,@valueTypeDesc                 nvarchar(10)
         ,@objectTypeDesc                nvarchar(10)
         ,@sensitiveAccess               bit             = 0     --Indicates whether caller have access to senstive infomration
-
+        ,@referenceExists               bit             = 0
         --Environment processing variables
         ,@fldDescrQuoted                nvarchar(4000)
         ,@envDescrQuoted                nvarchar(4000)
@@ -138,6 +142,7 @@ BEGIN
         ,@environmentDescription        nvarchar(1024)
         ,@valueDescription              nvarchar(1024)
         ,@stringval                     nvarchar(max)           --String representation of the value
+        ,@environmentExists             bit             = 0
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -176,7 +181,7 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.60 (2017-12-04) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.65 (2017-12-06) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'=====================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -190,28 +195,38 @@ BEGIN
         RAISERROR(N'[sp_SSISCloneConfiguration] parameters', 0, 0) WITH NOWAIT; 
         RAISERROR(N'', 0, 0) WITH NOWAIT; 
         RAISERROR(N'Parameters:
-     @folder                        nvarchar(max)   = NULL  - Comma separated list of project folders to script configurations. Supports wildcards
-                                                              Configurations for projects in matching folders will be scripted
-    ,@project                       nvarchar(max)   = ''%%''   - Comma separated list of projects to script configurations. Support wildcards
-                                                              Configurations for matching projects will be scripted
-	,@object                        nvarchar(max)	= ''%%''   - Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
-                                                              Configurations for matching objects will be scripted
-    ,@parameter                     nvarchar(max)   = ''%%''   - Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
-                                                              Configurations for matching parameters will be scripted
-    ,@cloneReferences               bit             = 1     - Specifies whether to clone references to environments
-    ,@cloneReferencedEnvironments   bit             = 0     - Specifies whether to clone referenced environments.
-                                                              If provided then also complete referenced environments are scripted', 0, 0) WITH NOWAIT;
-RAISERROR(N'    ,@destinationFolder             nvarchar(128)   = ''%%''   - Pattern for naming Destination Folder. %% in the destination folder name is replaced by the name of the source folder.
-                                                              Allows easy cloning of multiple folders by prefixing or suffixing the %% pattern
-                                                              It sets the default value for the script
-    ,@destinationProject            nvarchar(128)   = ''%%''   - Pattern for naming destination Project. %% in the destination project name is replaced by the source project name.
-                                                              Allows easy cloning of multiple project configurations by prefixing or suffixing the %% pattern
-                                                              It sets the default value for the script
-    ,@destinationEnvironment        nvarchar(128)   = ''%%''   - Pattern for naming destination Environment. %% in the destination environment name is replaced by the source environment name.                                                              
-                                                              It sets the default value for the script
-    ,@decryptSensitive              bit             = 0     - Specifies whether sensitive data should be decrypted.
-                                                              Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
-                                                              to be able to decrypt sensitive information
+     @folder                                nvarchar(max)   = NULL  - Comma separated list of project folders to script configurations. Supports wildcards
+                                                                      Configurations for projects in matching folders will be scripted
+    ,@project                               nvarchar(max)   = ''%%''   - Comma separated list of projects to script configurations. Support wildcards
+                                                                      Configurations for matching projects will be scripted
+	,@object                                nvarchar(max)	= ''%%''   - Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
+                                                                      Configurations for matching objects will be scripted
+    ,@parameter                             nvarchar(max)   = ''%%''   - Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
+                                                                      Configurations for matching parameters will be scripted
+    ,@cloneReferences                       bit             = 1     - Specifies whether to clone references to environments
+    ,@cloneReferencedEnvironments           bit             = 0     - Specifies whether to clone referenced environments.
+                                                                      If provided then also complete referenced environments are scripted', 0, 0) WITH NOWAIT;
+RAISERROR(N'    ,@destinationFolder                     nvarchar(128)   = ''%%''   - Pattern for naming Destination Folder. %% in the destination folder name is replaced by the name of the source folder.
+                                                                      Allows easy cloning of multiple folders by prefixing or suffixing the %% pattern
+                                                                      It sets the default value for the script
+    ,@destinationProject                    nvarchar(128)   = ''%%''   - Pattern for naming destination Project. %% in the destination project name is replaced by the source project name.
+                                                                      Allows easy cloning of multiple project configurations by prefixing or suffixing the %% pattern
+                                                                      It sets the default value for the script
+    ,@destinationEnvironment                nvarchar(128)   = ''%%''   - Pattern for naming destination Environment. %% in the destination environment name is replaced by the source environment name.                                                              
+                                                                      It sets the default value for the script', 0, 0) WITH NOWAIT;
+RAISERROR(N'    ,@destinationFolderReplacements         varchar(max)    = NULL  - Comma separated list of destination folder replacements. 
+                                                                      Replacements are in format SourceVal1=NewVal1,SourceVal2=NewVal2
+                                                                      Replacements are applied from left to right. This means if SourceVal2 is substring of NewVal1 that substring will be
+                                                                      replaced by the NewVal2.
+                                                                      Replacements are applied on @destinationFolder after widcards replacements.
+    ,@destinationEnvironmentReplacements    nvarchar(max)   = NULL  - Comma separated list of destination environment replacements. 
+                                                                      Replacements are in format OldVal1=NewVal1,OldVal2=NewVal2
+                                                                      Replacements are applied from left to right. This means if OldValVal2 is substring of NewVal1 that substring will be
+                                                                      replaced by the NewVal2.
+                                                                      Replacements are applied on @destinationEnvironment after widcards replacements.
+    ,@decryptSensitive                      bit             = 0     - Specifies whether sensitive data should be decrypted.
+                                                                      Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
+                                                                      to be able to decrypt sensitive information
         ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
 Wildcards:
@@ -422,26 +437,37 @@ sp_SSISCloneConfiguration
     ORDER BY
         folder_name, project_name, object_type, object_name, parameter_name
 
-    RAISERROR(N'', 0, 0) WITH NOWAIT;
     RAISERROR(N'--Global definitions:', 0, 0) WITH NOWAIT;
     RAISERROR(N'---------------------', 0, 0) WITH NOWAIT;
-    RAISERROR(N'DECLARE @destinationFolder      nvarchar(128)   = N''%s''     -- Specify destination folder name/wildcard', 0, 0, @destinationFolder) WITH NOWAIT;
-    RAISERROR(N'DECLARE @destinationProject     nvarchar(128)   = N''%s''     -- Specify destination project name/wildcard', 0, 0, @destinationProject) WITH NOWAIT;
+    RAISERROR(N'DECLARE @destinationFolder                  nvarchar(128)   = N''%s''     -- Specify destination folder name/wildcard', 0, 0, @destinationFolder) WITH NOWAIT;
+    RAISERROR(N'DECLARE @destinationProject                 nvarchar(128)   = N''%s''     -- Specify destination project name/wildcard', 0, 0, @destinationProject) WITH NOWAIT;
+    IF @destinationFolderReplacements IS NULL
+        RAISERROR(N'DECLARE @destinationFolderReplacements      nvarchar(max)   = NULL      -- Specify destination folder replacements.', 0, 0, @destinationFolderReplacements) WITH NOWAIT;
+    ELSE
+        RAISERROR(N'DECLARE @destinationFolderReplacements      nvarchar(max)   = N''%s''   -- Specify destination folder replacements.', 0, 0, @destinationFolderReplacements) WITH NOWAIT;
+    
     IF @cloneReferences = 1 OR @cloneReferencedEnvironments = 1
         RAISERROR(N'', 0, 0) WITH NOWAIT;
+
     IF @cloneReferences = 1
     BEGIN
-        RAISERROR(N'DECLARE @processReferences      bit             = 1        -- Specify whether to process references', 0, 0) WITH NOWAIT;
+        RAISERROR(N'DECLARE @processReferences                  bit             = 1        -- Specify whether to process references', 0, 0) WITH NOWAIT;
     END
+
     IF @cloneReferencedEnvironments = 1
     BEGIN
-        RAISERROR(N'DECLARE @processEnvironments    bit             = 1        -- Specify whether to process references', 0, 0) WITH NOWAIT;
-        RAISERROR(N'DECLARE @autoCreate             bit             = 1        -- Specify whether folder and environments should be auto-created', 0, 0) WITH NOWAIT;
-        RAISERROR(N'DECLARE @overwrite              bit             = 0        -- Specify whether value of existing variables should be overwritten', 0, 0) WITH NOWAIT;
+        RAISERROR(N'DECLARE @processEnvironments                bit             = 1        -- Specify whether to process references', 0, 0) WITH NOWAIT;
+        RAISERROR(N'DECLARE @autoCreate                         bit             = 1        -- Specify whether folder and environments should be auto-created', 0, 0) WITH NOWAIT;
+        RAISERROR(N'DECLARE @overwrite                          bit             = 0        -- Specify whether value of existing variables should be overwritten', 0, 0) WITH NOWAIT;
     END
+
     IF @cloneReferences = 1 OR @cloneReferencedEnvironments = 1
     BEGIN
-        RAISERROR(N'DECLARE @destinationEnvironment nvarchar(128)   = N''%s''     -- Specify destination environment name/wildcard', 0, 0, @destinationProject) WITH NOWAIT;
+        RAISERROR(N'DECLARE @destinationEnvironment             nvarchar(128)   = N''%s''     -- Specify destination environment name/wildcard', 0, 0, @destinationProject) WITH NOWAIT;
+        IF @destinationEnvironmentReplacements IS NULL
+            RAISERROR(N'DECLARE @destinationEnvironmentReplacements nvarchar(max)   = NULL      -- Specify destination environment replacements.', 0, 0, @destinationEnvironmentReplacements) WITH NOWAIT;
+        ELSE
+            RAISERROR(N'DECLARE @destinationEnvironmentReplacements nvarchar(max)   = N''%s''   -- Specify destination environment replacements.', 0, 0, @destinationEnvironmentReplacements) WITH NOWAIT;
     END
     RAISERROR(N'', 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -556,6 +582,7 @@ SET NOCOUNT ON;
 
                 WHILE @@FETCH_STATUS = 0
                 BEGIN
+                    SET @referenceExists = 1;
                     IF @last_reference_id IS NOT NULL
                         RAISERROR(N'-- ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++', 0, 0) WITH NOWAIT;
                     IF @reference_type = 'A'
@@ -826,19 +853,113 @@ DECLARE @variables TABLE (
 
         CLOSE cr;
         DEALLOCATE cr;
+    
+    END --IF @cloneReferencedEnvironments = 1 AND EXISTS(SELECT 1 FROM @references)
 
 
+    RAISERROR(N'', 0, 0) WITH NOWAIT;
+    RAISERROR(N'-- =================================================================================', 0, 0) WITH NOWAIT;
+    RAISERROR(N'--                            COMMON RUNTIME', 0, 0) WITH NOWAIT;
+    RAISERROR(N'-- =================================================================================', 0, 0) WITH NOWAIT;
+
+    RAISERROR(N'
+DECLARE
+     @processFld            bit
+    ,@lastFolderName        nvarchar(128)
+    ,@fld                   nvarchar(128)
+    ,@xml                   xml
+    ,@msg                   nvarchar(max)
+    ,@oldVal                nvarchar(128)
+    ,@newVal                nvarchar(128)
+    ,@error                 bit             = 0
+    ', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+--Table for holding folder replacements
+DECLARE @folderReplacements TABLE (
+    SortOrder       int             NOT NULL    PRIMARY KEY CLUSTERED
+    ,OldValue       nvarchar(128)
+    ,NewValue       nvarchar(128)
+    ,Replacement    nvarchar(4000)
+)', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+--Folder Replacements
+SET @xml = N''<i>'' + REPLACE(@destinationFolderReplacements, '','', ''</i><i>'') + N''</i>'';
+WITH Replacements AS (
+    SELECT DISTINCT
+        LTRIM(RTRIM(F.value(''.'', ''nvarchar(128)''))) AS Replacement
+        ,ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Ord
+    FROM @xml.nodes(N''/i'') T(F)
+)
+INSERT INTO @folderReplacements(SortOrder, OldValue, NewValue, Replacement)
+SELECT
+    Ord
+    ,LEFT(Replacement, CASE WHEN CHARINDEX(''='', Replacement, 1) = 0 THEN 0 ELSE CHARINDEX(''='', Replacement, 1) - 1 END) AS OldValue
+    ,RIGHT(Replacement, LEN(Replacement) - CHARINDEX(''='', Replacement, 1)) AS NewValue
+    ,Replacement
+FROM Replacements
+
+IF EXISTS(SELECT 1 FROM @folderReplacements WHERE OldValue IS NULL OR OldValue = N'''')
+BEGIN
+    SET @msg = STUFF((SELECT N'','' + Replacement FROM @folderReplacements WHERE OldValue IS NULL OR OldValue = N'''' FOR XML PATH('''')), 1, 1, '''')
+    SET @error = 1
+    RAISERROR(N''Following folder replacements are not valid: %%s'', 15, 0, @msg) WITH NOWAIT;
+    RETURN;
+END', 0, 0) WITH NOWAIT;
+
+IF @cloneReferences = 1 OR @cloneReferencedEnvironments = 1
+BEGIN
+    RAISERROR(N'
+    --Table for holding environment replacements
+    DECLARE @environmentReplacements TABLE (
+        SortOrder       int             NOT NULL    PRIMARY KEY CLUSTERED
+        ,OldValue       nvarchar(128)
+        ,NewValue       nvarchar(128)
+        ,Replacement    nvarchar(4000)
+    )
+    ', 0, 0) WITH NOWAIT;
+
+    RAISERROR(N'
+    SET @xml = N''<i>'' + REPLACE(@destinationEnvironmentReplacements, '','', ''</i><i>'') + N''</i>'';
+    WITH Replacements AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(F.value(''.'', ''nvarchar(128)''))) AS Replacement
+            ,ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Ord
+        FROM @xml.nodes(N''/i'') T(F)
+    )
+    INSERT INTO @environmentReplacements(SortOrder, OldValue, NewValue, Replacement)
+    SELECT
+        Ord
+        ,LEFT(Replacement, CASE WHEN CHARINDEX(''='', Replacement, 1) = 0 THEN 0 ELSE CHARINDEX(''='', Replacement, 1) - 1 END) AS OldValue
+        ,RIGHT(Replacement, LEN(Replacement) - CHARINDEX(''='', Replacement, 1)) AS NewValue
+        ,Replacement
+    FROM Replacements
+
+    IF EXISTS(SELECT 1 FROM @environmentReplacements WHERE OldValue IS NULL OR OldValue = N'''')
+    BEGIN
+        SET @msg = STUFF((SELECT N'','' + Replacement FROM @environmentReplacements WHERE OldValue IS NULL OR OldValue = N'''' FOR XML PATH('''')), 1, 1, '''')
+        SET @error = 1
+        RAISERROR(N''Following environment replacements are not valid: %%s'', 15, 0, @msg) WITH NOWAIT;
+        RETURN;
+    END    
+    ', 0, 0) WITH NOWAIT;
+END
+
+--Clone referenced environments if selected and exists
+IF @cloneReferencedEnvironments = 1 AND EXISTS(SELECT 1 FROM @references)
+BEGIN
     RAISERROR(N'', 0, 0) WITH NOWAIT;
     RAISERROR(N'-- =================================================================================', 0, 0) WITH NOWAIT;
     RAISERROR(N'--                            ENVIRONMENTS RUNTIME', 0, 0) WITH NOWAIT;
     RAISERROR(N'-- =================================================================================', 0, 0) WITH NOWAIT;
 
     RAISERROR(N'DECLARE
-    @lastFolderName         nvarchar(128)
-    ,@lastEnvironmentName   nvarchar(128)
-    ,@processFld            bit
+     @lastEnvironmentName   nvarchar(128)
     ,@processEnv            bit
+    ,@env                   nvarchar(128)', 0, 0) WITH NOWAIT
 
+RAISERROR('
 RAISERROR(N'''', 0, 0) WITH NOWAIT;
 RAISERROR(N''#################################################################################'', 0, 0) WITH NOWAIT;
 RAISERROR(N''                       PROCESSING REFERENCED ENVIRONMENTS'', 0, 0) WITH NOWAIT;
@@ -861,9 +982,9 @@ ORDER BY FolderName, EnvironmentName, VariableName
 OPEN cr;
 
 FETCH NEXT FROM cr INTO
-    @destFld
+    @fld
     ,@fldDesc
-    ,@destEnv
+    ,@env
     ,@envDesc
     ,@varName
     ,@var
@@ -873,13 +994,40 @@ FETCH NEXT FROM cr INTO
 ', 0, 0) WITH NOWAIT;
 RAISERROR(N'WHILE @@FETCH_STATUS = 0
 BEGIN
-    IF @lastFolderName IS NULL OR @lastFolderName <> @destFld
+    IF @lastFolderName IS NULL OR @lastFolderName <> @fld
     BEGIN
+        SET @destFld = @fld
         SET @processFld = 1
         SET @lastEnvironmentName = NULL;
         IF @lastFolderName IS NOT NULL
             RAISERROR(N''==================================================================='', 0, 0) WITH NOWAIT;
+', 0, 0) WITH NOWAIT;
+RAISERROR(N'
+                IF EXISTS(SELECT 1 FROM @folderReplacements)
+                BEGIN
+                    DECLARE flr CURSOR FAST_FORWARD FOR
+                    SELECT
+                        OldValue
+                        ,NewValue
+                    FROM @folderReplacements
+                    ORDER BY SortOrder
 
+                    OPEN flr;
+            
+                    FETCH NEXT FROM flr INTO @oldVal, @newVal
+
+                    WHILE @@FETCH_STATUS = 0
+                    BEGIN
+                        SET @destFld = REPLACE(@destFld, @oldVal, @newVal)
+                        FETCH NEXT FROM flr INTO @oldVal, @newVal
+                    END
+
+                    CLOSE flr;
+                    DEALLOCATE flr;
+                END
+', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
         IF NOT EXISTS(SELECT 1 FROM [SSISDB].[catalog].[folders] f WHERE f.[name] = @destFld)
         BEGIN
             IF @autoCreate = 1
@@ -900,12 +1048,39 @@ BEGIN
         RAISERROR(N''==================================================================='', 0, 0) WITH NOWAIT;
     END
 ', 0, 0) WITH NOWAIT;
-RAISERROR(N'    IF @processFld = 1 AND (@lastEnvironmentName IS NULL OR @lastEnvironmentName <> @destEnv)
+RAISERROR(N'    IF @processFld = 1 AND (@lastEnvironmentName IS NULL OR @lastEnvironmentName <> @env)
     BEGIN
         SET @processEnv = 1
+        SET @destEnv = @env
         IF @lastEnvironmentName IS NOT NULL
             RAISERROR(N''-------------------------------------------------------------------'', 0, 0) WITH NOWAIT;
+', 0, 0) WITH NOWAIT;
+RAISERROR(N'
+                IF EXISTS(SELECT 1 FROM @environmentReplacements)
+                BEGIN
+                    DECLARE fer CURSOR FAST_FORWARD FOR
+                    SELECT
+                        OldValue
+                        ,NewValue
+                    FROM @environmentReplacements
+                    ORDER BY SortOrder
 
+                    OPEN fer;
+            
+                    FETCH NEXT FROM fer INTO @oldVal, @newVal
+
+                    WHILE @@FETCH_STATUS = 0
+                    BEGIN
+                        SET @destEnv = REPLACE(@destEnv, @oldVal, @newVal)
+                        FETCH NEXT FROM fer INTO @oldVal, @newVal
+                    END
+
+                    CLOSE fer;
+                    DEALLOCATE fer;
+                END
+', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
         IF NOT EXISTS(
             SELECT
                 1
@@ -937,8 +1112,8 @@ RAISERROR(N'    IF @processFld = 1 AND (@lastEnvironmentName IS NULL OR @lastEnv
 ', 0, 0) WITH NOWAIT;
 
     RAISERROR(N'    SELECT
-        @lastFolderName         = @destFld
-        ,@lastEnvironmentName   = @destEnv
+        @lastFolderName         = @fld
+        ,@lastEnvironmentName   = @env
 ', 0, 0) WITH NOWAIT;
 
     RAISERROR(N'    IF @processEnv = 1 AND @processFld = 1
@@ -976,9 +1151,9 @@ RAISERROR(N'    IF @processFld = 1 AND (@lastEnvironmentName IS NULL OR @lastEnv
 ', 0, 0) WITH NOWAIT;
 
     RAISERROR(N'    FETCH NEXT FROM cr INTO
-        @destFld
+        @fld
         ,@fldDesc
-        ,@destEnv
+        ,@env
         ,@envDesc
         ,@varName
         ,@var
@@ -990,7 +1165,7 @@ END
 CLOSE cr;
 DEALLOCATE cr;', 0, 0) WITH NOWAIT;
 
-    END --IF @cloneReferencedEnvironments = 1 AND EXISTS(SELECT 1 FROM @references)
+    END --@cloneReferencedEnvironments = 1 AND EXISTS(SELECT 1 FROM @references)
 
     --Print Runtime part for the script
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -1004,11 +1179,6 @@ DEALLOCATE cr;', 0, 0) WITH NOWAIT;
     ,@lastObjectType        smallint
     ,@processProject        bit
     ,@processObject         bit', 0, 0) WITH NOWAIT;
-
-IF @cloneReferencedEnvironments = 0 OR NOT EXISTS(SELECT 1 FROM @references)
-    RAISERROR(N'    ,@processFld            bit
-    @lastFolderName         nvarchar(128)', 0, 0) WITH NOWAIT;
-
 IF @cloneReferences = 1
 RAISERROR(N'    ,@reference_id          bigint
 ', 0, 0) WITH NOWAIT;
@@ -1036,16 +1206,42 @@ FROM @parameters
 
 OPEN cr;
 
-FETCH NEXT FROM cr INTO @folder_name, @project_name, @object_type, @object_name, @parameter_name, @value_type, @parameter_value
+FETCH NEXT FROM cr INTO @fld, @project_name, @object_type, @object_name, @parameter_name, @value_type, @parameter_value
 WHILE @@FETCH_STATUS = 0
 BEGIN', 0, 0) WITH NOWAIT;
-RAISERROR(N'    IF @lastFolderName IS NULL OR @lastFolderName <> @folder_name
+RAISERROR(N'    IF @lastFolderName IS NULL OR @lastFolderName <> @fld
     BEGIN
         SET @processFld = 1
+        SET @folder_name = @fld
         SET @lastProjectName = NULL
         IF @lastFolderName IS NOT NULL
             RAISERROR(N''==================================================================='', 0, 0) WITH NOWAIT;
+', 0, 0) WITH NOWAIT;
+RAISERROR(N'
+        IF EXISTS(SELECT 1 FROM @folderReplacements)
+        BEGIN
+            DECLARE rc CURSOR FAST_FORWARD FOR
+            SELECT
+                OldValue
+                ,NewValue
+            FROM @folderReplacements
+            ORDER BY SortOrder
 
+            OPEN rc;
+            
+            FETCH NEXT FROM rc INTO @oldVal, @newVal
+
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                SET @folder_name = REPLACE(@folder_name, @oldVal, @newVal)
+                FETCH NEXT FROM rc INTO @oldVal, @newVal
+            END
+
+            CLOSE rc;
+            DEALLOCATE rc;
+        END
+', 0, 0) WITH NOWAIT;
+RAISERROR(N'
         IF NOT EXISTS(SELECT 1 FROM [SSISDB].[catalog].[folders] f WHERE f.[name] = @folder_name)
         BEGIN
             SET @processFld = 0
@@ -1089,7 +1285,7 @@ RAISERROR(N'    IF @processFld = 1 AND (@lastProjectName IS NULL OR @lastProject
 IF @cloneReferences = 1
 BEGIN
     RAISERROR(N'
-        IF @processReferences = 1 AND EXISTS(SELECT 1 FROM @references WHERE folder_name = @folder_name and project_name = @project_name)
+        IF @processReferences = 1 AND EXISTS(SELECT 1 FROM @references WHERE folder_name = @fld and project_name = @project_name)
         BEGIN
             DECLARE rc CURSOR FAST_FORWARD FOR
             SELECT
@@ -1098,7 +1294,7 @@ BEGIN
                 ,environment_name
             FROM @references
             WHERE 
-                folder_name = @folder_name 
+                folder_name = @fld 
                 AND
                 project_name = @project_name
 
@@ -1107,8 +1303,57 @@ BEGIN
             FETCH NEXT FROM rc INTO @reference_type, @environment_folder, @environment_name
 
             WHILE @@FETCH_STATUS = 0
-            BEGIN
-                IF EXISTS (
+            BEGIN', 0, 0) WITH NOWAIT;
+RAISERROR(N'
+                IF @reference_type = ''A'' AND EXISTS(SELECT 1 FROM @folderReplacements)
+                BEGIN
+                    DECLARE fr CURSOR FAST_FORWARD FOR
+                    SELECT
+                        OldValue
+                        ,NewValue
+                    FROM @folderReplacements
+                    ORDER BY SortOrder
+
+                    OPEN fr;
+            
+                    FETCH NEXT FROM fr INTO @oldVal, @newVal
+
+                    WHILE @@FETCH_STATUS = 0
+                    BEGIN
+                        SET @environment_folder = REPLACE(@environment_folder, @oldVal, @newVal)
+                        FETCH NEXT FROM fr INTO @oldVal, @newVal
+                    END
+
+                    CLOSE fr;
+                    DEALLOCATE fr;
+                END
+', 0, 0) WITH NOWAIT;
+RAISERROR(N'
+                IF EXISTS(SELECT 1 FROM @environmentReplacements)
+                BEGIN
+                    DECLARE re CURSOR FAST_FORWARD FOR
+                    SELECT
+                        OldValue
+                        ,NewValue
+                    FROM @environmentReplacements
+                    ORDER BY SortOrder
+
+                    OPEN re;
+            
+                    FETCH NEXT FROM re INTO @oldVal, @newVal
+
+                    WHILE @@FETCH_STATUS = 0
+                    BEGIN
+                        SET @environment_name = REPLACE(@environment_name, @oldVal, @newVal)
+                        FETCH NEXT FROM re INTO @oldVal, @newVal
+                    END
+
+                    CLOSE re;
+                    DEALLOCATE re;
+                END
+', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'                IF EXISTS (
                     SELECT
                         1
                     FROM catalog.environment_references er
@@ -1186,13 +1431,13 @@ RAISERROR(N'    IF @processObject = 1
     END
         
     SELECT
-        @lastFolderName     = @folder_name
+        @lastFolderName     = @fld
         ,@lastProjectName   = @project_name
         ,@lastObjectName    = @object_name
         ,@lastObjectType    = @object_type
 
 
-    FETCH NEXT FROM cr INTO @folder_name, @project_name, @object_type, @object_name, @parameter_name, @value_type, @parameter_value
+    FETCH NEXT FROM cr INTO @fld, @project_name, @object_type, @object_name, @parameter_name, @value_type, @parameter_value
 END
 
 CLOSE cr;
@@ -1217,7 +1462,32 @@ RAISERROR(N'    IF EXISTS(SELECT 1 FROM @parameters WHERE value_type = ''R'')
     FETCH NEXT FROM fc INTO @folder_name, @project_name
 
     WHILE @@FETCH_STATUS = 0
-    BEGIN
+    BEGIN', 0, 0) WITH NOWAIT;
+RAISERROR(N'
+        IF EXISTS(SELECT 1 FROM @folderReplacements)
+        BEGIN
+            DECLARE rc CURSOR FAST_FORWARD FOR
+            SELECT
+                OldValue
+                ,NewValue
+            FROM @folderReplacements
+            ORDER BY SortOrder
+
+            OPEN rc;
+            
+            FETCH NEXT FROM rc INTO @oldVal, @newVal
+
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                SET @folder_name = REPLACE(@folder_name, @oldVal, @newVal)
+                FETCH NEXT FROM rc INTO @oldVal, @newVal
+            END
+
+            CLOSE rc;
+            DEALLOCATE rc;
+        END
+', 0, 0) WITH NOWAIT;
+RAISERROR(N'
         RAISERROR(N''DON''''T FORGET TO SET ENVIRONMENT REFERENCES for project [%%s]\[%%s].'', 0, 0, @folder_name, @project_name) WITH NOWAIT;
         FETCH NEXT FROM fc INTO @folder_name, @project_name
     END
