@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneConfiguration] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneConfiguration]''')
 GO
 /* ****************************************************
-sp_SSISCloneConfiguration v 0.65 (2017-12-06)
+sp_SSISCloneConfiguration v 0.66 (2017-12-07)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -181,7 +181,7 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.65 (2017-12-06) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.66 (2017-12-07) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'=====================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -1388,6 +1388,8 @@ RAISERROR(N'
                     END
                 FETCH NEXT FROM rc INTO @reference_type, @environment_folder, @environment_name
             END
+            CLOSE rc;
+            DEALLOCATE rc;
             RAISERROR(N''+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++'', 0, 0) WITH NOWAIT;
         END', 0, 0) WITH NOWAIT;
 END
