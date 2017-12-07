@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneConfiguration] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneConfiguration]''')
 GO
 /* ****************************************************
-sp_SSISCloneConfiguration v 0.66 (2017-12-07)
+sp_SSISCloneConfiguration v 0.67 (2017-12-07)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -181,7 +181,7 @@ BEGIN
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.66 (2017-12-07) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.67 (2017-12-07) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
 					@captionBegin + N'=====================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -463,7 +463,7 @@ sp_SSISCloneConfiguration
 
     IF @cloneReferences = 1 OR @cloneReferencedEnvironments = 1
     BEGIN
-        RAISERROR(N'DECLARE @destinationEnvironment             nvarchar(128)   = N''%s''     -- Specify destination environment name/wildcard', 0, 0, @destinationProject) WITH NOWAIT;
+        RAISERROR(N'DECLARE @destinationEnvironment             nvarchar(128)   = N''%s''     -- Specify destination environment name/wildcard', 0, 0, @destinationEnvironment) WITH NOWAIT;
         IF @destinationEnvironmentReplacements IS NULL
             RAISERROR(N'DECLARE @destinationEnvironmentReplacements nvarchar(max)   = NULL      -- Specify destination environment replacements.', 0, 0, @destinationEnvironmentReplacements) WITH NOWAIT;
         ELSE
@@ -593,7 +593,7 @@ SET NOCOUNT ON;
 
                     SELECT
                          @environment_name      = N'N''' + REPLACE(@environment_name, '''', '''''') + ''''
-                        ,@environment_folder    = ISNULL(N'N''' + REPLACE(@environment_folder, '''', '''''') + '''', N'NULL')
+                        ,@environment_folder    = ISNULL(N'REPLACE(@destinationFolder, N''%'', N''' + REPLACE(@environment_folder, '''', '''''') + ''')', N'NULL')
                         ,@reference_type        = N'N''' + REPLACE(@reference_type, '''', '''''') + '''';
 
                     RAISERROR(N'SET @environment_name   = REPLACE(@destinationEnvironment, ''%%'', %s)', 0, 0, @environment_name) WITH NOWAIT;
@@ -1378,13 +1378,36 @@ RAISERROR(N'
                             RAISERROR(N''Reference to local environment [%%s] already exists.'', 0, 0, @environment_name) WITH NOWAIT;
                     END
                     ELSE
-                    BEGIN
-                        IF @reference_type = ''A''
-                            RAISERROR(N''Setting Reference to environment [%%s]\[%%s]'', 0, 0, @environment_folder, @environment_name) WITH NOWAIT;
+                    BEGIN', 0, 0) WITH NOWAIT;
+RAISERROR(N'                        IF NOT EXISTS(
+                            SELECT 
+                                1 
+                            FROM catalog.environments e 
+                            INNER JOIN catalog.folders f on f.folder_id = e.folder_id
+                            WHERE
+                                e.name = @environment_name
+                                AND
+                                (
+                                    (@reference_type = ''A'' AND f.name = @environment_folder)
+                                    OR
+                                    (@reference_type = ''R'' AND f.name = @folder_name)
+                                )
+                        )
+                        BEGIN
+                            IF @reference_type = ''A''
+                                RAISERROR(N''Referenced environment [%%s]\[%%s] does not exists'', 11, 1, @environment_folder, @environment_name) WITH NOWAIT;
+                            ELSE
+                                RAISERROR(N''Referenced local environment [%%s] does not exists'', 11, 2, @environment_name) WITH NOWAIT;                            
+                        END
                         ELSE
-                            RAISERROR(N''Setting Reference to local environment [%%s]'', 0, 0, @environment_name) WITH NOWAIT;
+                        BEGIN', 0, 0) WITH NOWAIT;
+RAISERROR(N'                            IF @reference_type = ''A''
+                                RAISERROR(N''Setting Reference to environment [%%s]\[%%s]'', 0, 0, @environment_folder, @environment_name) WITH NOWAIT;
+                            ELSE
+                                RAISERROR(N''Setting Reference to local environment [%%s]'', 0, 0, @environment_name) WITH NOWAIT;
 
-                        EXEC [SSISDB].[catalog].[create_environment_reference] @environment_name=@environment_name, @environment_folder_name=@environment_folder, @reference_id=@reference_id OUTPUT, @project_name=@project_name, @folder_name=@folder_name, @reference_type=@reference_type
+                            EXEC [SSISDB].[catalog].[create_environment_reference] @environment_name=@environment_name, @environment_folder_name=@environment_folder, @reference_id=@reference_id OUTPUT, @project_name=@project_name, @folder_name=@folder_name, @reference_type=@reference_type
+                        END
                     END
                 FETCH NEXT FROM rc INTO @reference_type, @environment_folder, @environment_name
             END
