@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.65 (2018-01-02)
+sp_ssisdb v 0.66 (2018-01-02)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -120,6 +120,8 @@ DECLARE
     ,@eventFilter                       bit             = 0     --Identifies whether apply event filter
     ,@subComponentFilter                bit             = 0     --Identifies whether apply sub-component filter
     ,@includeAgentReferences            bit             = 0     --Identifies whether to include Agent Job referencing packages
+    ,@sourceFilter                      bit             = 0     --Identifies whether to include source_filter for messages
+    ,@source_filter                     nvarchar(max)   = NULL
     ,@includeAgentJob                   bit             = 0     --Identifies whether to include information about agent job which executed the package
     ,@decryptSensitive                  bit             = 0     --Identifies whether Decryption of sensitive values in verbose mode should be handled
     ,@processID                         bit             = 0     --Identifies whether filter on process_id should be applied
@@ -145,7 +147,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.65 (2018-01-02) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.66 (2018-01-02) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -1377,7 +1379,7 @@ RAISERROR(N'
 @src_component_name
 -------------------
 Used only for detailed results filtering in VERBOSE mode.
-Comma separated list of filters which are applied on field source_component_name for the execution_data_statistics
+Comma separated list of filters which are applied on field source_component_name for the execution_data_statistics and source_name in the execution_messages
 Supports LIKE filters. Default NULL means filter is not applied.
 ', 0, 0) WITH NOWAIT;
 
@@ -2977,6 +2979,35 @@ BEGIN
                     SET @subComponentFilter = 0
             END
 
+        --@src_component_name = source_name
+        IF @src_component_name IS NOT NULL
+        BEGIN
+            SET @xml = N'<i>' + REPLACE(@src_component_name, N',', @xr) + N'</i>'
+
+            CREATE TABLE #src_names (
+                 filter     nvarchar(4000) COLLATE DATABASE_DEFAULT
+                ,exclusive  bit
+            )
+
+            ;WITH FilterValues AS (
+                SELECT DISTINCT
+                    LTRIM(RTRIM(n.value(N'.', 'nvarchar(50)'))) value
+                FROM @xml.nodes('/i') T(n)
+            )
+            INSERT INTO #src_names (filter, exclusive)
+            SELECT
+                CASE WHEN LEFT(value, 1) = '-' THEN RIGHT(value, LEN(value) -1) ELSE value END
+                ,CASE WHEN LEFT(value, 1) = '-' THEN 1 ELSE 0 END
+            FROM FilterValues
+
+            IF EXISTS(SELECT 1 fROM #src_names)
+            BEGIN
+                    SET @sourceFilter = 1               
+                    SET @source_filter = REPLACE(STUFF((SELECT DISTINCT ', ' + LTRIM(RTRIM(n.value('.','nvarchar(128)'))) FROM @xml.nodes('/i') T(n) FOR XML PATH('')), 1, 2, ''), N'%', N'%%')
+            END
+
+        END
+
             --Messsage Filters
             SET @xml = N'<i>' + REPLACE(@msg_filter, N',', @xr) + N'</i>'
 
@@ -3094,6 +3125,10 @@ BEGIN
             END + N'
             WHERE om.operation_id = @id' +
             CASE
+                WHEN @sourceFilter = 1 THEN N' AND (EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 1))'
+                ELSE N''
+            END + 
+            CASE
                 WHEN NULLIF(@execution_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #execution_paths f WHERE em.execution_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #execution_paths f WHERE em.execution_path LIKE f.filter AND f.exclusive = 1))'
                 ELSE N''
             END + 
@@ -3127,6 +3162,8 @@ BEGIN
                 SET @msg = N'                            - Using Event Filter(s): ' + @event_filter
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
             END
+            IF @sourceFilter = 1
+                RAISERROR(N'                            - Using source__name Filter(s): %s', 0, 0, @source_filter) WITH NOWAIT;
             IF @subComponentFilter = 1
             BEGIN                             
                 SET @msg = N'                            - Using SubComponent Filter(s): ' + @subcomponent_filter
