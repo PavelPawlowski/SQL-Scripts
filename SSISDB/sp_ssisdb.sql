@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.62 (2017-11-29)
+sp_ssisdb v 0.65 (2018-01-02)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -145,8 +145,8 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.62 (2017-11-29) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
-RAISERROR(N'=====================================================', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.65 (2018-01-02) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
 
@@ -161,6 +161,8 @@ INSERT INTO @valModifiers(Val, Modifier, LeftChars)
 VALUES
      ('L'       ,'L'                    ,1)         --Last
     ,('L'       ,'LAST'                 ,4)         --Last
+    ,('L'       ,'L:'                   ,2)         --Last
+    ,('L'       ,'LAST:'                ,5)         --Last
     ,('FLD'     ,'FLD'                  ,NULL)      --Per Folder
     ,('FLD'     ,'FOLDER'               ,NULL)      --Per Folder
     ,('P'       ,'P'                    ,NULL)      --Per Project
@@ -192,13 +194,21 @@ VALUES
     ,('FORCE'   ,'FORCE'                ,NULL)      --Force
     ,('?'       ,'?'                    ,NULL)      --Help
     ,('X'       ,'X'                    ,1)         --Max
+    ,('X'       ,'X:'                   ,2)         --Max
     ,('X'       ,'MAX'                  ,3)         --Max
+    ,('X'       ,'MAX:'                 ,4)         --Max
     ,('EM'      ,'EM'                   ,2)         --Include Event Messages
+    ,('EM'      ,'EM:'                  ,3)         --Include Event Messages
     ,('EM'      ,'EVENT_MESSAGES'       ,14)        --Include Event Messages
+    ,('EM'      ,'EVENT_MESSAGES:'      ,15)        --Include Event Messages
     ,('V'       ,'V'                    ,1)         --Verbose
+    ,('V'       ,'V:'                   ,2)         --Verbose
     ,('V'       ,'VERBOSE'              ,7)         --Verbose
+    ,('V'       ,'VERBOSE:'             ,8)         --Verbose
     ,('EDS'     ,'EDS'                  ,3)         --Execution data statistics in details
+    ,('EDS'     ,'EDS:'                 ,4)         --Execution data statistics in details
     ,('EDS'     ,'EXECUTION_DATA_STATISTICS', 25)   --Execution data statistics in details
+    ,('EDS'     ,'EXECUTION_DATA_STATISTICS:',26)   --Execution data statistics in details
     ,('ST'      ,'ST'                   ,2)         --Use Start TIme
     ,('ST'      ,'START_TIME'           ,10)        --Use Start Time
     ,('ET'      ,'ET'                   ,2)         --Use End TIme
@@ -206,9 +216,13 @@ VALUES
     ,('CT'      ,'CT'                   ,2)         --Use Create Time
     ,('CT'      ,'CREATE_TIME'          ,1)         --Use Create Time
     ,('ECP'     ,'ECP'                  ,3)         --Execution Component Phases
+    ,('ECP'     ,'ECP:'                 ,4)         --Execution Component Phases
     ,('ECP'     ,'EXECUTION_COMPONENT_PHASES', 26)  --Execution Component Phases
+    ,('ECP'     ,'EXECUTION_COMPONENT_PHASES:', 27)  --Execution Component Phases
     ,('ES'      ,'ES'                   ,2)         --Executable Statistics
+    ,('ES'      ,'ES:'                  ,3)         --Executable Statistics
     ,('ES'      ,'EXECUTABLE_STATISTICS' , 21)      --Executable Statistics
+    ,('ES'      ,'EXECUTABLE_STATISTICS:', 22)      --Executable Statistics
     ,('AGR'     ,'AGR'                  ,NULL)      --Include details about SQL Server Agent Jobs referencing package
     ,('AGR'     ,'AGENT_REFERENCES'     ,NULL)      --Include details about SQL Server Agent Jobs referencing package
     ,('AGT'     ,'AGT'                  ,NULL)      --Include details about agent job which initiated the execution
@@ -458,10 +472,10 @@ BEGIN
     BEGIN
         SET @debugLevel = ISNULL(NULLIF((SELECT MaxIntVal FROM @opVal WHERE Val = N'DBG'), 0), 1)
         
-        if(@debugLevel > 2)
+        if(@debugLevel > 1)
             SELECT '@opValData' AS TableName, * FROM @opValData
 
-        if (@debugLevel > 1)
+        if (@debugLevel > 0)
             SELECT '@opVal' AS TableName,  * FROM @opVal
     END
 
@@ -591,7 +605,7 @@ BEGIN
                     FOR XML PATH('')
                 ), 1, 5, N''), N'&lt;', N'<'), N'&gt;', N'>')
 
-            RAISERROR(N'   - Duration: %s', 0, 0, @msg) WITH NOWAIT;
+            RAISERROR(N'   - Duration: %s', 0, 0, @durationMsg  ) WITH NOWAIT;
         END
 
 
@@ -601,7 +615,7 @@ BEGIN
             IF @id <= 1
                 SET @id = (SELECT MAX(execution_id) FROM internal.executions)
 
-            RAISERROR(N' - Verbose information for execution_id = %I64d', 0, 0, @id)
+            RAISERROR(N'   - Verbose information for execution_id = %I64d', 0, 0, @id)
 
             IF @id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM internal.operations WHERE operation_id = @id)
             BEGIN
@@ -731,12 +745,6 @@ BEGIN
                 RAISERROR(N' - %s bit executions only', 0, 0, @msg) WITH NOWAIT;
             END
             
-            --duration was specified
-            IF @durationCondition IS NOT NULL
-            BEGIN
-                RAISERROR(N'   - Duration: %s', 0, 0, @durationMsg) WITH NOWAIT;
-            END
-
             --Date values are specified
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN (N'D'))
             BEGIN
@@ -847,7 +855,7 @@ BEGIN
     IF @id IS NULL AND @opLastCnt IS NULL AND @opFromTZ IS NULL AND @minInt IS NULL AND @lastSpecified = 0 AND @processID = 0
     BEGIN
         SET @opLastCnt = @defaultLastOp;
-        RAISERROR(N' - default Last %d operations', 0, 0, @opLastCnt) WITH NOWAIT;
+        RAISERROR(N'   - default Last %d operations', 0, 0, @opLastCnt) WITH NOWAIT;
     END
 
     --Include parameters
@@ -1139,7 +1147,7 @@ RAISERROR(N'
 
   iiiiiiiiiiiiii            - (integer values) Specifies range of execution_id(s) to return basic information. If single initeger is provided than executios starting with that id will be returned. 
                               In case of multiple initegers, range between minimum and maximum id is returned
-  (L)ASTiiiii               - Optional Keywork which modifies output only to LAST iiiii records. THe LAST records are returned per group. 
+  (L)AST:iiiii              - Optional Keywork which modifies output only to LAST iiiii records. THe LAST records are returned per group. 
                               If iiiii is not provided then then last 1 execution is returned. 
                               If Keyword is missing the default LAST 100 records are retrieved
 
@@ -1191,10 +1199,10 @@ RAISERROR(N'
   AGENT_JOB (AGT)           - If available, Retrieve information about agent Job which started the execution. (Slow-down the retrieval). Runs in caller context. Caller must have permissions to msdb.
 
 
-  MA(X)iiiii                - Optional keyword which specifies that when the LAST rows are returned per FOLDER, PROJECT, EXECUTABLE, then maximum of LAST iiiii rows
+  MA(X):iiiii               - Optional keyword which specifies that when the LAST rows are returned per FOLDER, PROJECT, EXECUTABLE, then maximum of LAST iiiii rows
                               will be retrieved and those grouped and returned as per above specification', 0, 0) WITH NOWAIT;
 RAISERROR(N'
-  (V)ERBOSEiiiiii           - Used to pass exeuction ID for which detailed overview should be provided. it has priority over the overview ranges.
+  (V)ERBOSE:iiiiii          - Used to pass exeuction ID for which detailed overview should be provided. it has priority over the overview ranges.
                               In case multiple integer numbers are provided, it produces verbose information for the maximum integer provided.
                               If verbose is specified without any integer number, then verbose invormation is provided for the last operation.', 0, 0) WITH NOWAIT;
 RAISERROR(N'
@@ -1213,18 +1221,18 @@ RAISERROR(N'
   EXECUTED_PACKAGES (EP)                - Include information about executed packages per reult in the overview list. (Slow-downs the retrieval)
                                           In Verbose mode executed packages are always listed as separate result by default.
                                           When specified in Verbose mode then the executed_pacakges column is not filtered by other filters.
-  EXECUTABLE_STATISTICS(ES)iiiii        - Include executablew statistics in the details verbose output.
+  EXECUTABLE_STATISTICS(ES):iiiii       - Include executablew statistics in the details verbose output.
                                           iiiii specifies max number of rows. If not provided then default 1000 rows are returned.
                                           iiiii < 0 = All rows are returned and is the same as not including the keyword
-  EXECUTION_MESSAGES(EM)iiiii           - Include event messages details in the overview list and in details list. 
+  EXECUTION_MESSAGES(EM):iiiii          - Include event messages details in the overview list and in details list. 
                                           iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
                                           iiiii < 0 = All rows are returned.
                                           For Overview by default only ERROR and TASK_FAILED are included. (Slow downs data retrieval)', 0, 0) WITH NOWAIT;
 
-RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS)iiiii   - Include Execution Data Statistics in the details verbose output
+RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS):iiiii  - Include Execution Data Statistics in the details verbose output
                                           iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
                                           iiiii < 0 = All rows are returned.                                    
-  EXECUTION_COMPONENT_PHASES(ECP)iiiii  - Include Execution Componetn Phases in the details verbose output
+  EXECUTION_COMPONENT_PHASES(ECP):iiiii - Include Execution Componetn Phases in the details verbose output
                                           iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
                                           iiiii < 0 = All rows are returned.
 ', 0, 0) WITH NOWAIT;
@@ -2054,7 +2062,7 @@ N'
     ,d.created_time
 ' +
     CASE
-        WHEN @id IS NULL THEN N',''sp_ssisdb ''''V'' + FORMAT(d.execution_ID, ''G'') + N'' PM ES1000 EM1000 EDS1000 ECP1000'''',@package = '''''''', @msg_type = '''''''', @event_filter = '''''''', @phase_filter = '''''''', @task_filter = '''''''',
+        WHEN @id IS NULL THEN N',''sp_ssisdb ''''V:'' + FORMAT(d.execution_ID, ''G'') + N'' PM ES:1000 EM:1000 EDS:1000 ECP:1000'''',@package = '''''''', @msg_type = '''''''', @event_filter = '''''''', @phase_filter = '''''''', @task_filter = '''''''',
 @subcomponent_filter = '''''''', @package_path = '''''''', @execution_path = '''''''', @msg_filter = '''''''', @src_component_name = '''''''', @dst_component_name = '''''''' '' as execution_details_command'
         ELSE N''
     END + N'
