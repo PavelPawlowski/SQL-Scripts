@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisstat] AS PRINT ''Placeholder for [dbo].[sp_ssisstat]''')
 GO
 /* ****************************************************
-sp_ssistat v 0.30 (2018-01-02)
+sp_ssistat v 0.31 (2018-01-03)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -53,7 +53,7 @@ WITH EXECUTE AS 'AllSchemaOwner'
 AS
 SET NOCOUNT ON;
 
-RAISERROR(N'sp_ssisstat v0.30 (2018-01-02) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisstat v0.31 (2018-01-03) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'==============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisstat provides statistics about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -193,7 +193,7 @@ VALUES
     ,(N'status_completed'            , 'D', 19)
     ,(N'first_execution_start'       , 'D', 20)
     ,(N'last_execution_start'        , 'D', 21)
-    ,(N'last_excution_end'           , 'D', 22)
+    ,(N'last_execution_end'          , 'D', 22)
     ,(N'duration'                    , 'E', 1)
     ,(N'duration_ms'                 , 'E', 2)
     ,(N'start_time'                  , 'E', 3)
