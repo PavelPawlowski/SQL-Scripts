@@ -4,9 +4,77 @@ BEGIN
     SET NOEXEC ON;
 END
 GO
+USE [master]
+GO
+RAISERROR('Creating skeleton procedure in the master database for [dbo].[sp_ssisdb]', 0, 0) WITH NOWAIT;
+IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[sp_ssisdb]'))
+    EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
+GO
+/* ****************************************************
+sp_ssisdb: This is skeleton stored procedure for the sp_ssisdb located in the [SSISDB] database
+
+Feedback: mailto:pavel.pawlowski@hotmail.cz
+
+MIT License
+
+Copyright (c) 2017 Pavel Pawlowski
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+ ******************************************************* */
+ALTER PROCEDURE [dbo].[sp_ssisdb]
+     @op                    nvarchar(max)	= NULL                  --Operator parameter - universal operator for setting large range of conditions and filters
+    ,@status                nvarchar(max)   = NULL                  --Comma separated list of execution statuses to return. Default NULL means all. See below for more details
+    ,@folder                nvarchar(max)	= NULL                  --Comma separated list of folder filters. Default NLL means no filtering. See below for more details
+    ,@project               nvarchar(max)   = NULL                  --Comma separated list of project filters. Default NULL means no filtering. See below for more details
+    ,@package               nvarchar(max)   = NULL                  --Comma separated list of package filters. Default NULL means no filtering. See below for more details
+    ,@msg_type              nvarchar(max)   = NULL                  --Comma separated list of Message types to show
+    ,@event_filter          nvarchar(max)   = NULL                  --Comma separated list of event LIKE filters. Used only for detailed results filtering
+    ,@phase_filter          nvarchar(max)   = NULL                  --Comma separated list of phase LIKE filters. Used only for detailed results filtering
+    ,@task_filter           nvarchar(max)   = NULL                  --Comma separated list of task LIKE filters. Used only for detailed results filtering
+    ,@subcomponent_filter   nvarchar(max)   = NULL                  --Comma separated list of sub-component LIKE filters. Used only for detailed results filtering.
+    ,@package_path          nvarchar(max)   = NULL                  --LIKE filter to be applied on package path fields. Used only for detailed results filtering
+    ,@execution_path        nvarchar(max)   = NULL                  --LIKE filter to be applied on execution path fields. Used only for detailed results filtering
+    ,@msg_filter            nvarchar(max)   = NULL                  --LIKE filter to be applied on message text. Used only for detailed results filtering
+    ,@src_component_name    nvarchar(max)   = NULL                  --LIKE filter to be applied on data statistics as srouce_component_name. Used only for detailed results filtering
+    ,@dst_component_name    nvarchar(max)   = NULL                  --LIKE filter to be applied on execution data statistics as destination_component_name. Used only for detailed results filtering
+AS
+EXEC [SSISDB].[dbo].[sp_ssisdb]
+         @op                  = @op                 
+        ,@status              = @status             
+        ,@folder              = @folder             
+        ,@project             = @project            
+        ,@package             = @package            
+        ,@msg_type            = @msg_type           
+        ,@event_filter        = @event_filter       
+        ,@phase_filter        = @phase_filter       
+        ,@task_filter         = @task_filter        
+        ,@subcomponent_filter = @subcomponent_filter
+        ,@package_path        = @package_path       
+        ,@execution_path      = @execution_path     
+        ,@msg_filter          = @msg_filter         
+        ,@src_component_name  = @src_component_name 
+        ,@dst_component_name  = @dst_component_name 
+GO
 USE [SSISDB]
 GO
-RAISERROR('Creating procedure [dbo].[sp_ssisdb]', 0, 0) WITH NOWAIT;
+RAISERROR('Creating procedure [dbo].[sp_ssisdb] is [SSISDB]', 0, 0) WITH NOWAIT;
 IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[sp_ssisdb]'))
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
