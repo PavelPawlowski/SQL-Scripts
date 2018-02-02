@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.66 (2018-01-02)
+sp_ssisdb v 0.71 (2018-02-02)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -208,14 +208,17 @@ DECLARE
     ,@opValCount                        int             = 0     --Count of operator modifier values
     ,@datetimeMsg                       nvarchar(max)   = NULL  --message for datetime
     ,@dateField                         nvarchar(128)   = NULL  --name of date field
-
+    ,@duration_ms                       bit             = 0     --include duration in ms
+    ,@execDetails                       bit             = 0     --include execution details
+    ,@localTime                         bit             = 0     --Use LocalTime instead of the datetimeoffset
+    
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
             SET @sensitiveAccess = 1
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.66 (2018-01-02) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.71 (2018-02-02) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -314,14 +317,20 @@ VALUES
     ,('32B'     ,'32BIT'                ,NULL)      --X86 filter
     ,('64B'     ,'64B'                  ,NULL)      --X64 filter
     ,('64B'     ,'64BIT'                ,NULL)      --X64 filter
-    ,('PM'      ,'PM'                   ,NULL)      --Include parameters in execution details
-    ,('PM'      ,'PARAMS'               ,NULL)      --Include parameters in execution details
+    ,('PM'      ,'PM'                   ,NULL)      --Include parameters in execution details - forces ED
+    ,('PM'      ,'PARAMS'               ,NULL)      --Include parameters in execution details - forces ED
     ,('FD'      ,'FD'                   ,NULL)      --Include folder details
     ,('FD'      ,'FOLDER_DETAILS'       ,NULL)      --Include folder details
     ,('PRD'     ,'PRD'                  ,NULL)      --Include Project details
     ,('PRD'     ,'PROJECT_DETAILS'      ,NULL)      --Include Project Details
     ,('OD'      ,'OD'                   ,NULL)      --Include Object Details
     ,('OD'      ,'OBJECT_DETAILS'       ,NULL)      --Include Object Details
+    ,('MS'      ,'MS'                   ,NULL)      --Milliseconds
+    ,('MS'      ,'MILLISECONDS'         ,NULL)      --Milliseconds
+    ,('ED'      ,'ED'                   ,NULL)      --include execution details
+    ,('ED'      ,'EXECUTION_DETAILS'    ,NULL)      --include execution details
+    ,('LT'      ,'LT'                   ,NULL)      --Use Local Time
+    ,('LT'      ,'LOCAL_TIME'           ,NULL)      --Use Local Time
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -461,7 +470,7 @@ SELECT
                 ELSE NULL
             END AS DurationDate
 	    FROM OPBase OP
-        LEFT JOIN @valModifiers VM ON (OP.Modifier = VM.Modifier AND VM.LeftChars IS NULL) OR (LEFT(OP.Modifier, VM.LeftChars) = VM.Modifier)
+        LEFT JOIN @valModifiers VM ON (OP.Modifier = VM.Modifier AND VM.LeftChars IS NULL) OR (LEFT(OP.Modifier, VM.LeftChars) = VM.Modifier AND OP.Modifier NOT IN (N'LT'))
     )
     INSERT INTO @opValData(Modifier, ValModifier, Val, DateVal, IntVal, StrVal, DurationDate)
     SELECT
@@ -486,9 +495,68 @@ SELECT
             )
             OR
             OP.ValModifier IS NULL AND OP.Val IS NOT NULL
-       )
+       );
 
-    --Check if we have a help modifier
+
+    IF EXISTS(SELECT 1 FROM @opValData WHERE Val = N'DBG')
+    BEGIN
+        SET @debugLevel = ISNULL(NULLIF((SELECT MAX(IntVal) FROM @opValData WHERE Val = N'DBG'), 0), 1)
+        
+        if(@debugLevel > 1)
+            SELECT '@opValData' AS TableName, * FROM @opValData
+    END
+
+    IF @debugLevel > 4
+    BEGIN
+        WITH OPBase AS (
+            SELECT
+                NULLIF(LTRIM(RTRIM(n.value('.','nvarchar(128)'))), '') AS Modifier
+            FROM @xml.nodes('/i') T(N)
+	    ), Unknown AS (
+            SELECT DISTINCT
+                Modifier
+            FROM OPBase opb
+            EXCEPT
+            SELECT
+                Modifier
+            FROM  @opValData
+        )
+        SELECT
+            Modifier AS UnknownModifier
+        FROM Unknown        
+    END
+
+    --Check for unknown modifiers
+    DECLARE @unknownModifiers nvarchar(max) = NULL;
+    WITH OPBase AS (
+        SELECT
+            NULLIF(LTRIM(RTRIM(n.value('.','nvarchar(128)'))), '') AS Modifier
+        FROM @xml.nodes('/i') T(N)
+	), Unknown AS (
+        SELECT DISTINCT
+            Modifier
+        FROM OPBase opb
+        EXCEPT
+        SELECT
+            Modifier
+        FROM  @opValData
+    )
+    SELECT @unknownModifiers = (
+    SELECT
+        N'
+'+ Modifier
+    FROM Unknown
+    WHERE Modifier IS NOT NULL AND Modifier <> N''
+    FOR XML PATH(N''))
+
+    IF NULLIF(@unknownModifiers, '') IS NOT NULL
+    BEGIN        
+        SET @help = 1
+        SET @unknownModifiers = REPLACE(@unknownModifiers, N'&#x0D;', NCHAR(13));
+        RAISERROR(N'There are unknown modifiers specified: %s
+        ', 11, 0, @unknownModifiers) WITH NOWAIT;
+    END
+    ELSE --Check if we have a help modifier
     IF EXISTS(SELECT 1 FROM @opValData WHERE Val = '?')
         SET @help = 1            
 
@@ -538,16 +606,8 @@ BEGIN
             )
     GROUP BY Val
 
-    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'DBG')
-    BEGIN
-        SET @debugLevel = ISNULL(NULLIF((SELECT MaxIntVal FROM @opVal WHERE Val = N'DBG'), 0), 1)
-        
-        if(@debugLevel > 1)
-            SELECT '@opValData' AS TableName, * FROM @opValData
-
-        if (@debugLevel > 0)
-            SELECT '@opVal' AS TableName,  * FROM @opVal
-    END
+    IF (@debugLevel > 0)
+        SELECT '@opVal' AS TableName,  * FROM @opVal
 
     IF EXISTS(SELECT 1 FROM @opValData WHERE Val IS NULL) 
     BEGIN
@@ -648,6 +708,19 @@ BEGIN
                 SET @useX86 = 0
         END
     END
+
+    --Add milliseconds duraiton
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'MS')
+    BEGIN
+        SET @duration_ms = 1
+    END
+
+    --Local TIme
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'LT')
+    BEGIN
+        SET @localTime = 1
+    END
+
 END
 
 IF @help <> 1
@@ -928,10 +1001,18 @@ BEGIN
         RAISERROR(N'   - default Last %d operations', 0, 0, @opLastCnt) WITH NOWAIT;
     END
 
+
+    --Include parameters
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN  (N'ED', N'PM'))
+    BEGIN
+        SET @execDetails   = 1
+        RAISERROR(N'   - Including Execution Details', 0, 0) WITH NOWAIT;
+    END
     --Include parameters
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'PM')
     BEGIN
         SET @includeParams = 1
+        SET @execDetails   = 1
         RAISERROR(N'   - Including Execution Paramteres in details', 0, 0) WITH NOWAIT;
     END
 
@@ -1033,6 +1114,31 @@ BEGIN
 
     /* END PROCESS MESSAGE TYPES */
 
+    /* PROCES MESSAGE FILTERS */
+    --Messsage Filters
+    SET @xml = N'<i>' + REPLACE(@msg_filter, N',', @xr) + N'</i>'
+
+    CREATE TABLE #msg_filters (
+            filter     nvarchar(4000) COLLATE DATABASE_DEFAULT
+        ,exclusive  bit
+    )
+
+    ;WITH FilterValues AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(n.value(N'.', 'nvarchar(50)'))) value
+        FROM @xml.nodes('/i') T(n)
+    )
+    INSERT INTO #msg_filters (filter, exclusive)
+    SELECT
+        CASE WHEN LEFT(value, 1) = '-' THEN RIGHT(value, LEN(value) -1) ELSE value END
+        ,CASE WHEN LEFT(value, 1) = '-' THEN 1 ELSE 0 END
+    FROM FilterValues
+
+    IF NULLIF(@msg_filter, N'') IS NOT NULL
+        RAISERROR(N'   - Using Message Filter(s): %s', 0, 0, @msg_filter) WITH NOWAIT;
+
+
+    /* END PROCES MESSAGE FILTERS */
 
     /* BEGIN PROCESS STATUSES */
     IF OBJECT_ID('tempdb..#statuses') IS NOT NULL
@@ -1202,7 +1308,7 @@ BEGIN
     ,@subcomponent_filter   nvarchar(max)   = NULL  - Comma separated list of sub-component LIKE filters. Used only for detailed results filtering
     ,@package_path          nvarchar(max)   = NULL  - Comma separated list of package_path LIKE filters. Used only for detailed results fitering
     ,@execution_path        nvarchar(max)   = NULL  - Comma separated list of execution_path LIKE filters. Used only for detailed results filtering
-    ,@msg_filter            nvarchar(max)   = NULL  - Comma separated list of message LIKE filters. Used only for detailed results filtering
+    ,@msg_filter            nvarchar(max)   = NULL  - Comma separated list of message LIKE filters. Used for detailed results filtering as well for filtering in-row event mesages.
     ,@src_component_name    nvarchar(max)   = NULL  - Comma separated list of source_component_name LIKE filters. Used only for detailed results filtering in execution_data_statistics
     ,@dst_component_name    nvarchar(max)   = NULL  - Comma separated list of destination_component_name LIKE filters. Used only for detailed results filtering in execution_data_statistics
     ', 0, 0) WITH NOWAIT
@@ -1247,9 +1353,12 @@ RAISERROR(N'
   STOPPED_BY(SB):xxxxxxxx   - Stopped By specifier. if provided then only operations which were stopped by user with provided name are returned. xxxxxxxx is string representing user name.
                               Multiple declarations can be specified to filter for multiple user names. Stopped by name suppors LIKE wildcards.
   (32B)IT                   - Filter only 32 bit executions
-  (64B)IT                   - Filter only 64 bit executions', 0, 0) WITH NOWAIT;
+  (64B)IT                   - Filter only 64 bit executions
+  MILLISECONDS(MS)          - Include duration in milliseconds (for Execution Component Phases it in nanoseconds)', 0, 0) WITH NOWAIT;
 
-RAISERROR(N'  PARAMS(PM)                - Include Execution Parameters in Execution Details. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
+RAISERROR(N'  LOCAL_TIME(LT)            - Use local time in the time-stamps
+  EXECUTION_DETAILS(ED)     - Include Execution Details
+  PARAMS(PM)                - Include Execution Parameters in Execution Details. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
   DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive data will be decrypted and the values provided
                               Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
                               to be able to decrypt sensitive information
@@ -1438,7 +1547,7 @@ Supports LIKE wildcards. Default NULL means filter is not applied.', 0, 0) WITH 
 RAISERROR(N'
 @msg_filter
 -----------
-Used only for detailed results filtering in VERBOSE mode.
+Used for detailed results filtering in VERBOSE mode as well as for filtering in-row event messages which are included by the EVENT_MESSAGES(ME) specifier.
 Comma separated list of filters which are applied on the message body.
 Supports LIKE filters. Default NULL means filter is not applied.
 ', 0, 0) WITH NOWAIT;
@@ -1468,7 +1577,7 @@ END
 SET @sql = CONVERT(nvarchar(max), N'
 WITH BaseOperations AS (
     SELECT
-        DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), CONVERT(datetime2(7), ''19000101''))) durationDate
+        DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(MINUTE, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())) / 1440, start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(MINUTE, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())) / 1440, CONVERT(datetime2(7), ''19000101''))) durationDate
         ,o.*
     FROM internal.operations o WITH(NOLOCK)' 
 +
@@ -1498,6 +1607,7 @@ Data AS (
         ,o.start_time
         ,o.end_time
         ,RIGHT(''     '' + CONVERT(nvarchar(5), DATEDIFF(DAY, 0, durationDate)) + ''d '', 6) + CONVERT(varchar(12), CONVERT(time, durationDate)) AS duration
+        ,CONVERT(bigint, DATEDIFF(DAY, CONVERT(datetime2(7), ''19000101''), durationDate)) * 86400000 + DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(DAY, ''19000101'', durationDate), ''19000101''), durationDate) AS duration_ms
         ,CASE o.[status]
             WHEN 1 THEN ''Created''
             WHEN 2 THEN ''Running''
@@ -1629,9 +1739,13 @@ SELECT
 N'
     ,d.rank
     ,d.row_no           AS r_no
-    ,d.start_time
-    ,d.end_time
-    ,d.duration
+    ,' + CASE WHEN @localTime = 1 THEN N'CONVERT(datetime2(7), d.start_time) AS start_time' ELSE N' d.start_time' END + N'
+    ,' + CASE WHEN @localTime = 1 THEN N'CONVERT(datetime2(7), d.end_time) AS end_time' ELSE N' d.end_time' END + N'
+    ,d.duration ' +
+    CASE
+        WHEN @duration_ms = 1 THEN N',d.duration_ms'
+        ELSE N''
+    END + N'
     ,d.status' +
     CASE WHEN @id IS NULL AND @includeMessages = 1 THEN N'
     ,(SELECT 
@@ -1668,7 +1782,11 @@ N'
         INNER JOIN internal.operation_messages om WITH(NOLOCK) ON om.operation_id = em.operation_id and om.operation_message_id = em.event_message_id 
         INNER JOIN #msgTypes mt ON mt.id = om.message_type
         WHERE 
-            em.operation_id = d.execution_id
+            em.operation_id = d.execution_id' +
+            CASE
+                WHEN NULLIF(@msg_filter, '') IS NOT NULL THEN  N' AND (EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 1))'
+                ELSE N''
+            END + N'
         ORDER BY om.message_time DESC, om.operation_message_id DESC
         FOR XML PATH(''event_message''), TYPE
         )
@@ -1685,7 +1803,10 @@ N'
 					ROW_NUMBER() OVER(ORDER BY start_time)  ''@no''
 					,res					AS ''@result''
 					,start_time				AS ''@start_time''
-					,duration				AS ''@duration''
+        ,CONVERT(nvarchar(5), DATEDIFF(DAY, 0, durationDate)) + ''d '' + CONVERT(varchar(12), CONVERT(time, durationDate)) AS ''@duration'' ' +
+        CASE WHEN  @duration_ms = 1 THEN N'
+        ,CONVERT(bigint, DATEDIFF(DAY, CONVERT(datetime2(7), ''19000101''), durationDate)) * 86400000 + DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(DAY, ''19000101'', durationDate), ''19000101''), durationDate) AS ''@duration_ms''
+         ' ELSE N'' END + N'    
 					,package_name			AS ''@package_name''
 					,result					AS ''@result_description''
 					,end_time				AS ''@end_time''
@@ -1720,7 +1841,13 @@ N'
 					,CONVERT(nvarchar(3), DATEDIFF(SECOND, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
 						CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 86400) + N''d '' +
 					CONVERT(nvarchar(8), CONVERT(time, DATEADD(SECOND, DATEDIFF(SECOND, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) % 86400, 0)))  duration
+						CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) % 86400, 0)))  duration 
+
+                    ,DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(MINUTE, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1440, es.start_time), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), DATEADD(DAY, DATEDIFF(MINUTE, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1400, CONVERT(datetime2(7), ''19000101''))) durationDate
+
 					,e.package_name              package_name
 
 					,CASE
@@ -1771,9 +1898,6 @@ N'
 							AND
 							(
                                 MM.start_time IS NULL
-								--es.start_time < MM.start_time 
-								--OR
-								--es.end_time > MM.end_time
 							)
 						)
 					)
@@ -2023,6 +2147,7 @@ FOR XML PATH(''Folder''), TYPE
         ELSE N''
     END
     +
+    CASE WHEN @execDetails = 1 THEN 
 N'
     ,(
     SELECT 
@@ -2061,10 +2186,10 @@ N'
             FROM internal.operation_os_sys_info os WITH(NOLOCK) 
             WHERE os.operation_id = d.execution_id
             FOR XML PATH(''os_info''), TYPE
-        ))                          ''Execution'' ' +
+        ))                          ''Execution'' ' 
+ELSE '' END +
 
-CASE WHEN @includeParams = 0 THEN N''
-ELSE N'
+CASE WHEN @execDetails = 1 AND @includeParams = 1 THEN N'
 
         ,(SELECT 
              [execution_parameter_id]     ''@id''
@@ -2104,7 +2229,9 @@ ELSE N'
         WHERE epv.execution_id = d.execution_id
         ORDER BY [object_type], [parameter_name]
         FOR XML PATH(''Parameter''), ROOT(''Parameters''), TYPE)'
+ELSE N''
 END +
+CASE WHEN @execDetails = 1 THEN
 N'
         ,(SELECT 
                [property_id]        ''@id''
@@ -2127,9 +2254,10 @@ N'
 
 
     FOR XML PATH(''execution_details''), TYPE
-    ) AS execution_details
+    ) AS execution_details '
+ELSE N'' END + N'
 
-    ,d.created_time
+    ,' + CASE WHEN @localTime = 1 THEN N'CONVERT(datetime2(7), d.created_time) AS created_time' ELSE N'd.created_time' END + N'
 ' +
     CASE
         WHEN @id IS NULL THEN N',''sp_ssisdb ''''V:'' + FORMAT(d.execution_ID, ''G'') + N'' PM ES:1000 EM:1000 EDS:1000 ECP:1000'''',@package = '''''''', @msg_type = '''''''', @event_filter = '''''''', @phase_filter = '''''''', @task_filter = '''''''',
@@ -2694,10 +2822,20 @@ BEGIN
     SET @sql = N'
 				SELECT
 					ROW_NUMBER() OVER(ORDER BY start_time)  package_no
+					,package_name
+                     ' +
+                    CASE WHEN @localTime = 1 THEN N'
+					,CONVERT(datetime2(7), start_time) AS start_time
+					,CONVERT(datetime2(7), end_time) As end_time
+                    '
+                    ELSE N'
 					,start_time
 					,end_time
-                    ,RIGHT(''     '' + CONVERT(nvarchar(5), DATEDIFF(DAY, 0, durationDate)) + ''d '', 6) + CONVERT(varchar(12), CONVERT(time, durationDate)) AS duration
-					,package_name
+                    ' END + N'
+                    ,RIGHT(''     '' + CONVERT(nvarchar(5), DATEDIFF(DAY, 0, durationDate)) + ''d '', 6) + CONVERT(varchar(12), CONVERT(time, durationDate)) AS duration' + 
+                    CASE WHEN @duration_ms = 1 THEN N'
+                    ,CONVERT(bigint, DATEDIFF(DAY, CONVERT(datetime2(7), ''19000101''), durationDate)) * 86400000 + DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(DAY, ''19000101'', durationDate), ''19000101''), durationDate) AS duration_ms'
+                    ELSE N'' END + N'
 					,result
 					,result_code
                     ,status_info
@@ -2730,10 +2868,10 @@ BEGIN
 					,es.start_time
 					,ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE NULL END)  end_time
 
-                    ,DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), es.start_time), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), DATEADD(DAY, DATEDIFF(day, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), CONVERT(datetime2(7), ''19000101''))) durationDate
+                    ,DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(MINUTE, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1440, es.start_time), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), DATEADD(DAY, DATEDIFF(MINUTE, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1400, CONVERT(datetime2(7), ''19000101''))) durationDate
 					,e.package_name              package_name
 
 					,CASE
@@ -2843,7 +2981,7 @@ BEGIN
             WITH ExecStat AS (
                 SELECT
                     *
-                    ,DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(day, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())), CONVERT(datetime2(3), ''19000101''))) durationDate
+                    ,DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(MINUTE, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())) / 1440, start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(MINUTE, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())) / 1400, CONVERT(datetime2(3), ''19000101''))) durationDate
                 FROM [internal].[executable_statistics] WITH(NOLOCK)
                 WHERE execution_id = @id '+
                 CASE
@@ -2856,12 +2994,19 @@ BEGIN
                 es.[statistics_id]
                 ,e.package_name
                 ,e.package_path
-                ,es.[execution_path]
+                ,es.[execution_path] ' +
+                CASE WHEN @localTime = 1  THEN N'
+                ,CONVERT(datetime2(7), es.[start_time]) AS [start_time]
+                ,CONVERT(datetime2(7), es.[end_time]) AS [end_time]'
+                ELSE N'
                 ,es.[start_time]
-                ,es.[end_time]
+                ,es.[end_time] '
+                END + N'
                 ,FORMAT(es.[execution_duration] / 86400000, ''##0\d '') +
-                CONVERT(nchar(12), CONVERT(time, DATEADD(MILLISECOND, es.[execution_duration] % 86400000, CONVERT(datetime2, ''1900-01-01'')))) AS duration
-                ,es.[execution_duration] AS duration_ms
+                CONVERT(nchar(12), CONVERT(time, DATEADD(MILLISECOND, es.[execution_duration] % 86400000, CONVERT(datetime2, ''19000101'')))) AS duration ' +
+                CASE WHEN @duration_ms = 1 THEN N'
+                ,es.[execution_duration] AS duration_ms '
+                ELSE N'' END + N'
                 ,CASE es.execution_result
                     WHEN 0 THEN N''Success''
                     WHEN 1 THEN N''Failure''
@@ -3076,26 +3221,6 @@ BEGIN
 
         END
 
-            --Messsage Filters
-            SET @xml = N'<i>' + REPLACE(@msg_filter, N',', @xr) + N'</i>'
-
-            CREATE TABLE #msg_filters (
-                 filter     nvarchar(4000) COLLATE DATABASE_DEFAULT
-                ,exclusive  bit
-            )
-
-            ;WITH FilterValues AS (
-                SELECT DISTINCT
-                    LTRIM(RTRIM(n.value(N'.', 'nvarchar(50)'))) value
-                FROM @xml.nodes('/i') T(n)
-            )
-            INSERT INTO #msg_filters (filter, exclusive)
-            SELECT
-                CASE WHEN LEFT(value, 1) = '-' THEN RIGHT(value, LEN(value) -1) ELSE value END
-                ,CASE WHEN LEFT(value, 1) = '-' THEN 1 ELSE 0 END
-            FROM FilterValues
-
-
 
             SET @sql = CONVERT(nvarchar(max), N'
             SELECT ' + CASE WHEN @max_messages IS NOT NULL THEN N'TOP (@max_messages)' ELSE N'' END + N'
@@ -3103,8 +3228,8 @@ BEGIN
                 ,em.package_name
                 ,em.message_source_name                     AS source_name
                 ,em.subcomponent_name
-                ,em.event_name
-                ,om.message_time
+                ,em.event_name ' +
+                CASE WHEN @localTime = 1 THEN N',CONVERT(datetime2(7), om.message_time) AS message_time' ELSE N',om.message_time' END + N'
                 ,CASE om.message_type
                     WHEN 120 THEN N''ERROR''
                     WHEN 110 THEN N''WARNING''
@@ -3320,8 +3445,8 @@ BEGIN
 
         SET @sql = N'
             SELECT ' + CASE WHEN @edsRows IS NOT NULL THEN N' TOP (@edsRows) ' ELSE N'' END + N'
-                 eds.[data_stats_id]
-                ,eds.[created_time]
+                 eds.[data_stats_id] ' +
+                 CASE WHEN @localTime = 1 THEN N',CONVERT(datetime2(7), eds.[created_time]) AS [created_time]' ELSE ',eds.[created_time]' END + N'                
                 ,eds.[package_name]
                 ,eds.[task_name]
                 ,eds.[rows_sent]
@@ -3332,7 +3457,7 @@ BEGIN
                 ,eds.[execution_path]
                 ,eds.[package_path_full]
                 ,eds.[package_location_type]
-              FROM [SSISDB].[internal].[execution_data_statistics] eds WITH(NOLOCK) 
+              FROM [internal].[execution_data_statistics] eds WITH(NOLOCK) 
     ' +
         CASE 
             WHEN @pkgFilter = 1 THEN N' INNER JOIN #packages pkg ON pkg.package_name = eds.package_name'
@@ -3573,10 +3698,19 @@ BEGIN
             ,[package_name]
             ,[task_name]
             ,[subcomponent_name]
-            ,[phase]
+            ,[phase] ' +
+            CASE WHEN @localTime = 1 THEN N'
+            ,CONVERT(datetime2(7), [start_time]) AS [start_time]
+            ,CONVERT(datetime2(7), [end_time]) AS [end_time]'
+            ELSE  N'
             ,[start_time]
-            ,[end_time]
-            ,CONVERT(time, [durationDate]) AS [duration]
+            ,[end_time]'
+            END + N'
+            ,CASE WHEN durationDate >= ''19000102'' THEN CONVERT(varchar(3), DATEDIFF(DAY, ''19000101'', durationDate)) + ''d '' + CONVERT(varchar(16),  CONVERT(time, [durationDate])) ELSE CONVERT(varchar(16),  CONVERT(time, [durationDate])) END AS [duration] ' +
+            CASE WHEN @duration_ms = 1 THEN N'
+            ,CONVERT(bigint, DATEDIFF(SECOND, CONVERT(datetime2(7), ''19000101''), durationDate)) * 1000000000 +
+             CONVERT(bigint, DATEDIFF(NANOSECOND, DATEADD(SECOND, DATEDIFF(SECOND, CONVERT(datetime2(7), ''19000101''), durationDate), ''19000101''), durationDate)) AS [duration_ns]'
+             ELSE N'' END + N'
             ,[sequence]   
             ,[execution_path]
             ,[package_path]
