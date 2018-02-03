@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.71 (2018-02-02)
+sp_ssisdb v 0.72 (2018-02-03)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -211,14 +211,17 @@ DECLARE
     ,@duration_ms                       bit             = 0     --include duration in ms
     ,@execDetails                       bit             = 0     --include execution details
     ,@localTime                         bit             = 0     --Use LocalTime instead of the datetimeoffset
-    
+    ,@pkgSort                           smallint        = 0     --0 derfault start time sorting, 1 = name sorting, 2 = duration sorting, 3 = End time
+    ,@pkgSortDesc                       bit             = 1     --1 default sort descending 0 = ascending     
+    ,@pkgSortStr                        nvarchar(max)
+
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
             SET @sensitiveAccess = 1
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.71 (2018-02-02) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.72 (2018-02-03) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -330,7 +333,11 @@ VALUES
     ,('ED'      ,'ED'                   ,NULL)      --include execution details
     ,('ED'      ,'EXECUTION_DETAILS'    ,NULL)      --include execution details
     ,('LT'      ,'LT'                   ,NULL)      --Use Local Time
-    ,('LT'      ,'LOCAL_TIME'           ,NULL)      --Use Local Time
+    ,('LT'      ,'LOCAL_TIME'           ,NULL)      --Use Local Time    
+    ,('SP'      ,'SP:'                  ,3)         --Sort Packages
+    ,('SP'      ,'SORT_PACKAGES:'       ,14)        --Sort Packages
+    ,('FP'      ,'FP'                   ,NULL)      --Filter Pacakges
+    ,('FP'      ,'FILTER_PACKAGES'      ,NULL)      --Filter Pacakges
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -402,7 +409,7 @@ SELECT
              OPERATION Retrieval 
     ====================================*/
                                          --replacing [<] with &lt; as [<] is illegal in xml building
-	SET @xml = N'<i>' + REPLACE(REPLACE(REPLACE(@op, N'<', N'&lt;') , N' ', @xr), N',', @xr) + N'</i>'
+	SET @xml = N'<i>' + REPLACE(REPLACE(@op, N'<', N'&lt;') , N' ', @xr) + N'</i>'
 
 	DECLARE @opVal TABLE (	--Operation Validities
 		Val			    varchar(10) NOT NULL PRIMARY KEY CLUSTERED
@@ -470,7 +477,7 @@ SELECT
                 ELSE NULL
             END AS DurationDate
 	    FROM OPBase OP
-        LEFT JOIN @valModifiers VM ON (OP.Modifier = VM.Modifier AND VM.LeftChars IS NULL) OR (LEFT(OP.Modifier, VM.LeftChars) = VM.Modifier AND OP.Modifier NOT IN (N'LT'))
+        LEFT JOIN @valModifiers VM ON (OP.Modifier = VM.Modifier AND VM.LeftChars IS NULL) OR (LEFT(OP.Modifier, VM.LeftChars) = VM.Modifier AND OP.Modifier NOT IN (N'LT', N'SP'))
     )
     INSERT INTO @opValData(Modifier, ValModifier, Val, DateVal, IntVal, StrVal, DurationDate)
     SELECT
@@ -523,7 +530,9 @@ SELECT
         )
         SELECT
             Modifier AS UnknownModifier
-        FROM Unknown        
+        FROM Unknown
+
+
     END
 
     --Check for unknown modifiers
@@ -721,6 +730,113 @@ BEGIN
         SET @localTime = 1
     END
 
+    --Sort Packages
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'SP')
+    BEGIN
+        DECLARE @pkgSorts TABLE (
+            val nvarchar(128)
+        )
+        DECLARE 
+            @pkgMultiSort bit = 0
+            ,@pkgOrdSpec bit = 0
+
+        IF (SELECT OPValCount FROM @opVal WHERE Val = N'SP') > 1
+        BEGIN
+            RAISERROR(N'Multiple Sort Packages modifiers specified', 11, 0) WITH NOWAIT;
+            SET @help = 1
+        END
+        ELSE
+        BEGIN
+            SELECT @pkgSortStr = NULLIF(StrVal, N'') FROM @opValData WHERE Val = 'SP';
+            IF @pkgSortStr IS NULL
+            BEGIN
+                RAISERROR(N'No Sort Order specifies for the Sort Pacakges Modifier', 11, 0) WITH NOWAIT;
+                SET @help = 1;
+            END
+            ELSE
+            BEGIN
+                SET @xml = '<i>' + REPLACE(@pkgSortStr, ',', @xr) + '</i>';
+                WITH Sorts AS (
+                    SELECT DISTINCT
+                        RTRIM(LTRIM(N.value('.', 'nvarchar(128)'))) val
+                    FROM @xml.nodes('i') T(N)
+                )
+                INSERT INTO @pkgSorts(val)
+                SELECT
+                    val
+                FROM Sorts;
+
+                SET @pkgSortStr = NULL;
+                SET @pkgSortStr = STUFF((
+                SELECT
+                    ', ' + val
+                FROM @pkgSorts
+                WHERE
+                    UPPER(val) NOT IN (N'N', N'NAME', N'D', N'DUR', N'DURATION', N'E', N'END', N'END_TIME', N'R', 'RES', 'RESULT', N'RC', 'RES_CODE', 'RESULT_CODE', N'A', N'ASC', N'ASCENDING', N'DESC', N'DESCENDING')
+                FOR XML PATH('')), 1, 2, '');
+                
+                IF @pkgSortStr IS NOT NULL
+                BEGIN
+                    RAISERROR (N'Unknown Package Sort Order Specifiers: %s', 11, 0, @pkgSortStr) WITH NOWAIT;
+                    SET @help = 1
+                END
+                ELSE
+                BEGIN                
+                    IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'N', N'NAME'))
+                        SET @pkgSort = 1;
+                    IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'D', N'DUR', N'DURATION'))
+                    BEGIN
+                        IF @pkgSort <> 0 
+                            SET @pkgMultiSort = 1;
+                        ELSE 
+                            SET @pkgSort = 2;
+                    END
+                    IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'E', N'END', N'END_TIME'))
+                    BEGIN
+                        IF @pkgSort <> 0 
+                            SET @pkgMultiSort = 1;
+                        ELSE 
+                            SET @pkgSort = 3;
+                    END
+                    IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'R', 'RES', 'RESULT'))
+                    BEGIN
+                        IF @pkgSort <> 0 
+                            SET @pkgMultiSort = 1;
+                        ELSE 
+                            SET @pkgSort = 4;
+                    END
+                    IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'RC', 'RES_CODE', 'RESULT_CODE'))
+                    BEGIN
+                        IF @pkgSort <> 0 
+                            SET @pkgMultiSort = 1;
+                        ELSE 
+                            SET @pkgSort = 5;
+                    END
+
+
+                    IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'A', N'ASC', N'ASCENDING'))
+                    BEGIN
+                        SET @pkgSortDesc = 0;
+                        SET @pkgOrdSpec = 1;
+                    END
+                    IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'DESC', N'DESCENDING'))
+                    BEGIN
+                        IF @pkgOrdSpec = 1
+                            SET @pkgMultiSort = 1;
+                        ELSE
+                            SET @pkgSortDesc = 1;
+                    END
+
+                    IF @pkgMultiSort = 1
+                    BEGIN
+                        RAISERROR(N'Multiple Sort Package Sort Orders defined for packages Sort', 11, 0) WITH NOWAIT;
+                        SET @help = 1
+                    END
+                END
+            END
+        END
+    END
+
 END
 
 IF @help <> 1
@@ -757,8 +873,20 @@ BEGIN
             SET @id = (SELECT MaxIntVal FROM @opVal WHERE Val = 'V')
             IF @id <= 1
                 SET @id = (SELECT MAX(execution_id) FROM internal.executions)
+            RAISERROR(N' - Verbose information for execution_id = %I64d', 0, 0, @id)
 
-            RAISERROR(N'   - Verbose information for execution_id = %I64d', 0, 0, @id)
+
+            SET @msg = CASE WHEN @pkgSortDesc = 1 THEN 'Descending' ELSE 'Ascending' END;
+            SET @pkgSortStr = CASE @pkgSort 
+                                WHEN 1 THEN N'package_name'
+                                WHEN 2 THEN N'duration'
+                                WHEN 3 THEN N'end_time'
+                                WHEN 4 THEN N'result'
+                                WHEN 5 THEN N'result_code'
+                                ELSE 'start_time'
+                              END
+            RAISERROR(N'   - Sorting Executed Packages by: %s %s', 0, 0, @pkgSortStr, @msg) WITH NOWAIT;    
+
 
             IF @id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM internal.operations WHERE operation_id = @id)
             BEGIN
@@ -980,6 +1108,16 @@ BEGIN
     BEGIN
         SET @includeExecPackages = 1;
         RAISERROR(N' - Including information about executed packages', 0, 0) WITH NOWAIT;
+        SET @msg = CASE WHEN @pkgSortDesc = 1 THEN 'Descending' ELSE 'Ascending' END;
+        SET @pkgSortStr = CASE @pkgSort 
+                                WHEN 1 THEN N'package_name'
+                                WHEN 2 THEN N'duration'
+                                WHEN 3 THEN N'end_time'
+                                WHEN 4 THEN N'result'
+                                WHEN 5 THEN N'result_code'
+                                ELSE 'start_time'
+                          END
+        RAISERROR(N'   - Sorting Packages by: %s %s', 0, 0, @pkgSortStr, @msg) WITH NOWAIT;    
     END
 
     /* General Params processing */  
@@ -1054,7 +1192,7 @@ BEGIN
         SET @useStartTime = 1;
 
         SET @msg = CASE WHEN @useTimeDescending = 0 THEN 'Ascending' ELSE N'Descending' END
-        RAISERROR(N'   - Sort by Start Time %s', 0, 0, @msg) WITH NOWAIT;
+        RAISERROR(N' - Sort by Start Time %s', 0, 0, @msg) WITH NOWAIT;
     END 
     ELSE IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'ET')
     BEGIN
@@ -1063,7 +1201,7 @@ BEGIN
 
         SET @useEndTime = 1;
         SET @msg = CASE WHEN @useTimeDescending = 0 THEN 'Ascending' ELSE N'Descending' END
-        RAISERROR(N'   - Sort by End Time %s', 0, 0, @msg) WITH NOWAIT;
+        RAISERROR(N' - Sort by End Time %s', 0, 0, @msg) WITH NOWAIT;
     END
     ELSE
     BEGIN
@@ -1071,7 +1209,7 @@ BEGIN
             SET @useTimeDescending = 0;
 
         SET @msg = CASE WHEN @useTimeDescending = 0 THEN 'Ascending' ELSE N'Descending' END
-        RAISERROR(N'   - Sort by Create Time %s', 0, 0, @msg) WITH NOWAIT;
+        RAISERROR(N' - Sort by Create Time %s', 0, 0, @msg) WITH NOWAIT;
     END
 
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'X')
@@ -1106,7 +1244,7 @@ BEGIN
 
     IF @includeMessages = 1
     BEGIN
-        SET @msg = N'   - Including Event Messages... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @max_messages), N'All') + N' rows)';
+        SET @msg = N' - Including Event Messages... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @max_messages), N'All') + N' rows)';
         IF  (@msgTypeFilter = 1)
             SET @msg = @msg + N' (' + STUFF((SELECT ', ' + m.msg FROM #msgTypes m FOR XML PATH('')), 1, 2, '') + N')';
         RAISERROR(@msg, 0, 0) WITH NOWAIT;
@@ -1135,7 +1273,7 @@ BEGIN
     FROM FilterValues
 
     IF NULLIF(@msg_filter, N'') IS NOT NULL
-        RAISERROR(N'   - Using Message Filter(s): %s', 0, 0, @msg_filter) WITH NOWAIT;
+        RAISERROR(N' - Using Message Filter(s): %s', 0, 0, @msg_filter) WITH NOWAIT;
 
 
     /* END PROCES MESSAGE FILTERS */
@@ -1903,7 +2041,16 @@ N'
 					)
 		) EPD
 		WHERE EPD.pno = 1
-		ORDER BY ''@no'' DESC
+        ORDER BY ' +
+        CASE @pkgSort
+            WHEN 1 THEN N'package_name'
+            WHEN 2 THEN N'durationDate'
+            WHEN 3 THEN N'end_time'
+            WHEN 4 THEN N'result'
+            WHEN 5 THEN N'result_code'
+          ELSE N'''@no'''
+        END + 
+        CASE WHEN @pkgSortDesc = 1 THEN N' DESC' ELSE ' ASC' END + N'        
         FOR XML PATH(''package''), TYPE)
     FOR XML PATH(''executed_packages''), TYPE
     ) AS executed_packages
@@ -2936,8 +3083,16 @@ BEGIN
             WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (start_time' END +' > @fromTZ)'
             ELSE N''
             END + N'
-		ORDER BY package_no DESC
-';
+		ORDER BY ' +
+        CASE @pkgSort
+            WHEN 1 THEN N'package_name'
+            WHEN 2 THEN N'durationDate'
+            WHEN 3 THEN N'end_time'
+            WHEN 4 THEN N'result'
+            WHEN 5 THEN N'result_code'
+          ELSE N'package_no'  
+        END + 
+        CASE WHEN @pkgSortDesc = 1 THEN N' DESC' ELSE ' ASC' END;
 
 
         IF @debugLevel > 3 
