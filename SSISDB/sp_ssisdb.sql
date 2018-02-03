@@ -213,7 +213,8 @@ DECLARE
     ,@localTime                         bit             = 0     --Use LocalTime instead of the datetimeoffset
     ,@pkgSort                           smallint        = 0     --0 derfault start time sorting, 1 = name sorting, 2 = duration sorting, 3 = End time
     ,@pkgSortDesc                       bit             = 1     --1 default sort descending 0 = ascending     
-    ,@pkgSortStr                        nvarchar(max)
+    ,@pkgSortStr                        nvarchar(max)   = NULL
+    ,@filterPkg                         bit             = 0
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -737,8 +738,9 @@ BEGIN
             val nvarchar(128)
         )
         DECLARE 
-            @pkgMultiSort bit = 0
-            ,@pkgOrdSpec bit = 0
+            @pkgMultiSort   bit = 0
+            ,@pkgOrdSpec    bit = 0
+            ,@pkgSortSpec   bit = 0
 
         IF (SELECT OPValCount FROM @opVal WHERE Val = N'SP') > 1
         BEGIN
@@ -772,7 +774,7 @@ BEGIN
                     ', ' + val
                 FROM @pkgSorts
                 WHERE
-                    UPPER(val) NOT IN (N'N', N'NAME', N'D', N'DUR', N'DURATION', N'E', N'END', N'END_TIME', N'R', 'RES', 'RESULT', N'RC', 'RES_CODE', 'RESULT_CODE', N'A', N'ASC', N'ASCENDING', N'DESC', N'DESCENDING')
+                    UPPER(val) NOT IN (N'N', N'NAME', N'D', N'S', N'START', N'START_TIME', N'DUR', N'DURATION', N'E', N'END', N'END_TIME', N'R', 'RES', 'RESULT', N'RC', 'RES_CODE', 'RESULT_CODE', N'A', N'ASC', N'ASCENDING', N'DESC', N'DESCENDING')
                 FOR XML PATH('')), 1, 2, '');
                 
                 IF @pkgSortStr IS NOT NULL
@@ -783,34 +785,49 @@ BEGIN
                 ELSE
                 BEGIN                
                     IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'N', N'NAME'))
+                    BEGIN
                         SET @pkgSort = 1;
+                        SET @pkgSortSpec = 1
+                    END
+                    IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'S', N'START', N'START_TIME'))
+                    BEGIN
+                        IF @pkgSortSpec <> 0 
+                            SET @pkgMultiSort = 1;
+                        ELSE 
+                            SET @pkgSort = 0;
+                        SET @pkgSortSpec = 1
+                    END
                     IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'D', N'DUR', N'DURATION'))
                     BEGIN
-                        IF @pkgSort <> 0 
+                        IF @pkgSortSpec <> 0 
                             SET @pkgMultiSort = 1;
                         ELSE 
                             SET @pkgSort = 2;
+                        SET @pkgSortSpec = 1
                     END
                     IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'E', N'END', N'END_TIME'))
                     BEGIN
-                        IF @pkgSort <> 0 
+                        IF @pkgSortSpec <> 0 
                             SET @pkgMultiSort = 1;
                         ELSE 
                             SET @pkgSort = 3;
+                        SET @pkgSortSpec = 1
                     END
                     IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'R', 'RES', 'RESULT'))
                     BEGIN
-                        IF @pkgSort <> 0 
+                        IF @pkgSortSpec <> 0 
                             SET @pkgMultiSort = 1;
                         ELSE 
                             SET @pkgSort = 4;
+                        SET @pkgSortSpec = 1
                     END
                     IF EXISTS(SELECT 1 FROM @pkgSorts WHERE UPPER(val) IN (N'RC', 'RES_CODE', 'RESULT_CODE'))
                     BEGIN
-                        IF @pkgSort <> 0 
+                        IF @pkgSortSpec <> 0 
                             SET @pkgMultiSort = 1;
                         ELSE 
                             SET @pkgSort = 5;
+                        SET @pkgSortSpec = 1
                     END
 
 
@@ -887,7 +904,6 @@ BEGIN
                               END
             RAISERROR(N'   - Sorting Executed Packages by: %s %s', 0, 0, @pkgSortStr, @msg) WITH NOWAIT;    
 
-
             IF @id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM internal.operations WHERE operation_id = @id)
             BEGIN
                 RAISERROR(N'   << No Executable statistics were found for execution_id = %I64d >>' , 0, 0, @id) WITH NOWAIT;
@@ -943,6 +959,13 @@ BEGIN
                 SET @msg = CASE WHEN @edsRows IS NULL THEN N'' ELSE N' (last ' + CONVERT(nvarchar(10), @execRows) + N' rows)' END
                 RAISERROR(N'   - Including Executable Statistics%s', 0, 0, @msg) WITH NOWAIT;
             END
+
+            --Filter Executed packages
+            IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'FP')
+            BEGIN
+                SET @filterPkg = 1
+            END
+
         END 
         ELSE 
         BEGIN /*Non Verbose Params processing */
@@ -1397,22 +1420,24 @@ BEGIN
         SELECT DISTINCT
             pkg.name
         FROM internal.packages pkg
-        --INNER JOIN internal.projects prj ON prj.project_id = pkg.project_id --AND prj.object_version_lsn = pkg.project_version_lsn
-        --INNER JOIN internal.folders f ON f.folder_id = prj.folder_id
         INNER JOIN (SELECT LTRIM(RTRIM(n.value('.','nvarchar(260)'))) fld FROM @xml.nodes('/i') T(n)) T(name) ON pkg.name LIKE T.name AND LEFT(T.name, 1) <> '-'
         WHERE  @projId IS NULL OR pkg.project_version_lsn = @projId
         EXCEPT
         SELECT DISTINCT
             pkg.name
         FROM internal.packages pkg
-        --INNER JOIN internal.projects prj ON prj.project_id = pkg.project_id AND prj.object_version_lsn = pkg.project_version_lsn
-        --INNER JOIN internal.folders f ON f.folder_id = prj.folder_id
         INNER JOIN (SELECT LTRIM(RTRIM(n.value('.','nvarchar(260)'))) fld FROM @xml.nodes('/i') T(n)) T(name) ON pkg.name LIKE RIGHT(T.name, LEN(T.name) -1) AND LEFT(T.name, 1) = '-'
         WHERE  @projId IS NULL OR pkg.project_version_lsn = @projId
         
 
         IF EXISTS(SELECT 1 pkg FROM @xml.nodes('/i') T(n))
+        BEGIN
             SET @pkgFilter = 1
+            SET @msg = N' - Using Package Filter(s): ' + REPLACE(STUFF((SELECT DISTINCT ', ' + LTRIM(RTRIM(n.value('.','nvarchar(128)'))) FROM @xml.nodes('/i') T(n) FOR XML PATH('')), 1, 2, ''), N'%', N'%%')
+            RAISERROR(@msg, 0, 0) WITH NOWAIT;
+            IF @filterPkg = 1 AND (@includeExecPackages = 1 OR @id IS NOT NULL)
+                RAISERROR(N'   - Applying also on executed packages', 0, 0) WITH NOWAIT;
+        END
     END
     /* END Package Filter Processing */
 
@@ -1538,6 +1563,18 @@ RAISERROR(N'
   EXECUTED_PACKAGES (EP)                - Include information about executed packages per reult in the overview list. (Slow-downs the retrieval)
                                           In Verbose mode executed packages are always listed as separate result by default.
                                           When specified in Verbose mode then the executed_pacakges column is not filtered by other filters.
+  SORT_PACKAGES(SP):sss,ssss            - Sort Executed packages where the sss,ssss is comma separated list of the sort orders specifiers.
+                                          Only one specifier for column and one for order can be provided at a time.
+                                          Allowed sort order specifiers (:
+                                          S|START|START_TIME        = sort by start_time (default)
+                                          E|END|END_TIME            = sort by end_time
+                                          N|NAME                    = sort by name
+                                          D|DUR|DURATION            = sort by duration
+                                          R|RES|RESULT              = sort by result
+                                          RC|RES_CODE|RESULT_CODE   = sort by result_code
+                                          A|ASC|ASCENDING           = sort ascending
+                                          DESC|DESCENDING           = sort descending (default)
+  FILTER_PACKAGES(FP)                   - Apply @package filter also on Executed Packages list in the verbose mode.
   EXECUTABLE_STATISTICS(ES):iiiii       - Include executablew statistics in the details verbose output.
                                           iiiii specifies max number of rows. If not provided then default 1000 rows are returned.
                                           iiiii < 0 = All rows are returned and is the same as not including the keyword
@@ -3046,7 +3083,12 @@ BEGIN
 					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END, -9999)      result_code
                 FROM internal.operations d WITH(NOLOCK)
 				INNER JOIN internal.executable_statistics es WITH(NOLOCK) ON es.execution_id = d.operation_id 
-				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id
+				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id ' + 
+                CASE
+                    WHEN @pkgFilter = 1 AND @filterPkg = 1THEN ' INNER JOIN #packages pkg ON pkg.package_name = e.package_name'
+                    ELSE ''
+                END +                 
+                CONVERT(nvarchar(max), N'
 				LEFT JOIN  (
 				SELECT
 					 package_name 
@@ -3073,7 +3115,7 @@ BEGIN
 						)
 					)
 		) EPD
-		WHERE EPD.pno = 1 ' +
+		WHERE EPD.pno = 1 ') +
         CASE
             WHEN @durationCondition IS NOT NULL THEN N' AND ' + @durationCondition
             ELSE N''
