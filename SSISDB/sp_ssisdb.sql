@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.72 (2018-02-03)
+sp_ssisdb v 0.73 (2018-02-07)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -222,7 +222,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.72 (2018-02-03) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.73 (2018-02-07) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -1413,7 +1413,11 @@ BEGIN
         SET @xml = N'<i>' + REPLACE(@package, N',', N'</i><i>') + N'</i>'
 
         IF @id IS NOT NULL
-            SELECT @projId = (SELECT e.project_lsn FROM internal.executions e WHERE execution_id = @id)
+            SELECT @projId = (SELECT 
+                                e.project_lsn 
+                            FROM internal.executions e 
+                            INNER JOIN internal.object_versions ov ON ov.object_version_lsn = e.project_lsn
+                            WHERE execution_id = @id)
 
 
         INSERT INTO #packages(package_name)
@@ -1429,6 +1433,11 @@ BEGIN
         INNER JOIN (SELECT LTRIM(RTRIM(n.value('.','nvarchar(260)'))) fld FROM @xml.nodes('/i') T(n)) T(name) ON pkg.name LIKE RIGHT(T.name, LEN(T.name) -1) AND LEFT(T.name, 1) = '-'
         WHERE  @projId IS NULL OR pkg.project_version_lsn = @projId
         
+        IF @debugLevel > 4
+        BEGIN
+            SELECT '#packages' AS [#packages], * FROM #packages;
+        END
+
 
         IF EXISTS(SELECT 1 pkg FROM @xml.nodes('/i') T(n))
         BEGIN
