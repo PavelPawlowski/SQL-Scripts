@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.73 (2018-02-07)
+sp_ssisdb v 0.74 (2018-02-12)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -222,7 +222,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.73 (2018-02-07) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.74 (2018-02-12) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -1957,7 +1957,7 @@ N'
             ,em.package_path            ''package/@package_path''
             ,em.execution_path          ''package/@execution_path''
             ,em.package_location_type   ''package/@location_type''
-            ,''SELECT * FROM catalog.event_message_context WITH(NOLOCK) WHERE operation_id = '' + FORMAT(d.execution_id, ''G'') + '' AND event_message_id = '' + FORMAT(em.event_message_id, ''G'') ''message/context/@info''
+            ,''SELECT * FROM catalog.event_message_context WITH(NOLOCK) WHERE event_message_id = '' + FORMAT(em.event_message_id, ''G'') ''message/context/@info''
             --,om.message                 ''message/msg''
             ,CONVERT(xml, N''<?msg --
 '' + REPLACE(REPLACE(om.message, N''<?'', N''''), N''?>'', N'''') + N''
@@ -3462,7 +3462,7 @@ BEGIN
                 ,CASE WHEN om.message_type = 120 THEN
                 (
                 SELECT
-                    mc.context_depth    ''@depth''
+                    mc.context_depth                            ''@depth''
                     ,CASE mc.context_type
                         WHEN 10	THEN N''Task''
                         WHEN 20	THEN N''Pipeline''
@@ -3473,11 +3473,13 @@ BEGIN
                         WHEN 70	THEN N''Variable''
                         WHEN 80	THEN N''Connection manager''
                         ELSE N''Unknown''
-                    END                 ''@type_desc''
-                    ,mc.context_type    ''@type''
-                    ,mc.property_name   ''@property_name''
-                    ,CONVERT(xml, N''<?val -- '' + REPLACE(REPLACE(CONVERT(nvarchar(max), mc.property_value), N''<?'', N''''), N''?>'', N'''') + N''--?>'')
-                FROM internal.event_message_context mc WITH(NOLOCK) 
+                    END                                         ''@type_desc''
+                     ,mc.property_name                           ''@property_name''
+                    ,mc.context_source_name                     ''@source_name''
+                    ,mc.package_path                            ''@package_path''
+                    ,mc.context_type                            ''@type''
+                    ,CONVERT(xml, N''<?value -- '' + REPLACE(REPLACE(CONVERT(nvarchar(max), mc.property_value), N''<?'', N''''), N''?>'', N'''') + N''--?>'')
+                    FROM internal.event_message_context mc WITH(NOLOCK) 
                 WHERE mc.event_message_id = om.operation_message_id
                 FOR XML PATH(''context''), ROOT(''message_context''), TYPE
                 )
@@ -3503,40 +3505,49 @@ BEGIN
             FROM internal.operation_messages om WITH(NOLOCK)
             INNER JOIN internal.event_messages em WITH(NOLOCK) ON em.event_message_id = om.operation_message_id ') +
             CASE 
-                WHEN @pkgFilter = 1 THEN N' INNER JOIN #packages pkg ON pkg.package_name = em.package_name'
+                WHEN @pkgFilter = 1 THEN N'
+                 INNER JOIN #packages pkg ON pkg.package_name = em.package_name'
                 ELSE ''
             END + 
             CASE
-                WHEN @msgTypeFilter = 1 THEN N'INNER JOIN #msgTypes mt ON mt.id = om.message_type'
+                WHEN @msgTypeFilter = 1 THEN N'
+                 INNER JOIN #msgTypes mt ON mt.id = om.message_type'
                 ELSE N''
             END +
             CASE 
-                WHEN @taskFilter = 1 THEN N' INNER JOIN #tasks tf ON tf.task_name = em.message_source_name'
+                WHEN @taskFilter = 1 THEN N'
+                 INNER JOIN #tasks tf ON tf.task_name = em.message_source_name'
                 ELSE N''
             END +
             CASE 
-                WHEN @eventFilter = 1 THEN N' INNER JOIN #events ef ON ef.event_name = em.event_name'
+                WHEN @eventFilter = 1 THEN N'
+                 INNER JOIN #events ef ON ef.event_name = em.event_name'
                 ELSE N''
             END +
             CASE 
-                WHEN @subComponentFilter = 1 THEN N' INNER JOIN #subComponents cf ON cf.subcomponent_name = em.subcomponent_name'
+                WHEN @subComponentFilter = 1 THEN N'
+                 INNER JOIN #subComponents cf ON cf.subcomponent_name = em.subcomponent_name'
                 ELSE N''
             END + N'
             WHERE om.operation_id = @id' +
             CASE
-                WHEN @sourceFilter = 1 THEN N' AND (EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 1))'
+                WHEN @sourceFilter = 1 THEN N'
+                 AND (EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 1))'
                 ELSE N''
             END + 
             CASE
-                WHEN NULLIF(@execution_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #execution_paths f WHERE em.execution_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #execution_paths f WHERE em.execution_path LIKE f.filter AND f.exclusive = 1))'
+                WHEN NULLIF(@execution_path, '') IS NOT NULL THEN N'
+                 AND (EXISTS(SELECT 1 FROM #execution_paths f WHERE em.execution_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #execution_paths f WHERE em.execution_path LIKE f.filter AND f.exclusive = 1))'
                 ELSE N''
             END + 
             CASE
-                WHEN NULLIF(@msg_filter, '') IS NOT NULL THEN  N' AND (EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 1))'
+                WHEN NULLIF(@msg_filter, '') IS NOT NULL THEN  N'
+                 AND (EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 1))'
                 ELSE N''
             END +
             CASE
-                WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE em.package_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE em.package_path LIKE f.filter AND f.exclusive = 1))'
+                WHEN NULLIF(@package_path, '') IS NOT NULL THEN N'
+                 AND (EXISTS(SELECT 1 FROM #package_paths f WHERE em.package_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE em.package_path LIKE f.filter AND f.exclusive = 1))'
                 ELSE N''
             END +
             CASE
@@ -3573,6 +3584,8 @@ BEGIN
             IF @package_path IS NOT NULL
                 RAISERROR(N'                            - Using package_path Filter(s): %s', 0, 0, @package_path) WITH NOWAIT;
 
+            IF @debugLevel > 3
+                SELECT @sql AS [event_messages_query]
 
             EXEC sp_executesql @sql, N'@id bigint, @max_messages int, @execution_path nvarchar(max), @package_path nvarchar(max), @event_filter nvarchar(max), @msg_filter nvarchar(max), @fromTZ datetimeoffset, @toTZ datetimeoffset', 
                 @id, @max_messages, @execution_path, @package_path, @event_filter, @msg_filter, @opFromTZ, @opToTZ
