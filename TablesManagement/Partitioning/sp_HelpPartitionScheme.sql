@@ -4,7 +4,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
 	EXECUTE ('CREATE PROCEDURE [dbo].[sp_HelpPartitionScheme] AS BEGIN PRINT ''Container for [dbo].[sp_HelpPartitionScheme] (C) Pavel Pawlowski'' END')
 GO
 /* *******************************************************
-sp_HelpPartitionScheme v 0.51 (2017-10-30)
+sp_HelpPartitionScheme v 0.52 (2018-03-14)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -67,7 +67,7 @@ BEGIN
         ,@psID              int                 --ID of partition Function
         ,@partitionsCount   int                 --count of boundary values
 
-	SET @caption = N'sp_HelpPartitionScheme v 0.51 (2017-10-30) (C) 2014 - 2017 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+	SET @caption = N'sp_HelpPartitionScheme v 0.52 (2018-03-14) (C) 2014 - 2018 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
 				   N'==========================================================================';
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
 
@@ -186,7 +186,7 @@ CREATE TABLE #Results(
             WHEN pbd.LeftBoundary IS NULL AND pbd.RightBoundary IS NULL THEN '[NEXT_USED]'
             ELSE
                 RIGHT(REPLICATE(' ', MAX(LEN(LeftBoundaryStr)) OVER())
-                    + LeftBoundaryStr, LEN(MAX(LEN(LeftBoundaryStr)) OVER())
+                    + LeftBoundaryStr, MAX(LEN(LeftBoundaryStr)) OVER()
                  )
                 +
 		        CASE 
