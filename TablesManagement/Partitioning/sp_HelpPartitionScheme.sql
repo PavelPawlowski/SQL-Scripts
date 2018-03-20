@@ -4,7 +4,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
 	EXECUTE ('CREATE PROCEDURE [dbo].[sp_HelpPartitionScheme] AS BEGIN PRINT ''Container for [dbo].[sp_HelpPartitionScheme] (C) Pavel Pawlowski'' END')
 GO
 /* *******************************************************
-sp_HelpPartitionScheme v 0.52 (2018-03-14)
+sp_HelpPartitionScheme v 0.53 (2018-03-20)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -37,7 +37,8 @@ Description:
 
 Parameters:
      @psName            nvarchar(128)   = NULL  --Name of the partition scheme
-    ,@listDependencies  bit             = 1     --Specifies whether list dependencies of the partition scheme
+    ,@listDependencies  bit             = 0     --Specifies whether list dependencies of the partition scheme
+    ,@noInfoMsg         bit             = 0     --Disbles printing of header and informationals messages
 
 Result table schema:
 CREATE TABLE #Results(
@@ -58,6 +59,7 @@ CREATE TABLE #Results(
 ALTER PROCEDURE [dbo].[sp_HelpPartitionScheme]
      @psName            nvarchar(128)   = NULL  --Name of the partition scheme
     ,@listDependencies  bit             = 0     --Specifies whether list dependencies of the partition scheme
+    ,@noInfoMsg         bit             = 0     --Disbles printing of header and informationals messages
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -67,9 +69,12 @@ BEGIN
         ,@psID              int                 --ID of partition Function
         ,@partitionsCount   int                 --count of boundary values
 
-	SET @caption = N'sp_HelpPartitionScheme v 0.52 (2018-03-14) (C) 2014 - 2018 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
-				   N'==========================================================================';
-	RAISERROR(@caption, 0, 0) WITH NOWAIT;
+    IF @noInfoMsg = 0
+    BEGIN
+        SET @caption = N'sp_HelpPartitionScheme v 0.53 (2018-03-20) (C) 2014 - 2018 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+				       N'==========================================================================';
+    	RAISERROR(@caption, 0, 0) WITH NOWAIT;
+    END
 
 	--if partition function name is not provided, print Help
 	IF @psName IS NULL
@@ -120,7 +125,9 @@ CREATE TABLE #Results(
         RETURN;
     END;
 
-    RAISERROR(N'Retrieving information for partition scheme [%s]', 0, 0, @psName) WITH NOWAIT;
+    IF @noInfoMsg = 0
+        RAISERROR(N'Retrieving information for partition scheme [%s]', 0, 0, @psName) WITH NOWAIT;
+
     --Get partition information
     WITH PartitionBaseData AS (  --Get partition data
         SELECT
