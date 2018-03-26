@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.74 (2018-02-12)
+sp_ssisdb v 0.75 (2018-03-26)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -222,7 +222,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.74 (2018-02-12) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.75 (2018-03-16) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -3434,7 +3434,7 @@ BEGIN
                 ,em.package_name
                 ,em.message_source_name                     AS source_name
                 ,em.subcomponent_name
-                ,em.event_name ' +
+                ,em.event_name ') +
                 CASE WHEN @localTime = 1 THEN N',CONVERT(datetime2(7), om.message_time) AS message_time' ELSE N',om.message_time' END + N'
                 ,CASE om.message_type
                     WHEN 120 THEN N''ERROR''
@@ -3486,6 +3486,7 @@ BEGIN
                 ELSE NULL END
                 FOR XML PATH(''message''), TYPE)
                 as message
+
                 ,CASE om.message_source_type
                     WHEN 10 THEN ''Entry APIs (T-SQL, CRL stored procs etc)''
                     WHEN 20 THEN ''External process''
@@ -3495,6 +3496,7 @@ BEGIN
                     WHEN 60 THEN ''Data flow task''
                     ELSE ''Unknown''
                 END                                         AS source_type_desc
+
                 ,em.package_path
                 ,em.execution_path
                 ,em.message_source_id
@@ -3502,8 +3504,9 @@ BEGIN
                 ,om.message_source_type                     AS source_type
                 ,om.message_type                            AS message_type
                 ,em.threadID
+
             FROM internal.operation_messages om WITH(NOLOCK)
-            INNER JOIN internal.event_messages em WITH(NOLOCK) ON em.event_message_id = om.operation_message_id ') +
+            INNER JOIN internal.event_messages em WITH(NOLOCK) ON em.event_message_id = om.operation_message_id ' +
             CASE 
                 WHEN @pkgFilter = 1 THEN N'
                  INNER JOIN #packages pkg ON pkg.package_name = em.package_name'
@@ -3589,6 +3592,10 @@ BEGIN
 
             EXEC sp_executesql @sql, N'@id bigint, @max_messages int, @execution_path nvarchar(max), @package_path nvarchar(max), @event_filter nvarchar(max), @msg_filter nvarchar(max), @fromTZ datetimeoffset, @toTZ datetimeoffset', 
                 @id, @max_messages, @execution_path, @package_path, @event_filter, @msg_filter, @opFromTZ, @opToTZ
+
+            SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
+            RAISERROR(N'%s - Retrieval of Event Messages completed...', 0, 0, @tms) WITH NOWAIT;
+
         END
         ELSE
         BEGIN
