@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.75 (2018-03-26)
+sp_ssisdb v 0.76 (2018-07-09)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -214,7 +214,9 @@ DECLARE
     ,@pkgSort                           smallint        = 0     --0 derfault start time sorting, 1 = name sorting, 2 = duration sorting, 3 = End time
     ,@pkgSortDesc                       bit             = 1     --1 default sort descending 0 = ascending     
     ,@pkgSortStr                        nvarchar(max)   = NULL
-    ,@filterPkg                         bit             = 0
+    ,@filterPkg                         bit             = 0     --Specifies whether @packagte filter should be applied also on Executed Packagtes
+    ,@filterPkgStatus                   bit             = 0     --Specifies whether @status filter should be applied also on Executed Packages
+    ,@filterPkgStatusFilter             nvarchar(max)   = NULL  --contains list of executed packages status filters.
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -222,7 +224,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.75 (2018-03-16) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.76 (2018-07-09) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -339,6 +341,9 @@ VALUES
     ,('SP'      ,'SORT_PACKAGES:'       ,14)        --Sort Packages
     ,('FP'      ,'FP'                   ,NULL)      --Filter Pacakges
     ,('FP'      ,'FILTER_PACKAGES'      ,NULL)      --Filter Pacakges
+    ,('FPS'     ,'FPS'                  ,NULL)      --Filter Executed Pacakges status
+    ,('FPS'     ,'FPS:'                  ,4)        --Filter Executed Pacakges status
+    ,('FPS'      ,'FILTER_PACKAGES_STATUS:',23)     --Filter Executed Pacakges status
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -731,6 +736,13 @@ BEGIN
         SET @localTime = 1
     END
 
+    --Executed Packages Filter
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'FPS')
+    BEGIN
+         SELECT @filterPkgStatusFilter = NULLIF(StrVal, N'') FROM @opValData WHERE Val = 'FPS' AND StrVal <> 'FPS';
+         SET @filterPkgStatus = 1
+    END
+
     --Sort Packages
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'SP')
     BEGIN
@@ -969,10 +981,6 @@ BEGIN
         END 
         ELSE 
         BEGIN /*Non Verbose Params processing */
-            --Force  status filter according the @op param
-            IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U', 'C', 'PD', 'T', 'G', 'CD'))
-                SET @status = STUFF((SELECT ',' + Val FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U', 'C', 'PD', 'T', 'G', 'CD') FOR XML PATH('')), 1, 1, '');
-
             --Last XXX was specified
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN ('L'))
             BEGIN
@@ -1127,6 +1135,72 @@ BEGIN
 
         END /*Non Verbose Params processing */
 
+
+
+        /* BEGIN PROCESS STATUSES */
+        IF OBJECT_ID('tempdb..#statuses') IS NOT NULL
+            DROP TABLE #statuses;
+        CREATE TABLE #statuses (
+            id          int          NOT NULL PRIMARY KEY CLUSTERED
+            ,[status]   nvarchar(50) COLLATE DATABASE_DEFAULT
+        );
+
+        IF OBJECT_ID('tempdb..#EPstatuses') IS NOT NULL
+            DROP TABLE #EPstatuses;
+        CREATE TABLE #EPstatuses (
+            id          int          NOT NULL PRIMARY KEY CLUSTERED
+            ,[status]   nvarchar(50) COLLATE DATABASE_DEFAULT
+        );
+
+        --Force  status filter according the @op param
+        IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U', 'C', 'PD', 'T', 'G', 'CD'))
+            SET @status = STUFF((SELECT ',' + Val FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U', 'C', 'PD', 'T', 'G', 'CD') FOR XML PATH('')), 1, 1, '');
+
+        SET @xml = N'<i>' + REPLACE(REPLACE(@status, N',', @xr), N' ', @xr) + N'</i>';
+
+        INSERT INTO #statuses(id, [status])
+        SELECT DISTINCT
+            ast.id
+            ,ast.[status]
+        FROM @availStatuses ast
+        INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL'
+
+        --if there are some statuses selected but not all, then set status filter
+        IF @id IS NULL AND (SELECT COUNT(1) FROM #statuses) BETWEEN 1 AND 8
+        BEGIN
+            SET @statusFilter = 1
+            SET @msg = N' - Filtering for statuses: ' + STUFF((SELECT ', ' + s.status FROM #statuses s FOR XML PATH('')), 1, 2, '')
+            RAISERROR(@msg, 0, 0) WITH NOWAIT;
+        END    
+        
+        --Check if we have executed packages status filter
+        IF @filterPkgStatus = 1
+        BEGIN
+            IF @filterPkgStatusFilter IS NULL OR @filterPkgStatusFilter = N'' --if specific status filter was not provided use the @status filter
+            BEGIN
+                INSERT INTO #EPstatuses(id, [status]) SELECT id, [status] FROM #statuses;
+            END
+            ELSE    --process specific statuses
+            BEGIN
+                SET @xml = N'<i>' + REPLACE(REPLACE(@filterPkgStatusFilter, N',', @xr), N' ', @xr) + N'</i>'
+
+                INSERT INTO #EPstatuses(id, [status])
+                SELECT DISTINCT
+                    ast.id
+                    ,ast.[status]
+                FROM @availStatuses ast
+                INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL'
+            END
+
+            IF NOT((SELECT COUNT(1) FROM #EPstatuses) BETWEEN 1 AND 8)
+            BEGIN
+                SET @filterPkgStatus = 0
+            END
+        END              
+
+
+
+
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'EP')
     BEGIN
         SET @includeExecPackages = 1;
@@ -1140,9 +1214,15 @@ BEGIN
                                 WHEN 5 THEN N'result_code'
                                 ELSE 'start_time'
                           END
-        RAISERROR(N'   - Sorting Packages by: %s %s', 0, 0, @pkgSortStr, @msg) WITH NOWAIT;    
+        RAISERROR(N'   - Sorting Packages by: %s %s', 0, 0, @pkgSortStr, @msg) WITH NOWAIT;   
+        
+        IF @filterPkgStatus = 1
+        BEGIN
+            SET @msg = N'   - Filtering Executed Packages for statuses: ' + STUFF((SELECT ', ' + s.status FROM #EPstatuses s FOR XML PATH('')), 1, 2, '')
+            RAISERROR(@msg, 0, 0) WITH NOWAIT;        
+        END 
     END
-
+    
     /* General Params processing */  
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'AGR')
     BEGIN
@@ -1301,34 +1381,8 @@ BEGIN
 
     /* END PROCES MESSAGE FILTERS */
 
-    /* BEGIN PROCESS STATUSES */
-    IF OBJECT_ID('tempdb..#statuses') IS NOT NULL
-        DROP TABLE #statuses;
-    CREATE TABLE #statuses (
-        id          int          NOT NULL PRIMARY KEY CLUSTERED
-        ,[status]   nvarchar(50) COLLATE DATABASE_DEFAULT
-    )
-
-    SET @xml = N'<i>' + REPLACE(REPLACE(@status, N',', @xr), N' ', @xr) + N'</i>'
-
     IF @id IS NULL AND @help <> 1
-    BEGIN
-        INSERT INTO #statuses(id, [status])
-        SELECT DISTINCT
-            ast.id
-            ,ast.[status]
-        FROM @availStatuses ast
-        INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL'
-
-        --if there are some statuses selected but not all, then set status filter
-        IF (SELECT COUNT(1) FROM #statuses) BETWEEN 1 AND 8
-        BEGIN
-            SET @statusFilter = 1
-            SET @msg = N' - Filtering for statuses: ' + STUFF((SELECT ', ' + s.status FROM #statuses s FOR XML PATH('')), 1, 2, '')
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
-        END
-        /* END PROCESS STATUSES */
-    
+    BEGIN    
         /* START Folder Filters Processing */
         IF @folder IS NOT NULL
         BEGIN
@@ -1572,18 +1626,22 @@ RAISERROR(N'
   EXECUTED_PACKAGES (EP)                - Include information about executed packages per reult in the overview list. (Slow-downs the retrieval)
                                           In Verbose mode executed packages are always listed as separate result by default.
                                           When specified in Verbose mode then the executed_pacakges column is not filtered by other filters.
-  SORT_PACKAGES(SP):sss,ssss            - Sort Executed packages where the sss,ssss is comma separated list of the sort orders specifiers.
+  SORT_PACKAGES(SP):ccc,ooo             - Sort Executed packages where the ccc,ooo is comma separated list of the sort orders specifiers.
                                           Only one specifier for column and one for order can be provided at a time.
-                                          Allowed sort order specifiers (:
+                                          Allowed column specifiers (ccc):
                                           S|START|START_TIME        = sort by start_time (default)
                                           E|END|END_TIME            = sort by end_time
                                           N|NAME                    = sort by name
                                           D|DUR|DURATION            = sort by duration
                                           R|RES|RESULT              = sort by result
                                           RC|RES_CODE|RESULT_CODE   = sort by result_code
+
+                                          Allowed orders pecifiers (ooo):
                                           A|ASC|ASCENDING           = sort ascending
                                           DESC|DESCENDING           = sort descending (default)
   FILTER_PACKAGES(FP)                   - Apply @package filter also on Executed Packages list in the verbose mode.
+  FILTER_PACKAGES_STATUS(FPS):ssss      - Apply @status filter also on Executed Packages list
+                                          ssss is optional comma separated list of status filters. If Not Provided then the @status filter is being used.
   EXECUTABLE_STATISTICS(ES):iiiii       - Include executablew statistics in the details verbose output.
                                           iiiii specifies max number of rows. If not provided then default 1000 rows are returned.
                                           iiiii < 0 = All rows are returned and is the same as not including the keyword
@@ -1982,6 +2040,7 @@ N'
     ,(
         SELECT
             CASE WHEN d.status_code <= 2 THEN ''Incomplete Preliminary Information based on already executed tasks'' ELSE NULL END ''@status_info''
+            ,(STUFF((SELECT '', '' + s.status FROM #EPstatuses s FOR XML PATH('''')), 1, 2, '''')) ''@status_filter''
             ,(
 				SELECT
 					ROW_NUMBER() OVER(ORDER BY start_time)  ''@no''
@@ -2057,7 +2116,7 @@ N'
 					END                 AS result
 
 					,CONVERT(nvarchar(36), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE NULL END))  end_time
-					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END, -9999)      result_code
+					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE d.status_code END, -9999)      result_code
 				FROM internal.executable_statistics es WITH(NOLOCK)
 				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id
 				LEFT JOIN  (
@@ -2086,7 +2145,11 @@ N'
 						)
 					)
 		) EPD
-		WHERE EPD.pno = 1
+		WHERE EPD.pno = 1 ' + 
+        CASE WHEN @filterPkgStatus = 1 
+            THEN N' AND result_code IN (SELECT id FROM #EPStatuses)' 
+            ELSE N''
+        END + N'
         ORDER BY ' +
         CASE @pkgSort
             WHEN 1 THEN N'package_name'
@@ -3031,7 +3094,11 @@ BEGIN
                     ELSE N'' END + N'
 					,result
 					,result_code
-                    ,status_info
+                    ,status_info' +
+                    CASE 
+                        WHEN @filterPkgStatus = 1 OR (@pkgFilter = 1 AND @filterPkg = 1) THEN  N',additional_info'
+                        ELSE N''
+                    END + N'
 				FROM (
 				  SELECT
 					 ROW_NUMBER() OVER(PARTITION BY e.package_name ORDER BY CASE WHEN e.package_path = ''\Package'' THEN 0 ELSE 1 END ASC, es.start_time ASC) AS pno
@@ -3089,14 +3156,27 @@ BEGIN
 						ELSE N''Unknown''
 					END                 AS result
 
-					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END, -9999)      result_code
+					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE d.status END, -9999)      result_code ' +
+
+                    CASE 
+                        WHEN @filterPkgStatus = 1 OR (@pkgFilter = 1 AND @filterPkg = 1) THEN
+                            N', N' + QUOTENAME(STUFF((SELECT
+                                    N', ' + Info 
+                                FROM (
+                                    SELECT CASE WHEN @pkgFilter = 1 AND @filterPkg = 1 THEN N'PKG_FILTER' ELSE NULL END AS Info
+                                    UNION ALL
+                                    SELECT CASE WHEN @filterPkgStatus = 1 THEN 'STATUS_FILTER' ELSE NULL END AS Info
+                                ) fltr
+                                FOR XML PATH('')), 1, 2, N''), '''') + N' AS additional_info'
+                        ELSE N''
+                    END + N'
                 FROM internal.operations d WITH(NOLOCK)
 				INNER JOIN internal.executable_statistics es WITH(NOLOCK) ON es.execution_id = d.operation_id 
 				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id ' + 
                 CASE
-                    WHEN @pkgFilter = 1 AND @filterPkg = 1THEN ' INNER JOIN #packages pkg ON pkg.package_name = e.package_name'
+                    WHEN @pkgFilter = 1 AND @filterPkg = 1 THEN ' INNER JOIN #packages pkg ON pkg.package_name = e.package_name'
                     ELSE ''
-                END +                 
+                END +   
                 CONVERT(nvarchar(max), N'
 				LEFT JOIN  (
 				SELECT
@@ -3125,6 +3205,10 @@ BEGIN
 					)
 		) EPD
 		WHERE EPD.pno = 1 ') +
+        CASE
+            WHEN @filterPkgStatus = 1 THEN N' AND result_code IN (SELECT id FROM #EPStatuses) '
+            ELSE N''
+        END +                      
         CASE
             WHEN @durationCondition IS NOT NULL THEN N' AND ' + @durationCondition
             ELSE N''
