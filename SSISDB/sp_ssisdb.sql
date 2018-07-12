@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.76 (2018-07-09)
+sp_ssisdb v 0.77 (2018-07-12)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -217,6 +217,8 @@ DECLARE
     ,@filterPkg                         bit             = 0     --Specifies whether @packagte filter should be applied also on Executed Packagtes
     ,@filterPkgStatus                   bit             = 0     --Specifies whether @status filter should be applied also on Executed Packages
     ,@filterPkgStatusFilter             nvarchar(max)   = NULL  --contains list of executed packages status filters.
+    ,@filterExecutableStatus            bit             = 0     --Specifies whetehr @status filter is applied on Executable Statistics
+    ,@filterExecutableStatusFilter      nvarchar(max)   = NULL  --contains list of status filters for Executable Statistics
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -224,7 +226,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.76 (2018-07-09) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.77 (2018-07-17) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -341,9 +343,11 @@ VALUES
     ,('SP'      ,'SORT_PACKAGES:'       ,14)        --Sort Packages
     ,('FP'      ,'FP'                   ,NULL)      --Filter Pacakges
     ,('FP'      ,'FILTER_PACKAGES'      ,NULL)      --Filter Pacakges
-    ,('FPS'     ,'FPS'                  ,NULL)      --Filter Executed Pacakges status
-    ,('FPS'     ,'FPS:'                  ,4)        --Filter Executed Pacakges status
-    ,('FPS'      ,'FILTER_PACKAGES_STATUS:',23)     --Filter Executed Pacakges status
+    ,('EPR'     ,'EPR:'                  ,4)        --Filter Executed Pacakges status
+    ,('EPR'     ,'EXECUTED_PACKAGES_RESULT:',25)      --Filter Executed Pacakges status
+    ,('ESR'     ,'ESR:'                ,4)             --Filter Executable statistics status
+    ,('ESR'    ,'EXECUTABLE_STATISTICS_RESULT:',29)    --Filter Executable statistics status
+
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -393,6 +397,20 @@ VALUES
     ,(7, N'SUCCESS'     , N'S')
     ,(8, N'STOPPING'    , N'G')
     ,(9, N'COMPLETED'   , N'CD')
+
+DECLARE @availExecStatuses TABLE (
+    id          smallint NOT NULL
+    ,[status]   nvarchar(20)
+    ,short      nvarchar(2)
+);
+
+INSERT INTO @availExecStatuses(id, [status], short)
+VALUES 
+     (0,    N'Success'     , N'S')
+    ,(1,    N'Failure'     , N'F')
+    ,(2,    N'Completion'  , N'CD')
+    ,(3,    N'Cancelled'   , N'C')
+    ,(99,   N'Running'     , N'R')
 
 /* Update parameters to NULL where empty strings are passed */
 SELECT
@@ -736,12 +754,20 @@ BEGIN
         SET @localTime = 1
     END
 
-    --Executed Packages Filter
-    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'FPS')
+    --Executed Packages Status Filter
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'EPR')
     BEGIN
-         SELECT @filterPkgStatusFilter = NULLIF(StrVal, N'') FROM @opValData WHERE Val = 'FPS' AND StrVal <> 'FPS';
+         SELECT @filterPkgStatusFilter = NULLIF(StrVal, N'') FROM @opValData WHERE Val = 'EPR' AND StrVal <> 'EPR';
          SET @filterPkgStatus = 1
     END
+
+    --Executable Statistics Status Filter
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'ESR')
+    BEGIN
+         SELECT @filterExecutableStatusFilter = NULLIF(StrVal, N'') FROM @opValData WHERE Val = 'ESR' AND StrVal <> 'ESR';
+         SET @filterExecutableStatus = 1         
+    END
+
 
     --Sort Packages
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'SP')
@@ -1176,11 +1202,7 @@ BEGIN
         --Check if we have executed packages status filter
         IF @filterPkgStatus = 1
         BEGIN
-            IF @filterPkgStatusFilter IS NULL OR @filterPkgStatusFilter = N'' --if specific status filter was not provided use the @status filter
-            BEGIN
-                INSERT INTO #EPstatuses(id, [status]) SELECT id, [status] FROM #statuses;
-            END
-            ELSE    --process specific statuses
+            IF @filterPkgStatusFilter IS NOT NULL AND @filterPkgStatusFilter <> N'' --Only if statuses were provided
             BEGIN
                 SET @xml = N'<i>' + REPLACE(REPLACE(@filterPkgStatusFilter, N',', @xr), N' ', @xr) + N'</i>'
 
@@ -1188,7 +1210,7 @@ BEGIN
                 SELECT DISTINCT
                     ast.id
                     ,ast.[status]
-                FROM @availStatuses ast
+                FROM @availExecStatuses ast
                 INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL'
             END
 
@@ -1218,7 +1240,7 @@ BEGIN
         
         IF @filterPkgStatus = 1
         BEGIN
-            SET @msg = N'   - Filtering Executed Packages for statuses: ' + STUFF((SELECT ', ' + s.status FROM #EPstatuses s FOR XML PATH('')), 1, 2, '')
+            SET @msg = N'   - Using Result Filter(s): ' + STUFF((SELECT ', ' + s.status FROM #EPstatuses s FOR XML PATH('')), 1, 2, '')
             RAISERROR(@msg, 0, 0) WITH NOWAIT;        
         END 
     END
@@ -1588,11 +1610,11 @@ RAISERROR(N'  LOCAL_TIME(LT)            - Use local time in the time-stamps
   DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive data will be decrypted and the values provided
                               Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
                               to be able to decrypt sensitive information
- FOLDER_DETAILS(FD)         - Include detailed information about folder from which the executed package originates. Information is provided in form of xml in the objects_details column.
+  FOLDER_DETAILS(FD)        - Include detailed information about folder from which the executed package originates. Information is provided in form of xml in the objects_details column.
                               Included is information about projects and environments in the folder.
- PROJECT_DETAILS(PRD)       - Include detailed information about project from which the executed package originates. Information is provided in form of xml in the objects_details column.
+  PROJECT_DETAILS(PRD)      - Include detailed information about project from which the executed package originates. Information is provided in form of xml in the objects_details column.
                               Included is information about project parameters and packages in the project. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
- OBJECT_DETAILS(OD)         - Include detailed information about the executed pacakge. Information is provided in form of xml in the objects_details column.
+  OBJECT_DETAILS(OD)        - Include detailed information about the executed pacakge. Information is provided in form of xml in the objects_details column.
                               Included is information about package parameters. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
 ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
@@ -1623,39 +1645,48 @@ RAISERROR(N'
 ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'
-  EXECUTED_PACKAGES (EP)                - Include information about executed packages per reult in the overview list. (Slow-downs the retrieval)
-                                          In Verbose mode executed packages are always listed as separate result by default.
-                                          When specified in Verbose mode then the executed_pacakges column is not filtered by other filters.
-  SORT_PACKAGES(SP):ccc,ooo             - Sort Executed packages where the ccc,ooo is comma separated list of the sort orders specifiers.
-                                          Only one specifier for column and one for order can be provided at a time.
-                                          Allowed column specifiers (ccc):
-                                          S|START|START_TIME        = sort by start_time (default)
-                                          E|END|END_TIME            = sort by end_time
-                                          N|NAME                    = sort by name
-                                          D|DUR|DURATION            = sort by duration
-                                          R|RES|RESULT              = sort by result
-                                          RC|RES_CODE|RESULT_CODE   = sort by result_code
+  EXECUTED_PACKAGES (EP)                 - Include information about executed packages per reult in the overview list. (Slow-downs the retrieval)
+                                           In Verbose mode executed packages are always listed as separate result by default.
+                                           When specified in Verbose mode then the executed_pacakges column is not filtered by other filters.
+  SORT_PACKAGES(SP):ccc,ooo              - Sort Executed packages where the ccc,ooo is comma separated list of the sort orders specifiers.
+                                           Only one specifier for column and one for order can be provided at a time.
+                                           Allowed column specifiers (ccc):
+                                           S|START|START_TIME        = sort by start_time (default)
+                                           E|END|END_TIME            = sort by end_time
+                                           N|NAME                    = sort by name
+                                           D|DUR|DURATION            = sort by duration
+                                           R|RES|RESULT              = sort by result
+                                           RC|RES_CODE|RESULT_CODE   = sort by result_code
+                                        
+                                           Allowed orders pecifiers (ooo):
+                                           A|ASC|ASCENDING           = sort ascending
+                                           DESC|DESCENDING           = sort descending (default)', 0, 0) WITH NOWAIT;
+RAISERROR(N'  FILTER_PACKAGES(FP)                    - Apply @package filter also on Executed Packages list in the verbose mode.
+  EXECUTED_PACKAGES_RESULT(EPR):rrr      - Apply Result filter on Executed Packages list
+                                           rrr is comma separated list of Result filters. See Result Filters below.
+  EXECUTABLE_STATISTICS(ES):iiiii        - Include executablew statistics in the details verbose output.
+                                           iiiii specifies max number of rows. If not provided then default 1000 rows are returned.
+                                           iiiii < 0 = All rows are returned and is the same as not including the keyword
+  EXECUTABLE_STATISTICS_RESULT(ESR):rrr  - Apply Result filter on Executed Executable Statistics
+                                           rrr is comma separated list of Result filters. See Result Filters below.
+  EXECUTION_MESSAGES(EM):iiiii           - Include event messages details in the overview list and in details list. 
+                                           iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
+                                           iiiii < 0 = All rows are returned.
+                                           For Overview by default only ERROR and TASK_FAILED are included. (Slow downs data retrieval)', 0, 0) WITH NOWAIT;
 
-                                          Allowed orders pecifiers (ooo):
-                                          A|ASC|ASCENDING           = sort ascending
-                                          DESC|DESCENDING           = sort descending (default)
-  FILTER_PACKAGES(FP)                   - Apply @package filter also on Executed Packages list in the verbose mode.
-  FILTER_PACKAGES_STATUS(FPS):ssss      - Apply @status filter also on Executed Packages list
-                                          ssss is optional comma separated list of status filters. If Not Provided then the @status filter is being used.
-  EXECUTABLE_STATISTICS(ES):iiiii       - Include executablew statistics in the details verbose output.
-                                          iiiii specifies max number of rows. If not provided then default 1000 rows are returned.
-                                          iiiii < 0 = All rows are returned and is the same as not including the keyword
-  EXECUTION_MESSAGES(EM):iiiii          - Include event messages details in the overview list and in details list. 
-                                          iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
-                                          iiiii < 0 = All rows are returned.
-                                          For Overview by default only ERROR and TASK_FAILED are included. (Slow downs data retrieval)', 0, 0) WITH NOWAIT;
+RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS):iiiii   - Include Execution Data Statistics in the details verbose output
+                                           iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
+                                           iiiii < 0 = All rows are returned.                                    
+  EXECUTION_COMPONENT_PHASES(ECP):iiiii  - Include Execution Componetn Phases in the details verbose output
+                                           iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
+                                           iiiii < 0 = All rows are returned.
 
-RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS):iiiii  - Include Execution Data Statistics in the details verbose output
-                                          iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
-                                          iiiii < 0 = All rows are returned.                                    
-  EXECUTION_COMPONENT_PHASES(ECP):iiiii - Include Execution Componetn Phases in the details verbose output
-                                          iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
-                                          iiiii < 0 = All rows are returned.
+  Execution Result Filters:
+    (R)UNNING           - Filter for Running result
+    (S)UCCESS           - Filter for Success result
+    (F)AILURE           - Filter for Failure result
+    COMPLETION(CD)      - Filter for Completion result
+    (C)CANCELLED        - Filter for Cancelled result
 ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'
@@ -2040,7 +2071,7 @@ N'
     ,(
         SELECT
             CASE WHEN d.status_code <= 2 THEN ''Incomplete Preliminary Information based on already executed tasks'' ELSE NULL END ''@status_info''
-            ,(STUFF((SELECT '', '' + s.status FROM #EPstatuses s FOR XML PATH('''')), 1, 2, '''')) ''@status_filter''
+            ,(STUFF((SELECT '', '' + s.status FROM #EPstatuses s FOR XML PATH('''')), 1, 2, '''')) ''@result_filter''
             ,(
 				SELECT
 					ROW_NUMBER() OVER(ORDER BY start_time)  ''@no''
@@ -2058,25 +2089,13 @@ N'
 				  SELECT
 					 ROW_NUMBER() OVER(PARTITION BY e.package_name ORDER BY CASE WHEN e.package_path = ''\Package'' THEN 0 ELSE 1 END ASC, es.start_time ASC) AS pno
 					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END)
-						WHEN -9999 THEN
-							CASE 
-								WHEN d.status_code = 1 THEN N''T''  --Created
-								WHEN d.status_code = 2 THEN N''R''  --Running
-								WHEN d.status_code = 3 THEN N''C''  --Cancelled
-								WHEN d.status_code = 4 THEN N''F''  --Failed
-								WHEN d.status_code = 5 THEN N''P''  --Pending
-								WHEN d.status_code = 6 THEN N''U''  --Unexpected
-								WHEN d.status_code = 7 THEN N''S''  --Succeeded
-								WHEN d.status_code = 8 THEN N''G''  --Stopping
-								WHEN d.status_code = 9 THEN N''O''  --Completed
-								ELSE N''U''
-							END             
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
 						WHEN 0 THEN N''S''  --Success
 						WHEN 1 THEN N''F''  --Failure
 						WHEN 2 THEN N''O''  --Completed
 						WHEN 3 THEN N''C''  --Cancelled
-						ELSE N''Unknown''
+                        WHEN 99 THEN N''R'' --Running
+						ELSE N''U''         --Unknown
 					END                 AS res
 
 					,CONVERT(nvarchar(36), es.start_time)       AS start_time
@@ -2094,29 +2113,17 @@ N'
 					,e.package_name              package_name
 
 					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END)
-						WHEN -9999 THEN
-							CASE 
-								WHEN d.status_code = 1 THEN N''Created''
-								WHEN d.status_code = 2 THEN N''Running''
-								WHEN d.status_code = 3 THEN N''Cancelled''
-								WHEN d.status_code = 4 THEN N''Failed''
-								WHEN d.status_code = 5 THEN N''Pending''
-								WHEN d.status_code = 6 THEN N''Ended unexpectedly''
-								WHEN d.status_code = 7 THEN N''Succeeded''
-								WHEN d.status_code = 8 THEN N''Stopping''
-								WHEN d.status_code = 9 THEN N''Completed''             
-								ELSE N''Unknown''
-							END             
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
 						WHEN 0 THEN N''Success''
 						WHEN 1 THEN N''Failure''
 						WHEN 2 THEN N''Completion''
 						WHEN 3 THEN N''Cancelled''
+                        WHEN 99 THEN N''Running''
 						ELSE N''Unknown''
 					END                 AS result
 
 					,CONVERT(nvarchar(36), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE NULL END))  end_time
-					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE d.status_code END, -9999)      result_code
+					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END, -9999)      result_code
 				FROM internal.executable_statistics es WITH(NOLOCK)
 				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id
 				LEFT JOIN  (
@@ -3068,6 +3075,12 @@ BEGIN
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
         SET @msg = N'%s - Starting retrieval of Executed packages';
         RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
+        IF @filterPkgStatus = 1
+        BEGIN
+            SET @msg = N'                            - Using Result Filter(s): ' + STUFF((SELECT ', ' + s.status FROM #EPstatuses s FOR XML PATH('')), 1, 2, '')
+            RAISERROR(@msg, 0, 0) WITH NOWAIT;        
+        END 
+
 
         SET @dateField = CASE WHEN @useEndTime = 1 THEN 'end_time' ELSE 'start_time' END;
         IF @opFromTZ IS NOT NULL
@@ -3104,25 +3117,13 @@ BEGIN
 					 ROW_NUMBER() OVER(PARTITION BY e.package_name ORDER BY CASE WHEN e.package_path = ''\Package'' THEN 0 ELSE 1 END ASC, es.start_time ASC) AS pno
                     ,CASE WHEN e.package_path = ''\Package'' THEN N''Final'' ELSE N''Preliminary'' END AS status_info
 					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END)
-						WHEN -9999 THEN
-							CASE 
-								WHEN d.status = 1 THEN N''T''  --Created
-								WHEN d.status = 2 THEN N''R''  --Running
-								WHEN d.status = 3 THEN N''C''  --Cancelled
-								WHEN d.status = 4 THEN N''F''  --Failed
-								WHEN d.status = 5 THEN N''P''  --Pending
-								WHEN d.status = 6 THEN N''U''  --Unexpected
-								WHEN d.status = 7 THEN N''S''  --Succeeded
-								WHEN d.status = 8 THEN N''G''  --Stopping
-								WHEN d.status = 9 THEN N''O''  --Completed
-								ELSE N''U''
-							END             
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
 						WHEN 0 THEN N''S''  --Success
 						WHEN 1 THEN N''F''  --Failure
 						WHEN 2 THEN N''O''  --Completed
 						WHEN 3 THEN N''C''  --Cancelled
-						ELSE N''Unknown''
+                        WHEN 99 THEN N''R'' --Running
+						ELSE N''U''
 					END                 AS res
 
 					,es.start_time
@@ -3135,28 +3136,16 @@ BEGIN
 					,e.package_name              package_name
 
 					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE -9999 END)
-						WHEN -9999 THEN
-							CASE 
-								WHEN d.status = 1 THEN N''Created''
-								WHEN d.status = 2 THEN N''Running''
-								WHEN d.status = 3 THEN N''Cancelled''
-								WHEN d.status = 4 THEN N''Failed''
-								WHEN d.status = 5 THEN N''Pending''
-								WHEN d.status = 6 THEN N''Ended unexpectedly''
-								WHEN d.status = 7 THEN N''Succeeded''
-								WHEN d.status = 8 THEN N''Stopping''
-								WHEN d.status = 9 THEN N''Completed''             
-								ELSE N''Unknown''
-							END             
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
 						WHEN 0 THEN N''Success''
 						WHEN 1 THEN N''Failure''
 						WHEN 2 THEN N''Completion''
 						WHEN 3 THEN N''Cancelled''
+                        WHEN 99 THEN N''Running''
 						ELSE N''Unknown''
 					END                 AS result
 
-					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE d.status END, -9999)      result_code ' +
+					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END, -9999)      result_code ' +
 
                     CASE 
                         WHEN @filterPkgStatus = 1 OR (@pkgFilter = 1 AND @filterPkg = 1) THEN
@@ -3256,6 +3245,37 @@ BEGIN
         SET @msg = N'%s - Starting retrieval of Executable Statistics... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @execRows), N'All') + N' rows)';
         RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
         
+
+        IF OBJECT_ID('tempdb..#ESstatuses') IS NOT NULL
+            DROP TABLE #ESstatuses;
+        CREATE TABLE #ESstatuses (
+            id          int          NOT NULL PRIMARY KEY CLUSTERED
+            ,[status]   nvarchar(50) COLLATE DATABASE_DEFAULT
+        );
+
+        --Check if we have executable status filter
+        IF @filterExecutableStatus = 1
+        BEGIN
+            IF @filterExecutableStatusFilter IS NOT NULL AND @filterExecutableStatusFilter <> N'' --process only if filter was specified
+            BEGIN
+                SET @xml = N'<i>' + REPLACE(REPLACE(@filterExecutableStatusFilter, N',', @xr), N' ', @xr) + N'</i>'
+
+                INSERT INTO #ESstatuses(id, [status])
+                SELECT DISTINCT
+                    ast.id
+                    ,ast.[status]
+                FROM @availExecStatuses ast
+                INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL'
+            END
+
+            IF NOT((SELECT COUNT(1) FROM #ESstatuses) BETWEEN 1 AND 3)
+            BEGIN
+                SET @filterExecutableStatus = 0
+            END
+        END              
+
+
+
         SET @dateField = CASE WHEN @useEndTime = 1 THEN 'end_time' ELSE 'start_time' END;
         IF @opFromTZ IS NOT NULL
             RAISERROR(@datetimeMsg, 0, 0, @dateField) WITH NOWAIT;
@@ -3265,7 +3285,11 @@ BEGIN
             RAISERROR(N'                            - Using execution_path Filter(s): %s', 0, 0, @execution_path) WITH NOWAIT;
         IF @package_path IS NOT NULL
             RAISERROR(N'                            - Using package_path Filter(s): %s', 0, 0, @package_path) WITH NOWAIT;
-
+        IF @filterExecutableStatus = 1
+        BEGIN
+           SET @msg = N'                            - Using Result Filter(s): ' + STUFF((SELECT ', ' + s.status FROM #ESstatuses s FOR XML PATH('')), 1, 2, '')
+            RAISERROR(@msg, 0, 0) WITH NOWAIT;        
+        END 
 
         SET @sql = N'
             WITH ExecStat AS (
@@ -3330,6 +3354,10 @@ BEGIN
         END + 
         CASE
             WHEN NULLIF(@package_path, '') IS NOT NULL THEN N' AND (EXISTS(SELECT 1 FROM #package_paths f WHERE e.package_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE e.package_path LIKE f.filter AND f.exclusive = 1))'
+            ELSE N''
+        END +
+        CASE WHEN @filterExecutableStatus = 1 
+            THEN N' AND (es.[execution_result] IN (SELECT id FROM #ESStatuses))' 
             ELSE N''
         END + N'
              ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(es.start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'ISNULL(es.end_time, ''99991231'')' ELSE N'es.end_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END
