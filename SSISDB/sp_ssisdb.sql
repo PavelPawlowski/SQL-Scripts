@@ -1847,12 +1847,12 @@ RETURN;
 END
 /* END HELP PROCESSING */
 
-SET @sql = CONVERT(nvarchar(max), N'
+SET @sql = CONVERT(nvarchar(max),  N'
 WITH BaseOperations AS (
     SELECT
         DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(MINUTE, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())) / 1440, start_time), ISNULL(end_time, SYSDATETIMEOFFSET())), DATEADD(DAY, DATEDIFF(MINUTE, start_time, ISNULL(end_time, SYSDATETIMEOFFSET())) / 1440, CONVERT(datetime2(7), ''19000101''))) durationDate
         ,o.*
-    FROM internal.operations o WITH(NOLOCK)' 
+    FROM internal.operations o WITH(NOLOCK)'
 +
 CASE 
     WHEN @id IS NOT NULL OR @processID = 0 THEN N''
@@ -2067,7 +2067,7 @@ N'
     ELSE N''
     END + N'
 ' +
-    CASE WHEN @includeExecPackages = 1 THEN N'
+    CASE WHEN @includeExecPackages = 1 THEN CONVERT(nvarchar(max), N'
     ,(
         SELECT
             CASE WHEN d.status_code <= 2 THEN ''Incomplete Preliminary Information based on already executed tasks'' ELSE NULL END ''@status_info''
@@ -2077,7 +2077,7 @@ N'
 					ROW_NUMBER() OVER(ORDER BY start_time)  ''@no''
 					,res					AS ''@result''
 					,start_time				AS ''@start_time''
-        ,CONVERT(nvarchar(5), DATEDIFF(DAY, 0, durationDate)) + ''d '' + CONVERT(varchar(12), CONVERT(time, durationDate)) AS ''@duration'' ' +
+        ,CONVERT(nvarchar(5), DATEDIFF(DAY, 0, durationDate)) + ''d '' + CONVERT(varchar(12), CONVERT(time, durationDate)) AS ''@duration'' ' ) +
         CASE WHEN  @duration_ms = 1 THEN N'
         ,CONVERT(bigint, DATEDIFF(DAY, CONVERT(datetime2(7), ''19000101''), durationDate)) * 86400000 + DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(DAY, ''19000101'', durationDate), ''19000101''), durationDate) AS ''@duration_ms''
          ' ELSE N'' END + N'    
