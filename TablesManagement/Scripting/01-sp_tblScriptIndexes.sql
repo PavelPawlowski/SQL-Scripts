@@ -4,7 +4,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
 	EXECUTE ('CREATE PROCEDURE [dbo].[sp_tblScriptIndexes] AS BEGIN PRINT ''Container'' END')
 GO
 /* ****************************************************
-sp_tblScriptIndexes v  0.60 (2018-03-20)
+sp_tblScriptIndexes v  0.65 (2018-07-30)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -37,21 +37,25 @@ Description:
 
 Parameters:
 
-	@tableName                  nvarchar(261)   = NULL                  --Table which indexes should be scripted
-	,@newTableName              nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
-	,@partitionID               int             = 0                     --Specifies how the ON [FileGroup] is being scripted
-	,@scriptPrimaryKey          bit             = 1		                --Specifies whether Primary key should be scripted
-	,@scriptUniqueConstraints   bit             = 1		                --Specifies whether Unique Constraints should be scripted
-	,@scriptIndexes             bit             = 1		                --Specifies wheteher Indexes should be scripted
-	,@scriptDisabledIndexes     bit             = 0		                --Specifies whether to script disabled indexes
-	,@scriptAlterIndexDisable   bit             = 1		                --For Disabled indexes scripts the ALTER INDEX DISABLE
-    ,@scriptDropExisting        bit             = 1                     --Scripts DROP_EXISTING = ON or DROP_EXISTING = OFF
-	,@scriptIndexTypes          nvarchar(100)   = N'1,2,3,5,6'          --Bitmask of Index types to Script Currently 1,2,5,6
-    ,@indexNames                nvarchar(max)   = '%'                   --Comma Separated List of Index Names to Script. Supports LIKE wildcards
-    ,@noInfoMsg                 bit             = 0                     --Disbles printing of header and informational messages
-    ,@outputScript              nvarchar(max)   = NULL          OUTPUT  --Outputs script to the @outputScript parameters. Allows utilization of the script in other stored procedures
-    ,@outputScriptOnly          bit             = 0                     --When true, then script is only returned in @outputScript OUTPUT variable and not as result set
-    ,@noXml                     bit             = 0                     --Specifies whether the script in the result set is returned as nvarchar(max) or as XML processing instruction
+	@tableName                      nvarchar(261)   = NULL                  --Table which indexes should be scripted
+	,@newTableName                  nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
+	,@partitionID                   int             = 0                     --Specifies how the ON [FileGroup] is being scripted
+	,@scriptPrimaryKey              bit             = 1		                --Specifies whether Primary key should be scripted
+	,@scriptUniqueConstraints       bit             = 1		                --Specifies whether Unique Constraints should be scripted
+	,@scriptIndexes                 bit             = 1		                --Specifies wheteher Indexes should be scripted
+	,@scriptDisabledIndexes         bit             = 0		                --Specifies whether to script disabled indexes
+	,@scriptAlterIndexDisable       bit             = 1		                --For Disabled indexes scripts the ALTER INDEX DISABLE
+    ,@scriptDropExisting            bit             = 1                     --Scripts DROP_EXISTING = ON or DROP_EXISTING = OFF
+	,@scriptIndexTypes              nvarchar(100)   = N'1,2,3,5,6'          --Bitmask of Index types to Script Currently 1,2,5,6
+    ,@indexNames                    nvarchar(max)   = '%'                   --Comma Separated List of Index Names to Script. Supports LIKE wildcards
+    ,@noInfoMsg                     bit             = 0                     --Disbles printing of header and informational messages
+    ,@outputScript                  nvarchar(max)   = NULL          OUTPUT  --Outputs script to the @outputScript parameters. Allows utilization of the script in other stored procedures
+    ,@outputScriptOnly              bit             = 0                     --When true, then script is only returned in @outputScript OUTPUT variable and not as result set
+    ,@noXml                         bit             = 0                     --Specifies whether the script in the result set is returned as nvarchar(max) or as XML processing instruction
+    ,@onFileGroup                   nvarchar(256)   = NULL                  --When specified then the clause is used as the ON [@onFileGroupClause]. Overrides the @partitionID parameter.
+    ,@dataCompression               nvarchar(5)     = NULL                  --When specified the overrides the current index data compression
+    ,@columnstoreDataCompression    nvarchar(50)    = NULL                  --When specified then overrides the current columnstore data compression type
+    
 
 Index types and corresponding bit positions
 	1 = Clustered
@@ -64,21 +68,24 @@ Index types and corresponding bit positions
  
 * ***************************************************** */ 
 ALTER PROCEDURE [dbo].[sp_tblScriptIndexes]
-	@tableName                  nvarchar(261)   = NULL                  --Table which indexes should be scripted
-	,@newTableName              nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
-	,@partitionID               int             = 0                     --Specifies how the ON [FileGroup] is being scripted
-	,@scriptPrimaryKey          bit             = 1		                --Specifies whether Primary key should be scripted
-	,@scriptUniqueConstraints   bit             = 1		                --Specifies whether Unique Constraints should be scripted
-	,@scriptIndexes             bit             = 1		                --Specifies wheteher Indexes should be scripted
-	,@scriptDisabledIndexes     bit             = 0		                --Specifies whether to script disabled indexes
-	,@scriptAlterIndexDisable   bit             = 1		                --For Disabled indexes scripts the ALTER INDEX DISABLE
-    ,@scriptDropExisting        bit             = 1                     --Scripts DROP_EXISTING = ON or DROP_EXISTING = OFF
-	,@scriptIndexTypes          nvarchar(100)   = N'1,2,3,5,6'          --Bitmask of Index types to Script Currently 1,2,5,6
-    ,@indexNames                nvarchar(max)   = '%'                   --Comma Separated List of Index Names to Script. Supports LIKE wildcards
-    ,@noInfoMsg                 bit             = 0                     --Disbles printing of header and informational messages
-    ,@outputScript              nvarchar(max)   = NULL          OUTPUT  --Outputs script to the @outputScript parameters. Allows utilization of the script in other stored procedures
-    ,@outputScriptOnly          bit             = 0                     --When true, then script is only returned in @outputScript OUTPUT variable and not as result set
-    ,@noXml                     bit             = 0                     --Specifies whether the script in the result set is returned as nvarchar(max) or as XML processing instruction
+	@tableName                      nvarchar(261)   = NULL                  --Table which indexes should be scripted
+	,@newTableName                  nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
+	,@partitionID                   int             = 0                     --Specifies how the ON [FileGroup] is being scripted
+	,@scriptPrimaryKey              bit             = 1		                --Specifies whether Primary key should be scripted
+	,@scriptUniqueConstraints       bit             = 1		                --Specifies whether Unique Constraints should be scripted
+	,@scriptIndexes                 bit             = 1		                --Specifies wheteher Indexes should be scripted
+	,@scriptDisabledIndexes         bit             = 0		                --Specifies whether to script disabled indexes
+	,@scriptAlterIndexDisable       bit             = 1		                --For Disabled indexes scripts the ALTER INDEX DISABLE
+    ,@scriptDropExisting            bit             = 1                     --Scripts DROP_EXISTING = ON or DROP_EXISTING = OFF
+	,@scriptIndexTypes              nvarchar(100)   = N'1,2,3,5,6'          --Bitmask of Index types to Script Currently 1,2,5,6
+    ,@indexNames                    nvarchar(max)   = '%'                   --Comma Separated List of Index Names to Script. Supports LIKE wildcards
+    ,@noInfoMsg                     bit             = 0                     --Disbles printing of header and informational messages
+    ,@outputScript                  nvarchar(max)   = NULL          OUTPUT  --Outputs script to the @outputScript parameters. Allows utilization of the script in other stored procedures
+    ,@outputScriptOnly              bit             = 0                     --When true, then script is only returned in @outputScript OUTPUT variable and not as result set
+    ,@noXml                         bit             = 0                     --Specifies whether the script in the result set is returned as nvarchar(max) or as XML processing instruction
+    ,@onFileGroup                   nvarchar(256)   = NULL                  --When specified then the clause is used as the ON [@onFileGroupClause]
+    ,@dataCompression               nvarchar(5)     = NULL                  --When specified the overrides the current index data compression
+    ,@columnstoreDataCompression    nvarchar(50)    = NULL                  --When specified then overrides the current columnstore data compression type
 AS
 BEGIN	
     SET NOCOUNT ON;
@@ -107,7 +114,7 @@ BEGIN
 
     IF @noInfoMsg = 0
     BEGIN
-        RAISERROR(N'sp_tblScriptIndexes v 0.60 (2018-03-20) (C) 2014 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+        RAISERROR(N'sp_tblScriptIndexes v 0.65 (2018-07-30) (C) 2014 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
         RAISERROR(N'=======================================================================', 0, 0) WITH NOWAIT;
         RAISERROR(N'Generates indexes script for table', 0, 0) WITH NOWAIT;
     END
@@ -186,30 +193,35 @@ sp_tblScriptIndexes <parameters>', 0,0) WITH NOWAIT;
 
         RAISERROR(N'Parameters:
 
-    @tableName                  nvarchar(261)   = NULL                  --Table which indexes should be scripted
-    ,@newTableName              nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
-    ,@partitionID               int             = 0                     --For Partitioned Indexes:
-                                                                          -3 - Do not Script ON [FileGgroupName]
-                                                                          -2 - Script ON [DEFAULT]
-                                                                          -1 - Script ON [DefaultFileGroupName]
-                                                                           0 - For partitioned indexes script ON [PartitionScheme]([fieldName]) 
-                                                                               For Non-Partitioned indexes script ON [FileGroupName]
-                                                                          >0 - For Partitioned Indexes script ON [FileGroupOfPartitionID]
-                                                                               For Non-Partitioned indexes is the same as 0
-    ,@scriptPrimaryKey          bit             = 1		                --Specifies whether Primary key should be scripted
-    ,@scriptUniqueConstraints   bit             = 1		                --Specifies whether Unique Constraints should be scripted
-    ,@scriptIndexes             bit             = 1		                --Specifies wheteher Indexes should be scripted',0, 0) WITH NOWAIT;
-RAISERROR(N'    ,@scriptDisabledIndexes     bit             = 0		                --Specifies whether to script disabled indexes
-    ,@scriptAlterIndexDisable   bit             = 1		                --For Disabled indexes scripts the ALTER INDEX DISABLE
-    ,@scriptDropExisting        bit             = 1                     --Scripts DROP_EXISTING = ON or DROP_EXISTING = OFF
-    ,@scriptIndexTypes          nvarchar(100)   = N''1,2,3,5,6''          --Bitmask of Index types to Script Currently 1,2,5,6
-    ,@indexNames                nvarchar(max)   = ''%%''                   --Comma Separated List of Index Names to Script. Supports LIKE wildcards
-    ,@noInfoMsg                 bit             = 0                     --Disbles printing of header and informational messages
-    ,@outputScript              xml             = NULL          OUTPUT  --Outputs script to the @outputScript parameters.
-                                                                          Allows utilization of the script in other stored procedures
-    ,@outputScriptOnly          bit             = 0                     --When true, then script is only returned in @outputScript OUTPUT variable 
-                                                                          and not as result set
-    ,@noXml                     bit             = 0                     --Specifies whether the script in the result set is returned as nvarchar(max) or as XML processing instruction
+    @tableName                      nvarchar(261)   = NULL                  --Table which indexes should be scripted
+    ,@newTableName                  nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
+    ,@partitionID                   int             = 0                     --For Partitioned Indexes:
+                                                                              -3 - Do not Script ON [FileGgroupName]
+                                                                              -2 - Script ON [DEFAULT]
+                                                                              -1 - Script ON [DefaultFileGroupName]
+                                                                               0 - For partitioned indexes script ON [PartitionScheme]([fieldName]) 
+                                                                                   For Non-Partitioned indexes script ON [FileGroupName]
+                                                                              >0 - For Partitioned Indexes script ON [FileGroupOfPartitionID]
+                                                                                   For Non-Partitioned indexes is the same as 0
+    ,@scriptPrimaryKey              bit             = 1		                --Specifies whether Primary key should be scripted
+    ,@scriptUniqueConstraints       bit             = 1		                --Specifies whether Unique Constraints should be scripted
+    ,@scriptIndexes                 bit             = 1		                --Specifies wheteher Indexes should be scripted',0, 0) WITH NOWAIT;
+RAISERROR(N'    ,@scriptDisabledIndexes         bit             = 0		                --Specifies whether to script disabled indexes
+    ,@scriptAlterIndexDisable       bit             = 1		                --For Disabled indexes scripts the ALTER INDEX DISABLE
+    ,@scriptDropExisting            bit             = 1                     --Scripts DROP_EXISTING = ON or DROP_EXISTING = OFF
+    ,@scriptIndexTypes              nvarchar(100)   = N''1,2,3,5,6''          --Bitmask of Index types to Script Currently 1,2,5,6
+    ,@indexNames                    nvarchar(max)   = ''%%''                   --Comma Separated List of Index Names to Script. Supports LIKE wildcards
+    ,@noInfoMsg                     bit             = 0                     --Disbles printing of header and informational messages
+    ,@outputScript                  xml             = NULL          OUTPUT  --Outputs script to the @outputScript parameters.
+                                                                              Allows utilization of the script in other stored procedures
+    ,@outputScriptOnly              bit             = 0                     --When true, then script is only returned in @outputScript OUTPUT variable 
+                                                                              and not as result set', 0, 0) WITH NOWAIT;
+RAISERROR(N'    ,@noXml                         bit             = 0                     --Specifies whether the script in the result set is returned as nvarchar(max) or as XML processing instruction
+    ,@onFileGroup                   nvarchar(256)   = NULL                  --When specified then the clause is used as the ON [@onFileGroupClause]
+                                                                              Overrides the @partitionID parameter behavior.
+                                                                              Useful for converting non-partitioned indexes to partitioned indexes
+    ,@dataCompression               nvarchar(5)     = NULL                  --When specified the overrides the current index data compression
+    ,@columnstoreDataCompression    nvarchar(50)    = NULL                  --When specified then overrides the current columnstore data compression type
 ', 0, 0) WITH NOWAIT;
         RAISERROR(N'', 0, 0) WITH NOWAIT;
         RAISERROR(N'Supported Index Types:
@@ -323,9 +335,13 @@ RAISERROR(N'    ,@scriptDisabledIndexes     bit             = 0		               
                 + CASE WHEN i.fill_factor <> 0 THEN N'FILLFACTOR = ' + CONVERT(nvarchar(10), i.fill_factor) ELSE N'' END
                 + ISNULL(
                     N', DATA_COMPRESSION = ' 
-                    +   CASE p.data_compression 
-                            WHEN 1 THEN N'ROW'
-                            WHEN 2 THEN N'PAGE'
+                    +   CASE 
+                            WHEN i.[type] IN (1, 2) AND @dataCompression IS NOT NULL THEN @dataCompression
+                            WHEN i.[type] IN (5,6) AND @columnstoreDataCompression IS NOT NULL THEN @columnstoreDataCompression
+                            WHEN p.data_compression = 1 THEN N'ROW'
+                            WHEN p.data_compression = 2 THEN N'PAGE'
+                            WHEN p.data_compression = 3 THEN N'COLUMNSTORE'
+                            WHEN p.data_compression = 4 THEN N'COLUMNSTORE_ARCHIVE '
                             ELSE NULL
                         END
                     ,N''
@@ -337,6 +353,7 @@ RAISERROR(N'    ,@scriptDisabledIndexes     bit             = 0		               
                 ISNULL(
                     N' ON ' --Script destination FILEGROUP
                       +  CASE 
+                            WHEN @onFileGroup IS NOT NULL THEN @onFileGroup
                             WHEN @partitionID <= -2 THEN N'[DEFAULT]'
                             WHEN @partitionID = -1 THEN QUOTENAME(@defaultFilegroup) --Script ON [DefaultFileGroupName]
                             WHEN ds.[type] = N'FG' THEN QUOTENAME(ds.name)  --For Non Partitioned, script ON [FileGroupName]
