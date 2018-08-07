@@ -17,7 +17,7 @@ Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2017 Pavel Pawlowski
+Copyright (c) 2017-2018 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -79,13 +79,13 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.77 (2018-07-12)
+sp_ssisdb v 0.79 (2018-08-07)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2017 Pavel Pawlowski
+Copyright (c) 2017-2018 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -219,6 +219,7 @@ DECLARE
     ,@filterPkgStatusFilter             nvarchar(max)   = NULL  --contains list of executed packages status filters.
     ,@filterExecutableStatus            bit             = 0     --Specifies whetehr @status filter is applied on Executable Statistics
     ,@filterExecutableStatusFilter      nvarchar(max)   = NULL  --contains list of status filters for Executable Statistics
+    ,@availStatusFilter                 nvarchar(max)   = NULL  --contains list of status fulters for package execution statuses
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -226,7 +227,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.77 (2018-07-17) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.79 (2018-08-07) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -346,7 +347,9 @@ VALUES
     ,('EPR'     ,'EPR:'                  ,4)        --Filter Executed Pacakges status
     ,('EPR'     ,'EXECUTED_PACKAGES_RESULT:',25)      --Filter Executed Pacakges status
     ,('ESR'     ,'ESR:'                ,4)             --Filter Executable statistics status
-    ,('ESR'    ,'EXECUTABLE_STATISTICS_RESULT:',29)    --Filter Executable statistics status
+    ,('ESR'     ,'EXECUTABLE_STATISTICS_RESULT:',29)    --Filter Executable statistics status
+    ,('PES'     ,'PES:'                 ,4)             --Package Execution Status
+    ,('PES'     ,'PACKAGE_EXECUTION_STATUS', 24)        --Package Execution Status
 
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
@@ -410,6 +413,8 @@ VALUES
     ,(1,    N'Failure'     , N'F')
     ,(2,    N'Completion'  , N'CD')
     ,(3,    N'Cancelled'   , N'C')
+    ,(6,    N'Unexpected'  , N'U')
+    ,(9,    N'Completed'   , N'P')
     ,(99,   N'Running'     , N'R')
 
 /* Update parameters to NULL where empty strings are passed */
@@ -927,7 +932,7 @@ BEGIN
         BEGIN   /*Verbose params processing */      
             SET @id = (SELECT MaxIntVal FROM @opVal WHERE Val = 'V')
             IF @id <= 1
-                SET @id = (SELECT MAX(execution_id) FROM internal.executions)
+                SET @id = (SELECT MAX(execution_id) FROM internal.executions WITH(NOLOCK))
             RAISERROR(N' - Verbose information for execution_id = %I64d', 0, 0, @id)
 
 
@@ -942,7 +947,7 @@ BEGIN
                               END
             RAISERROR(N'   - Sorting Executed Packages by: %s %s', 0, 0, @pkgSortStr, @msg) WITH NOWAIT;    
 
-            IF @id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM internal.operations WHERE operation_id = @id)
+            IF @id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM internal.operations WITH(NOLOCK) WHERE operation_id = @id)
             BEGIN
                 RAISERROR(N'   << No Executable statistics were found for execution_id = %I64d >>' , 0, 0, @id) WITH NOWAIT;
                 RETURN;
@@ -1182,6 +1187,15 @@ BEGIN
         IF EXISTS(SELECT 1 FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U', 'C', 'PD', 'T', 'G', 'CD'))
             SET @status = STUFF((SELECT ',' + Val FROM @opVal WHERE Val IN ('R', 'S', 'F', 'U', 'C', 'PD', 'T', 'G', 'CD') FOR XML PATH('')), 1, 1, '');
 
+        --Executable Statistics Status Filter
+        IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'PES')
+        BEGIN
+            SELECT @availStatusFilter = NULLIF(StrVal, N'') FROM @opValData WHERE Val = 'PES' AND StrVal <> 'PES';
+            IF @availStatusFilter IS NOT NULL
+                SET @status = @availStatusFilter
+
+        END
+
         SET @xml = N'<i>' + REPLACE(REPLACE(@status, N',', @xr), N' ', @xr) + N'</i>';
 
         INSERT INTO #statuses(id, [status])
@@ -1189,7 +1203,13 @@ BEGIN
             ast.id
             ,ast.[status]
         FROM @availStatuses ast
-        INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL'
+        INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON LEFT(st.[status], 1) <> '-' AND (st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL')
+        EXCEPT
+        SELECT DISTINCT
+            ast.id
+            ,ast.[status]
+        FROM @availStatuses ast
+        INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON LEFT(st.[status], 1) = '-' AND (RIGHT(st.[status], LEN(st.[status]) -1) = ast.[status] OR RIGHT(st.[status], LEN(st.[status]) -1) = ast.short)
 
         --if there are some statuses selected but not all, then set status filter
         IF @id IS NULL AND (SELECT COUNT(1) FROM #statuses) BETWEEN 1 AND 8
@@ -1211,10 +1231,17 @@ BEGIN
                     ast.id
                     ,ast.[status]
                 FROM @availExecStatuses ast
-                INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL'
+                INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON LEFT(st.[status], 1) <> '-' AND (st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL')
+                EXCEPT
+                SELECT DISTINCT
+                    ast.id
+                    ,ast.[status]
+                FROM @availExecStatuses ast
+                INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON LEFT(st.[status], 1) = '-' AND (RIGHT(st.[status], LEN(st.[status]) -1) = ast.[status] OR RIGHT(st.[status], LEN(st.[status]) -1) = ast.short)
+
             END
 
-            IF NOT((SELECT COUNT(1) FROM #EPstatuses) BETWEEN 1 AND 8)
+            IF NOT((SELECT COUNT(1) FROM #EPstatuses) BETWEEN 1 AND 6)
             BEGIN
                 SET @filterPkgStatus = 0
             END
@@ -1421,12 +1448,12 @@ BEGIN
             INSERT INTO #folders(folder_name)
             SELECT
                 name
-            FROM SSISDB.internal.folders f
+            FROM SSISDB.internal.folders f WITH(NOLOCK)
             INNER JOIN (SELECT DISTINCT LTRIM(RTRIM(n.value('.','nvarchar(128)'))) fld FROM @xml.nodes('/i') T(n)) T(Fld) ON f.name LIKE T.Fld AND LEFT(T.Fld, 1) <> '-'
             EXCEPT
 	        SELECT
 		        name
-	        FROM SSISDB.internal.folders f
+	        FROM SSISDB.internal.folders f WITH(NOLOCK)
             INNER JOIN (SELECT DISTINCT LTRIM(RTRIM(n.value('.','nvarchar(128)'))) fld FROM @xml.nodes('/i') T(n)) T(Fld) ON f.name LIKE RIGHT(T.Fld, LEN(T.Fld) -1) AND LEFT(T.Fld, 1) = '-'
     
 
@@ -1455,12 +1482,12 @@ BEGIN
             INSERT INTO #projects(project_name)
             SELECT DISTINCT
                 name
-            FROM SSISDB.internal.projects p            
+            FROM SSISDB.internal.projects p WITH(NOLOCK)
             INNER JOIN (SELECT DISTINCT LTRIM(RTRIM(n.value('.','nvarchar(128)'))) fld FROM @xml.nodes('/i') T(n)) T(Fld) ON p.name LIKE T.Fld AND LEFT(T.Fld, 1) <> '-'
             EXCEPT
             SELECT
                 name
-            FROM SSISDB.internal.projects  p
+            FROM SSISDB.internal.projects  p WITH(NOLOCK)
             INNER JOIN (SELECT DISTINCT LTRIM(RTRIM(n.value('.','nvarchar(128)'))) fld FROM @xml.nodes('/i') T(n)) T(Fld) ON p.name LIKE RIGHT(T.Fld, LEN(T.Fld) -1) AND LEFT(T.Fld, 1) = '-'
         
             IF EXISTS(SELECT 1 fld FROM @xml.nodes('/i') T(n))
@@ -1491,21 +1518,21 @@ BEGIN
         IF @id IS NOT NULL
             SELECT @projId = (SELECT 
                                 e.project_lsn 
-                            FROM internal.executions e 
-                            INNER JOIN internal.object_versions ov ON ov.object_version_lsn = e.project_lsn
+                            FROM internal.executions e WITH(NOLOCK)
+                            INNER JOIN internal.object_versions ov WITH(NOLOCK) ON ov.object_version_lsn = e.project_lsn
                             WHERE execution_id = @id)
 
 
         INSERT INTO #packages(package_name)
         SELECT DISTINCT
             pkg.name
-        FROM internal.packages pkg
+        FROM internal.packages pkg WITH(NOLOCK)
         INNER JOIN (SELECT LTRIM(RTRIM(n.value('.','nvarchar(260)'))) fld FROM @xml.nodes('/i') T(n)) T(name) ON pkg.name LIKE T.name AND LEFT(T.name, 1) <> '-'
         WHERE  @projId IS NULL OR pkg.project_version_lsn = @projId
         EXCEPT
         SELECT DISTINCT
             pkg.name
-        FROM internal.packages pkg
+        FROM internal.packages pkg WITH(NOLOCK)
         INNER JOIN (SELECT LTRIM(RTRIM(n.value('.','nvarchar(260)'))) fld FROM @xml.nodes('/i') T(n)) T(name) ON pkg.name LIKE RIGHT(T.name, LEN(T.name) -1) AND LEFT(T.name, 1) = '-'
         WHERE  @projId IS NULL OR pkg.project_version_lsn = @projId
         
@@ -1567,72 +1594,76 @@ RAISERROR('------------------------', 0, 0) WITH NOWAIT;
 RAISERROR('Comma or space separated list of operations parameters. Specifies operations, filtering and grouping of the resuls.', 0, 0) WITH NOWAIT;
 --RAISERROR('', 0, 0) WITH NOWAIT;
 RAISERROR(N'
-  ?                         - Print this help
+  ?                                 - Print this help
 
-  iiiiiiiiiiiiii            - (integer values) Specifies range of execution_id(s) to return basic information. If single initeger is provided than executios starting with that id will be returned. 
-                              In case of multiple initegers, range between minimum and maximum id is returned
-  (L)AST:iiiii              - Optional Keywork which modifies output only to LAST iiiii records. THe LAST records are returned per group. 
-                              If iiiii is not provided then then last 1 execution is returned. 
-                              If Keyword is missing the default LAST 100 records are retrieved
+  iiiiiiiiiiiiii                    - (integer values) Specifies range of execution_id(s) to return basic information. If single initeger is provided than executios starting with that id will be returned. 
+                                      In case of multiple initegers, range between minimum and maximum id is returned
+  (L)AST:iiiii                      - Optional Keywork which modifies output only to LAST iiiii records. THe LAST records are returned per group. 
+                                      If iiiii is not provided then then last 1 execution is returned. 
+                                      If Keyword is missing the default LAST 100 records are retrieved
 
-  Date/Time                 - If provided then executions since that Date/Time are returned. If multiple Date/Time values are provided then executions between MIN and MAX values are returned.
-                              If provided in verbose mode, then the filter is applied on the executable_statistics, event_messages, execution_data_statistics and execution_component_phases respectively.
-  hh:MM[:ss]                - If only time is provided, then the time is interpreted as Time of current day
-  yyyy-mm-dd                - If only date is provided, then it is intepreted as midnigth of that day (YYYY-MM-DDTHH:MM:SS)
-  yyyy-mm-ddThh:MM:ss       - When Date/Time is passed, then Time is separated by T from date. In that case hours have to be provided as two digits
+  Date/Time                         - If provided then executions since that Date/Time are returned. If multiple Date/Time values are provided then executions between MIN and MAX values are returned.
+                                      If provided in verbose mode, then the filter is applied on the executable_statistics, event_messages, execution_data_statistics and execution_component_phases respectively.
+  hh:MM[:ss]                        - If only time is provided, then the time is interpreted as Time of current day
+  yyyy-mm-dd                        - If only date is provided, then it is intepreted as midnigth of that day (YYYY-MM-DDTHH:MM:SS)
+  yyyy-mm-ddThh:MM:ss               - When Date/Time is passed, then Time is separated by T from date. In that case hours have to be provided as two digits
 
 
-  START_TIME (ST)[_A|_ASC]  - Use Start Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending. Used also for Data Filters.
-  END_TIME (ET)[_A|_ASC]    - Use End Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending. Used Also for Date Filters.
-  CREATE_TIME (CT)[_A|_ASC] - Use Create Time forr searching. This is the default. Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending.', 0, 0) WITH NOWAIT;
+  START_TIME (ST)[_A|_ASC]          - Use Start Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending. Used also for Data Filters.
+  END_TIME (ET)[_A|_ASC]            - Use End Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending. Used Also for Date Filters.
+  CREATE_TIME (CT)[_A|_ASC]         - Use Create Time forr searching. This is the default. Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending.', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'  
-  >|>=|<|<=|=dddddd         - Duration Specifier. If provided then only operations with duration corresponding to the specifier are returned. Multiple specifiers are combined with AND.
-                              If multiple durations are specified for the same specifier, MAX duration is used for [>] and [>=] and and MIN durtion for [<], [<=], [=]
-                              If provided in verbose mode, then the filter is applied on executable statistics, execution_data_statistics and execution_component_phases respecively.
-  dddddd                    - Specifies duration in below allowed formats
-  hh:MM[:ss[.fff]]          - If only time is specified, it represents duration in hours, minutes, seconds and fraction of second
-  iiid[hh:MM[:ss[.fff]]]    - iii specifies followed by d specifies number of days. Optional additional time can follow
+  >|>=|<|<=|=dddddd                 - Duration Specifier. If provided then only operations with duration corresponding to the specifier are returned. Multiple specifiers are combined with AND.
+                                      If multiple durations are specified for the same specifier, MAX duration is used for [>] and [>=] and and MIN durtion for [<], [<=], [=]
+                                      If provided in verbose mode, then the filter is applied on executable statistics, execution_data_statistics and execution_component_phases respecively.
+  dddddd                            - Specifies duration in below allowed formats
+  hh:MM[:ss[.fff]]                  - If only time is specified, it represents duration in hours, minutes, seconds and fraction of second
+  iiid[hh:MM[:ss[.fff]]]            - iii specifies followed by d specifies number of days. Optional additional time can follow
 
-  PROCESS_ID(PID):iiiiii    - ProcessID specifier. If provided then only operations with specific process_id are returned. iiiiii is integer value representing process_id.
-                              Multiple declarations can be specified to filter for multiple process_ids.
-  CALLER_NAME(CN):xxxxxxxx  - Caller Name specifier. If provided then only operations which caller corresponds to provided value. xxxxxxxx is string representing caller name.
-                              Multiple declarations can be specified to filter for multiple callers. Caller name supports LIKE wildcards.
-  STOPPED_BY(SB):xxxxxxxx   - Stopped By specifier. if provided then only operations which were stopped by user with provided name are returned. xxxxxxxx is string representing user name.
-                              Multiple declarations can be specified to filter for multiple user names. Stopped by name suppors LIKE wildcards.
-  (32B)IT                   - Filter only 32 bit executions
-  (64B)IT                   - Filter only 64 bit executions
-  MILLISECONDS(MS)          - Include duration in milliseconds (for Execution Component Phases it in nanoseconds)', 0, 0) WITH NOWAIT;
+  PROCESS_ID(PID):iiiiii            - ProcessID specifier. If provided then only operations with specific process_id are returned. iiiiii is integer value representing process_id.
+                                      Multiple declarations can be specified to filter for multiple process_ids.
+  CALLER_NAME(CN):xxxxxxxx          - Caller Name specifier. If provided then only operations which caller corresponds to provided value. xxxxxxxx is string representing caller name.
+                                      Multiple declarations can be specified to filter for multiple callers. Caller name supports LIKE wildcards.
+  STOPPED_BY(SB):xxxxxxxx           - Stopped By specifier. if provided then only operations which were stopped by user with provided name are returned. xxxxxxxx is string representing user name.
+                                      Multiple declarations can be specified to filter for multiple user names. Stopped by name suppors LIKE wildcards.
+  (32B)IT                           - Filter only 32 bit executions
+  (64B)IT                           - Filter only 64 bit executions
+  MILLISECONDS(MS)                  - Include duration in milliseconds (for Execution Component Phases it in nanoseconds)', 0, 0) WITH NOWAIT;
 
-RAISERROR(N'  LOCAL_TIME(LT)            - Use local time in the time-stamps
-  EXECUTION_DETAILS(ED)     - Include Execution Details
-  PARAMS(PM)                - Include Execution Parameters in Execution Details. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
-  DECRYPT_SENSITIVE(DS)     - Decrypt sensitive information. If specified, sensitive data will be decrypted and the values provided
-                              Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
-                              to be able to decrypt sensitive information
-  FOLDER_DETAILS(FD)        - Include detailed information about folder from which the executed package originates. Information is provided in form of xml in the objects_details column.
-                              Included is information about projects and environments in the folder.
-  PROJECT_DETAILS(PRD)      - Include detailed information about project from which the executed package originates. Information is provided in form of xml in the objects_details column.
-                              Included is information about project parameters and packages in the project. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
-  OBJECT_DETAILS(OD)        - Include detailed information about the executed pacakge. Information is provided in form of xml in the objects_details column.
-                              Included is information about package parameters. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
+RAISERROR(N'  LOCAL_TIME(LT)                    - Use local time in the time-stamps
+  EXECUTION_DETAILS(ED)             - Include Execution Details
+  PARAMS(PM)                        - Include Execution Parameters in Execution Details. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
+  DECRYPT_SENSITIVE(DS)             - Decrypt sensitive information. If specified, sensitive data will be decrypted and the values provided
+                                      Caller must be member of [db_owner] or [ssis_sensitive_access] database role or member of [sysadmin] server role
+                                      to be able to decrypt sensitive information
+  FOLDER_DETAILS(FD)                - Include detailed information about folder from which the executed package originates. Information is provided in form of xml in the objects_details column.
+                                      Included is information about projects and environments in the folder.
+  PROJECT_DETAILS(PRD)              - Include detailed information about project from which the executed package originates. Information is provided in form of xml in the objects_details column.
+                                      Included is information about project parameters and packages in the project. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
+  OBJECT_DETAILS(OD)                - Include detailed information about the executed pacakge. Information is provided in form of xml in the objects_details column.
+                                      Included is information about package parameters. If DECRYPT_SENSITIVE(DS) is included, sensitive values are decrypted.
 ', 0, 0) WITH NOWAIT;
 RAISERROR(N'
-  FOLDER (FLD)              - Optional keyword which specifies the result will be grouped by FOLDER. Nunmber of last records is per folder.
-  (P)ROJECT                 - Optional keyword which specifeis the result will be grouped by FOLDER, PROJECT. Number of last records is per project
-  (E)XECUTABLE              - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
+  FOLDER (FLD)                      - Optional keyword which specifies the result will be grouped by FOLDER. Nunmber of last records is per folder.
+  (P)ROJECT                         - Optional keyword which specifeis the result will be grouped by FOLDER, PROJECT. Number of last records is per project
+  (E)XECUTABLE                      - Optional keyword which specifies the result will be grouped by FOLDER, PROJET, EXECUTABLE. Number of last records is per EXECUTABLE
   
-  AGENT_REFERENCES (AGR)    - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval). Runs in caller context. Caller must have permissions to msdb.
-  AGENT_JOB (AGT)           - If available, Retrieve information about agent Job which started the execution. (Slow-down the retrieval). Runs in caller context. Caller must have permissions to msdb.
+  AGENT_REFERENCES (AGR)            - Include information about Agent Jobs referencing the packages (Slow-downs the retrieval). Runs in caller context. Caller must have permissions to msdb.
+  AGENT_JOB (AGT)                   - If available, Retrieve information about agent Job which started the execution. (Slow-down the retrieval). Runs in caller context. Caller must have permissions to msdb.
 
 
-  MA(X):iiiii               - Optional keyword which specifies that when the LAST rows are returned per FOLDER, PROJECT, EXECUTABLE, then maximum of LAST iiiii rows
-                              will be retrieved and those grouped and returned as per above specification', 0, 0) WITH NOWAIT;
+  MA(X):iiiii                       - Optional keyword which specifies that when the LAST rows are returned per FOLDER, PROJECT, EXECUTABLE, then maximum of LAST iiiii rows
+                                      will be retrieved and those grouped and returned as per above specification', 0, 0) WITH NOWAIT;
 RAISERROR(N'
-  (V)ERBOSE:iiiiii          - Used to pass exeuction ID for which detailed overview should be provided. it has priority over the overview ranges.
-                              In case multiple integer numbers are provided, it produces verbose information for the maximum integer provided.
-                              If verbose is specified without any integer number, then verbose invormation is provided for the last operation.', 0, 0) WITH NOWAIT;
+  (V)ERBOSE:iiiiii                  - Used to pass exeuction ID for which detailed overview should be provided. it has priority over the overview ranges.
+                                      In case multiple integer numbers are provided, it produces verbose information for the maximum integer provided.
+                                      If verbose is specified without any integer number, then verbose invormation is provided for the last operation.', 0, 0) WITH NOWAIT;
 RAISERROR(N'
+  PACKAGE_EXECUTION_STATUS(PES):sss - Package Execution Status Filter. sss is comma separated list of @status filters.
+                                      For details see the @status filter below. It overrides the filters pased in the @status parameter as well as the inline status filters below
+                                      
+
   (R)UNNING         - Filter Modifier applies RUNNING @status filter
   (S)UCCESS         - Filter Modifier applie SUCCESS @status filter
   (F)AILURE         - Filter modifier applies FAILURE @status filter
@@ -1687,6 +1718,11 @@ RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS):iiiii   - Include Execution Data St
     (F)AILURE           - Filter for Failure result
     COMPLETION(CD)      - Filter for Completion result
     (C)CANCELLED        - Filter for Cancelled result
+    (U)NEXPECTED        - Filter for Unexpected execution result
+    COM(P)LETED         - Filter for Completed execution result
+    ALL                 - All above filters usefull with [-] prefist status
+
+    Statuses with prefix [-] are removed from selecting
 ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'
@@ -1731,6 +1767,9 @@ Below list of execution statuses are available for filter:
   (U)NEXPECTED  - Operetion edend unexpectedly
   STOPPIN(G)    - Operation is in process of stpping
   COMPLETED(CD) - Operation was completed
+  ALL           - All above statuses
+
+  Statuses prefixed with [-] are removed from the filter: ALL,-S means all statuses except Success
 ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'
@@ -2046,7 +2085,7 @@ N'
             ,em.package_path            ''package/@package_path''
             ,em.execution_path          ''package/@execution_path''
             ,em.package_location_type   ''package/@location_type''
-            ,''SELECT * FROM catalog.event_message_context WITH(NOLOCK) WHERE event_message_id = '' + FORMAT(em.event_message_id, ''G'') ''message/context/@info''
+            ,''SELECT * FROM internal.event_message_context WITH(NOLOCK) WHERE event_message_id = '' + FORMAT(em.event_message_id, ''G'') ''message/context/@info''
             --,om.message                 ''message/msg''
             ,CONVERT(xml, N''<?msg --
 '' + REPLACE(REPLACE(om.message, N''<?'', N''''), N''?>'', N'''') + N''
@@ -2085,17 +2124,24 @@ N'
 					,result					AS ''@result_description''
 					,end_time				AS ''@end_time''
 					,result_code			AS ''@result_code''
+                    ,status_info            AS ''@status_info''
 				FROM (
 				  SELECT
 					 ROW_NUMBER() OVER(PARTITION BY e.package_name ORDER BY CASE WHEN e.package_path = ''\Package'' THEN 0 ELSE 1 END ASC, es.start_time ASC) AS pno
+                    ,CASE WHEN e.package_path = ''\Package'' OR d.status_code IN (3, 4, 6, 7, 9) THEN N''Final'' ELSE N''Preliminary'' END AS status_info
 					,CASE
 						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
 						WHEN 0 THEN N''S''  --Success
 						WHEN 1 THEN N''F''  --Failure
 						WHEN 2 THEN N''O''  --Completed
 						WHEN 3 THEN N''C''  --Cancelled
-                        WHEN 99 THEN N''R'' --Running
-						ELSE N''U''         --Unknown
+                        WHEN 99 THEN
+                            CASE d.status_code
+                                WHEN 6 THEN N''U''  --Unexpected
+                                WHEN 9 THEN N''P''  --Completed
+                                ELSE N''R'' --Running
+                            END 
+						ELSE N''K'' --Unknown
 					END                 AS res
 
 					,CONVERT(nvarchar(36), es.start_time)       AS start_time
@@ -2118,12 +2164,17 @@ N'
 						WHEN 1 THEN N''Failure''
 						WHEN 2 THEN N''Completion''
 						WHEN 3 THEN N''Cancelled''
-                        WHEN 99 THEN N''Running''
+                        WHEN 99 THEN
+                            CASE d.status_code
+                                WHEN 6 THEN N''Unexpected''
+                                WHEN 9 THEN N''Completed''
+                                ELSE N''Running''
+                            END 
 						ELSE N''Unknown''
 					END                 AS result
 
 					,CONVERT(nvarchar(36), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE NULL END))  end_time
-					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END, -9999)      result_code
+					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status_code IN (6, 9) THEN d.[status_code] ELSE 99 END, -9999)      result_code
 				FROM internal.executable_statistics es WITH(NOLOCK)
 				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id
 				LEFT JOIN  (
@@ -2139,18 +2190,18 @@ N'
 				) MM ON e.package_name = MM.package_name
 				WHERE 
 					es.execution_id = d.execution_id
-					AND
-					(
-						e.package_path = ''\Package'' 
-						OR
-						(
-							d.status_code IN (2, 5, 8)
-							AND
-							(
-                                MM.start_time IS NULL
-							)
-						)
-					)
+					--AND
+					--(
+					--	e.package_path = ''\Package'' 
+					--	OR
+					--	(
+					--		d.status_code IN (2, 5, 8)
+					--		AND
+					--		(
+     --                           MM.start_time IS NULL
+					--		)
+					--	)
+					--)
 		) EPD
 		WHERE EPD.pno = 1 ' + 
         CASE WHEN @filterPkgStatus = 1 
@@ -2310,7 +2361,7 @@ N'
                         ELSE 
                             (SELECT op.default_value  ''values/devalue_value/processing-instruction(value)'' FOR XML PATH(''''), TYPE)
                     END
-                FROM internal.object_parameters op
+                FROM internal.object_parameters op WITH(NOLOCK)
                 WHERE
                     op.project_version_lsn = pd.object_version_lsn
                     AND
@@ -2360,7 +2411,7 @@ N'
                                 ELSE 
                                     (SELECT op.default_value  ''values/devalue_value/processing-instruction(value)'' FOR XML PATH(''''), TYPE)
                             END
-                        FROM internal.object_parameters op
+                        FROM internal.object_parameters op WITH(NOLOCK)
                         WHERE
                             op.project_version_lsn = pk.project_version_lsn
                             AND
@@ -2369,7 +2420,7 @@ N'
                         )
                         ELSE NULL
                     END
-                FROM internal.packages pk
+                FROM internal.packages pk WITH(NOLOCK)
                 WHERE 
                     pk.project_version_lsn = p.object_version_lsn
                     AND
@@ -2378,7 +2429,7 @@ N'
             )
             ELSE NULL
            END
-        FROM internal.projects pd
+        FROM internal.projects pd WITH(NOLOCK)
         WHERE 
             pd.folder_id = f.folder_id
             AND
@@ -2394,14 +2445,14 @@ N'
                 ,e.created_time             ''@created_time''
                 ,e.created_by_sid           ''@created_by_sid''
                 ,e.description              ''@description''
-            FROM internal.environments e
+            FROM internal.environments e WITH(NOLOCK)
             WHERE e.folder_id = f.folder_id
             FOR XML PATH(''environment''), ROOT(''environments''), TYPE
         )
         ELSE NULL
     END
-FROM internal.projects p
-INNER JOIN internal.folders f ON f.folder_id = p.folder_id
+FROM internal.projects p WITH(NOLOCK) 
+INNER JOIN internal.folders f WITH(NOLOCK) ON f.folder_id = p.folder_id
 WHERE 
     p.object_version_lsn = d.project_lsn
 FOR XML PATH(''Folder''), TYPE
@@ -2523,7 +2574,7 @@ ELSE N'' END + N'
     ,' + CASE WHEN @localTime = 1 THEN N'CONVERT(datetime2(7), d.created_time) AS created_time' ELSE N'd.created_time' END + N'
 ' +
     CASE
-        WHEN @id IS NULL THEN N',''sp_ssisdb ''''V:'' + FORMAT(d.execution_ID, ''G'') + N'' PM ES:1000 EM:1000 EDS:1000 ECP:1000'''',@package = '''''''', @msg_type = '''''''', @event_filter = '''''''', @phase_filter = '''''''', @task_filter = '''''''',
+        WHEN @id IS NULL THEN N',''sp_ssisdb ''''V:'' + FORMAT(d.execution_ID, ''G'') + N'' PM ES:1000 EM:1000 EDS:1000 ECP:1000 EPR:ALL, ESR:ALL'''',@package = '''''''', @msg_type = '''''''', @event_filter = '''''''', @phase_filter = '''''''', @task_filter = '''''''',
 @subcomponent_filter = '''''''', @package_path = '''''''', @execution_path = '''''''', @msg_filter = '''''''', @src_component_name = '''''''', @dst_component_name = '''''''' '' as execution_details_command'
         ELSE N''
     END + N'
@@ -3105,7 +3156,8 @@ BEGIN
                     CASE WHEN @duration_ms = 1 THEN N'
                     ,CONVERT(bigint, DATEDIFF(DAY, CONVERT(datetime2(7), ''19000101''), durationDate)) * 86400000 + DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(DAY, ''19000101'', durationDate), ''19000101''), durationDate) AS duration_ms'
                     ELSE N'' END + N'
-					,result
+					,res AS result
+                    ,result AS result_description
 					,result_code
                     ,status_info' +
                     CASE 
@@ -3115,15 +3167,20 @@ BEGIN
 				FROM (
 				  SELECT
 					 ROW_NUMBER() OVER(PARTITION BY e.package_name ORDER BY CASE WHEN e.package_path = ''\Package'' THEN 0 ELSE 1 END ASC, es.start_time ASC) AS pno
-                    ,CASE WHEN e.package_path = ''\Package'' THEN N''Final'' ELSE N''Preliminary'' END AS status_info
+                    ,CASE WHEN e.package_path = ''\Package'' OR d.status IN (3, 4, 6, 7, 9) THEN N''Final'' ELSE N''Preliminary'' END AS status_info
 					,CASE
 						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
 						WHEN 0 THEN N''S''  --Success
 						WHEN 1 THEN N''F''  --Failure
 						WHEN 2 THEN N''O''  --Completed
 						WHEN 3 THEN N''C''  --Cancelled
-                        WHEN 99 THEN N''R'' --Running
-						ELSE N''U''
+                        WHEN 99 THEN
+                            CASE d.status
+                                WHEN 6 THEN N''U''  --Unexpected
+                                WHEN 9 THEN N''P''  --Completed
+                                ELSE N''R'' --Running
+                            END 
+						ELSE N''K''
 					END                 AS res
 
 					,es.start_time
@@ -3141,11 +3198,17 @@ BEGIN
 						WHEN 1 THEN N''Failure''
 						WHEN 2 THEN N''Completion''
 						WHEN 3 THEN N''Cancelled''
-                        WHEN 99 THEN N''Running''
+                        WHEN 99 THEN
+                            CASE d.status
+                                WHEN 6 THEN N''Unexpected''
+                                WHEN 9 THEN N''Completed''
+                                ELSE N''Running''
+                            END 
 						ELSE N''Unknown''
 					END                 AS result
 
-					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END, -9999)      result_code ' +
+					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status IN (6, 9) THEN d.[status] ELSE 99 END, -9999)      result_code
+                     ' +
 
                     CASE 
                         WHEN @filterPkgStatus = 1 OR (@pkgFilter = 1 AND @filterPkg = 1) THEN
@@ -3180,18 +3243,18 @@ BEGIN
 				) MM ON e.package_name = MM.package_name
 				WHERE 
 					d.operation_id = @id
-					AND
-					(
-						e.package_path = ''\Package'' 
-						OR
-						(
-							d.status IN (2, 5, 8)
-							AND
-							(
-                                MM.start_time IS NULL
-							)
-						)
-					)
+					--AND
+					--(
+					--	e.package_path = ''\Package'' 
+						--OR
+						--(
+						--	d.status IN (2, 5, 8)
+						--	AND
+						--	(
+      --                          MM.start_time IS NULL
+						--	)
+						--)
+					--)
 		) EPD
 		WHERE EPD.pno = 1 ') +
         CASE
@@ -3259,16 +3322,23 @@ BEGIN
             IF @filterExecutableStatusFilter IS NOT NULL AND @filterExecutableStatusFilter <> N'' --process only if filter was specified
             BEGIN
                 SET @xml = N'<i>' + REPLACE(REPLACE(@filterExecutableStatusFilter, N',', @xr), N' ', @xr) + N'</i>'
-
+                
                 INSERT INTO #ESstatuses(id, [status])
                 SELECT DISTINCT
                     ast.id
                     ,ast.[status]
                 FROM @availExecStatuses ast
-                INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL'
+                INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON LEFT(st.[status], 1) <> '-' AND (st.[status] = ast.[status] OR st.status = ast.short OR st.[status] = 'ALL')
+                EXCEPT
+                SELECT DISTINCT
+                    ast.id
+                    ,ast.[status]
+                FROM @availExecStatuses ast
+                INNER JOIN (SELECT n.value(N'.', 'nvarchar(50)') value FROM @xml.nodes('/i') T(n)) st([status]) ON LEFT(st.[status], 1) = '-' AND (RIGHT(st.[status], LEN(st.[status]) -1) = ast.[status] OR RIGHT(st.[status], LEN(st.[status]) -1) = ast.short)
+                
             END
 
-            IF NOT((SELECT COUNT(1) FROM #ESstatuses) BETWEEN 1 AND 3)
+            IF NOT((SELECT COUNT(1) FROM #ESstatuses) BETWEEN 1 AND 6)
             BEGIN
                 SET @filterExecutableStatus = 0
             END
@@ -3337,7 +3407,7 @@ BEGIN
                 ,e.package_path_full
                 ,e.executable_guid
              FROM ExecStat es
-             INNER JOIN [internal].[executables] e  WITH(NOLOCK) ON e.executable_id = es.executable_id
+             INNER JOIN [internal].[executables] e WITH(NOLOCK) ON e.executable_id = es.executable_id
     ' +
         CASE 
             WHEN @pkgFilter = 1 THEN N' INNER JOIN #packages pkg ON pkg.package_name = e.package_name'
@@ -3388,7 +3458,7 @@ BEGIN
         RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
 
         /* EVENT MESSAGES */
-        IF EXISTS(SELECT 1 FROM internal.operation_messages om WHERE om.operation_id = @id)
+        IF EXISTS(SELECT 1 FROM internal.operation_messages om WITH(NOLOCK) WHERE om.operation_id = @id)
         BEGIN        
 
             IF (@task_filter IS NOT NULL)
@@ -3404,7 +3474,7 @@ BEGIN
                 )
                 INSERT INTO @baseTasksM(task_name) 
                 SELECT em.message_source_name
-                FROM internal.event_messages em
+                FROM internal.event_messages em WITH(NOLOCK)
                 WHERE operation_id = @id AND message_source_name IS NOT NULL
                 GROUP BY em.message_source_name
 
@@ -3446,7 +3516,7 @@ BEGIN
                 )
                 INSERT INTO @baseEvents(event_name) 
                 SELECT em.event_name
-                FROM internal.event_messages em
+                FROM internal.event_messages em WITH(NOLOCK)
                 WHERE operation_id = @id AND event_name IS NOT NULL
                 GROUP BY em.event_name
 
@@ -3485,7 +3555,7 @@ BEGIN
 
                 INSERT INTO @baseSubcomponents(subcomponent_name) 
                 SELECT em.subcomponent_name
-                FROM internal.event_messages em
+                FROM internal.event_messages em WITH(NOLOCK)
                 WHERE operation_id = @id AND subcomponent_name IS NOT NULL
                 GROUP BY em.subcomponent_name
 
@@ -3848,7 +3918,7 @@ BEGIN
         RAISERROR(@msg, 0, 0, @tms) WITH NOWAIT;
 
     END
-    IF @includeECP = 1 AND EXISTS(SELECT 1 FROM internal.execution_component_phases WHERE execution_id = @id)
+    IF @includeECP = 1 AND EXISTS(SELECT 1 FROM internal.execution_component_phases WITH(NOLOCK) WHERE execution_id = @id)
     BEGIN
         
         SET @dateField = CASE WHEN @useEndTime = 1 THEN 'end_time' ELSE 'start_time' END;
@@ -3872,7 +3942,7 @@ BEGIN
             )
             INSERT INTO @basePhases(phase) 
             SELECT phase 
-            FROM internal.execution_component_phases 
+            FROM internal.execution_component_phases  WITH(NOLOCK)
             WHERE execution_id = @id  AND phase IS NOT NULL
             GROUP BY phase
 
@@ -3908,7 +3978,7 @@ BEGIN
             )
             INSERT INTO @baseTasks(task_name) 
             SELECT task_name 
-            FROM internal.execution_component_phases 
+            FROM internal.execution_component_phases WITH(NOLOCK)
             WHERE execution_id = @id  AND task_name IS NOT NULL
             GROUP BY task_name
 
@@ -3947,7 +4017,7 @@ BEGIN
 
             INSERT INTO @baseSubcomponentsP(subcomponent_name) 
             SELECT cp.subcomponent_name
-            FROM internal.execution_component_phases cp
+            FROM internal.execution_component_phases cp WITH(NOLOCK)
             WHERE execution_id = @id AND subcomponent_name IS NOT NULL
             GROUP BY cp.subcomponent_name
 
@@ -4086,7 +4156,7 @@ BEGIN
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
         RAISERROR(N'%s - Execution Component Phases retrieval completed...', 0, 0, @tms) WITH NOWAIT;
 
-    END --IF @includeECP = 1 AND EXISTS(SELECT 1 FROM internal.execution_component_phases WHERE execution_id = @id)
+    END --IF @includeECP = 1 AND EXISTS(SELECT 1 FROM internal.execution_component_phases WITH(NOLOCK) WHERE execution_id = @id)
     ELSE IF @includeECP = 1
     BEGIN
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
