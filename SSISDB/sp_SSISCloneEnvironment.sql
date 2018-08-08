@@ -11,7 +11,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneEnvironment] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneEnvironment]''')
 GO
 /* ****************************************************
-sp_SSISCloneEnvironment v 0.60 (2017-12-06)
+sp_SSISCloneEnvironment v 0.66 (2018-08-08)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -46,7 +46,7 @@ Parameters:
     ,@environment                           nvarchar(max)   = '%'  --comma separated lists of environments. Supports wildcards.
     ,@variables                             nvarchar(max)   = NULL --Comma separated lists of environment variables to list. Supports wildcards.
     ,@destinationFolder                     nvarchar(128)   = '%'  --Name of the destination folder(s). Supports wildcards. It sets default value for the script
-    ,@destinationEnvironment                nvarchar(128)   = '%'  --Name of the destination Environment(s). Support wildcards. It sets default value for the script
+    ,@destinationEnvironment                nvarchar(max)   = '%'  --Name of the destination Environment(s). Support wildcards. It sets default value for the script
     ,@destinationFolderReplacements         nvarchar(max)   = NULL  -- Comma separated list of destination folder replacements. 
     ,@destinationEnvironmentReplacements    nvarchar(max)   = NULL  -- Comma separated list of destination environment replacements. 
     ,@autoCreate                            bit             = 0    --Specifies whether the destination Folder/Environment should be auto-created if not exists. It sets default value for the script
@@ -60,7 +60,7 @@ ALTER PROCEDURE [dbo].[sp_SSISCloneEnvironment]
     ,@environment                           nvarchar(max)   = '%'  --comma separated lists of environments. Supports wildcards.
     ,@variables                             nvarchar(max)   = NULL --Comma separated lists of environment variables to list. Supports wildcards.
     ,@destinationFolder                     nvarchar(128)   = '%'  --Name of the destination folder(s). Supports wildcards. It sets default value for the script
-    ,@destinationEnvironment                nvarchar(128)   = '%'  --Name of the destination Environment(s). Support wildcards. It sets default value for the script
+    ,@destinationEnvironment                nvarchar(max)   = '%'  --Name of the destination Environment(s). Support wildcards. It sets default value for the script
     ,@destinationFolderReplacements         nvarchar(max)   = NULL  -- Comma separated list of destination folder replacements. 
     ,@destinationEnvironmentReplacements    nvarchar(max)   = NULL  -- Comma separated list of destination environment replacements. 
     ,@autoCreate                            bit             = 0    --Specifies whether the destination Folder/Environment should be auto-created if not exists. It sets default value for the script
@@ -181,9 +181,9 @@ BEGIN
         SET @printHelp = 1
     END
 
-    SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'sp_SSISCloneEnvironment v0.60 (2017-12-06) (C) 2017 Pavel Pawlowski' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
+    SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'sp_SSISCloneEnvironment v0.66 (2018-08-08) (C) 2017 - 2018 Pavel Pawlowski' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
 	RAISERROR(@msg, 0, 0) WITH NOWAIT;
-    SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'===================================================================' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
+    SET @msg = CASE WHEN @printHelp = 1 THEN N'' ELSE N'RAISERROR(N''' END + N'==========================================================================' + CASE WHEN @printHelp = 1 THEN '' ELSE N''', 0, 0) WITH NOWAIT;' END;
 	RAISERROR(@msg, 0, 0) WITH NOWAIT;
 
     IF @value IS NOT NULL AND @exactValue IS NOT NULL
@@ -215,10 +215,13 @@ Variables can be filtered by names as well as values.
                                                                      Only variables which name is matching pattern are scripted
     ,@destinationFolder                     nvarchar(128)   = ''%%''  - Pattern for naming Destination Folder. %% in the destination folder name is replaced by the name of the source folder.
                                                                      Allows easy cloning of multiple folders by prefixing or suffixing the %% pattern
-                                                                     It sets the default value for the script
-    ,@destinationEnvironment                nvarchar(128)   = ''%%''  - Pattern for naming destination Environment. %% in the destination environment name is replaced by the source environment name.
-                                                                     Allows easy cloning of multiple folders by prefixing or suffixing the %% pattern
-                                                                     It sets the default value for the script', 0, 0) WITH NOWAIT;
+                                                                     It sets the default value for the final script
+    ,@destinationEnvironment                nvarchar(max)   = ''%%''  - Pattern for naming destination Environment. %% in the destination environment name is replaced by the source environment name.
+                                                                     Allows easy cloning of multiple environments by prefixing or suffixing the %% pattern
+                                                                     It sets the default value for the final script
+                                                                     It supports comma delimited list of desination environments. If multiple environments are provided then all the scripted variables
+                                                                     are applied in the loop for each such environment in the list. This allows easy replication of variable(s) to multiple
+                                                                     destination environments', 0, 0) WITH NOWAIT;
 RAISERROR(N'    ,@destinationFolderReplacements         varchar(max)    = NULL - Comma separated list of destination folder replacements. 
                                                                      Replacements are in format SourceVal1=NewVal1,SourceVal2=NewVal2
                                                                      Replacements are applied from left to right. This means if SourceVal2 is substring of NewVal1 that substring will be
@@ -483,7 +486,7 @@ sp_SSISCloneEnvironment
     RAISERROR(N'--Global definitions:', 0, 0) WITH NOWAIT;
     RAISERROR(N'---------------------', 0, 0) WITH NOWAIT;
     RAISERROR(N'DECLARE @destinationFolder                  nvarchar(128) = N''%s''   -- Specify destination folder name/wildcard', 0, 0, @destinationFolder) WITH NOWAIT;
-    RAISERROR(N'DECLARE @destinationEnvironment             nvarchar(128) = N''%s''   -- Specify destination Environment name/wildcard', 0, 0, @destinationEnvironment) WITH NOWAIT;
+    RAISERROR(N'DECLARE @destinationEnvironment             nvarchar(max) = N''%s''   -- Specify destination Environment name/wildcard', 0, 0, @destinationEnvironment) WITH NOWAIT;
     IF @destinationFolderReplacements IS NULL
         RAISERROR(N'DECLARE @destinationFolderReplacements      nvarchar(max) = NULL      -- Specify destination folder replacements.', 0, 0, @destinationFolderReplacements) WITH NOWAIT;
     ELSE
@@ -594,7 +597,8 @@ SET NOCOUNT ON;
             RAISERROR(N'-- *********************************************************************************', 0, 0) WITH NOWAIT;
             RAISERROR(N'-- Environment: %s', 0, 0, @EnvironmentName) WITH NOWAIT;
             RAISERROR(N'-- *********************************************************************************', 0, 0) WITH NOWAIT;
-            RAISERROR(N'SET @destEnv = REPLACE(@destinationEnvironment, ''%%'', %s)', 0, 0, @envQuoted) WITH NOWAIT;
+            --RAISERROR(N'SET @destEnv = REPLACE(@destinationEnvironment, ''%%'', %s)', 0, 0, @envQuoted) WITH NOWAIT;
+            RAISERROR(N'SET @destEnv = %s', 0, 0, @envQuoted) WITH NOWAIT;
             RAISERROR(N'SET @envDesc = %s', 0, 0, @envDescrQuoted) WITH NOWAIT;
             RAISERROR(N'-- *********************************************************************************', 0, 0) WITH NOWAIT;
         END
@@ -661,6 +665,8 @@ SET NOCOUNT ON;
     ,@lastEnvironmentName   nvarchar(128)
     ,@fld                   nvarchar(128)
     ,@env                   nvarchar(128)
+    ,@dstEnv                nvarchar(128)
+    ,@destEnvCount          int
     ,@processFld            bit
     ,@processEnv            bit
     ,@xml                   xml
@@ -668,6 +674,12 @@ SET NOCOUNT ON;
     ,@oldVal                nvarchar(128)
     ,@newVal                nvarchar(128)
     ,@error                 bit             = 0
+
+--Table for holding multiple target environments
+DECLARE @environments TABLE (
+    Ord             INT           NOT NULL PRIMARY KEY CLUSTERED
+    ,Environment    nvarchar(128) NOT NULL
+)
 
 --Table for holding folder replacements
 DECLARE @folderReplacements TABLE (
@@ -684,6 +696,24 @@ DECLARE @environmentReplacements TABLE (
     ,NewValue       nvarchar(128)
     ,Replacement    nvarchar(4000)
 )
+', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
+--Environments
+SET @xml = N''<i>'' + REPLACE(@destinationEnvironment, '','', ''</i><i>'') + N''</i>'';
+WITH Environments AS (
+    SELECT DISTINCT
+        LTRIM(RTRIM(F.value(''.'', ''nvarchar(128)''))) AS Environment
+        ,ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS Ord
+    FROM @xml.nodes(N''/i'') T(F)
+)
+INSERT INTO @environments(Ord, Environment)
+SELECT
+    Ord
+    ,Environment
+FROM Environments
+
+SET @destEnvCount = ISNULL((SELECT COUNT(1) FROM @environments), 0);
 ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'
@@ -738,6 +768,27 @@ END
 RAISERROR(N'
 IF @error = 0
 BEGIN
+DECLARE ecr CURSOR FAST_FORWARD FOR
+SELECT
+    Environment
+FROM @environments
+ORDER BY Ord
+
+OPEN ecr;
+
+FETCH NEXT FROM ecr INTO @dstEnv
+
+WHILE @@FETCH_STATUS = 0
+BEGIN
+    IF @destEnvCount > 1
+    BEGIN
+        RAISERROR(N''Processing Destination Environment [%%s]'', 0, 0, @dstEnv) WITH NOWAIT;
+        SET @msg = N''*************************************'' + REPLICATE(''*'', LEN(@dstEnv))
+        RAISERROR(@msg, 0, 0) WITH NOWAIT;
+    END
+', 0, 0) WITH NOWAIT;
+
+RAISERROR(N'
 DECLARE cr CURSOR FAST_FORWARD FOR
 SELECT
     FolderName
@@ -767,6 +818,7 @@ FETCH NEXT FROM cr INTO
 ', 0, 0) WITH NOWAIT;
 RAISERROR(N'WHILE @@FETCH_STATUS = 0
 BEGIN
+    SET @env = REPLACE(@dstEnv, ''%%'', @env)
     IF @lastFolderName IS NULL OR @lastFolderName <> @fld
     BEGIN
         SET @processFld = 1
@@ -917,7 +969,7 @@ RAISERROR(N'
         END
         ELSE
         BEGIN
-            RAISERROR(N''Creating variable [%%s]\[%%s]\[%%ss]'', 0, 0, @destFld, @destEnv, @varName) WITH NOWAIT;
+            RAISERROR(N''Creating variable [%%s]\[%%s]\[%%s]'', 0, 0, @destFld, @destEnv, @varName) WITH NOWAIT;
             EXEC [SSISDB].[catalog].[create_environment_variable] @folder_name=@destFld, @environment_name=@destEnv, @variable_name=@varName, @data_type=@variableType, @sensitive=@isSensitive, @value=@var, @description=@varDesc
         END
     END
@@ -937,6 +989,13 @@ END
 
 CLOSE cr;
 DEALLOCATE cr;
+
+FETCH NEXT FROM ecr INTO @dstEnv
+END
+
+CLOSE ecr;
+DEALLOCATE ecr;
+
 END', 0, 0) WITH NOWAIT;
 
 END
