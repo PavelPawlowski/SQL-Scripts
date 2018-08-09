@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.79 (2018-08-07)
+sp_ssisdb v 0.80 (2018-08-09)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -227,7 +227,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.79 (2018-08-07) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.80 (2018-08-09) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -2349,6 +2349,10 @@ N'
                     ,op.referenced_variable_name    ''values/@referenced_variable_name''
                     ,op.design_default_value        ''values/design_default_value/processing-instruction(value)''
                     ,CASE
+						WHEN op.sensitive = 1 AND @decryptSensitive = 0 THEN
+                            (SELECT ''''  ''values/default_value/sensitive-value-protected'' FOR XML PATH(''''), TYPE)
+						WHEN op.sensitive = 1 AND @decryptSensitive = 1 AND op.sensitive_default_value IS NULL THEN
+                            (SELECT ''''  ''values/default_value/sensitive-value-not-available'' FOR XML PATH(''''), TYPE)
                         WHEN op.sensitive = 1 AND @decryptSensitive = 1 THEN
                             (SELECT
                             CASE [parameter_data_type]
@@ -2356,10 +2360,9 @@ N'
                                 ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Proj_'' + CONVERT(nvarchar(20), op.project_id)), NULL, op.sensitive_default_value), [parameter_data_type]))
                             END ''values/default_value/processing-instruction(sensitive-value)''
                             FOR XML PATH(''''), TYPE
-                            ) 
-                    
+                            )                     
                         ELSE 
-                            (SELECT op.default_value  ''values/devalue_value/processing-instruction(value)'' FOR XML PATH(''''), TYPE)
+                            (SELECT op.default_value  ''values/default_value/processing-instruction(value)'' FOR XML PATH(''''), TYPE)
                     END
                 FROM internal.object_parameters op WITH(NOLOCK)
                 WHERE
@@ -2399,6 +2402,10 @@ N'
                             ,op.referenced_variable_name    ''values/@referenced_variable_name''
                             ,op.design_default_value        ''values/design_default_value/processing-instruction(value)''
                             ,CASE
+								WHEN op.sensitive = 1 AND @decryptSensitive = 0 THEN
+									(SELECT ''''  ''values/default_value/sensitive-value-protected'' FOR XML PATH(''''), TYPE)
+								WHEN op.sensitive = 1 AND @decryptSensitive = 1 AND op.sensitive_default_value IS NULL THEN
+									(SELECT ''''  ''values/default_value/sensitive-value-not-available'' FOR XML PATH(''''), TYPE)
                                 WHEN op.sensitive = 1 AND @decryptSensitive = 1 THEN
                                     (SELECT
                                     CASE [parameter_data_type]
@@ -2523,23 +2530,31 @@ CASE WHEN @execDetails = 1 AND @includeParams = 1 THEN N'
             ,[object_type]                ''@object_type''
             ,[runtime_override]           ''@runtime_override''
             ,CASE
+				WHEN epv.sensitive = 1 AND @decryptSensitive = 0 THEN
+                    (SELECT ''''  ''sensitive-value-protected'' FOR XML PATH(''''), TYPE)
+				WHEN epv.sensitive = 1 AND @decryptSensitive = 1 AND epv.[sensitive_parameter_value] IS NULL THEN
+                    (SELECT ''''  ''sensitive-value-not-available'' FOR XML PATH(''''), TYPE)
                 WHEN sensitive = 1 AND @decryptSensitive = 1 THEN 
-                    (SELECT
-                    CASE [parameter_data_type]
-                        WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Exec_'' + CONVERT(nvarchar(20), d.execution_id)), NULL, [sensitive_parameter_value]), [parameter_data_type]), 126)
-                        ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Exec_'' + CONVERT(nvarchar(20), d.execution_id)), NULL, [sensitive_parameter_value]), [parameter_data_type]))
-                    END ''processing-instruction(sensitive-value)''
-                    --CASE [parameter_data_type]
-                    --    WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEY([sensitive_parameter_value]), [parameter_data_type]), 126)
-                    --    ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEY([sensitive_parameter_value]), [parameter_data_type]))
-                    --END ''processing-instruction(sensitive-value)''
-                    FOR XML PATH(''''), TYPE
-                    ) 
-                    
+					CASE 
+						WHEN CERT_ID(N''MS_Cert_Exec_'' + CONVERT(nvarchar(20), d.execution_id)) IS NOT NULL THEN
+							(SELECT
+							CASE [parameter_data_type]
+								WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Exec_'' + CONVERT(nvarchar(20), d.execution_id)), NULL, [sensitive_parameter_value]), [parameter_data_type]), 126)
+								ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Exec_'' + CONVERT(nvarchar(20), d.execution_id)), NULL, epv.[sensitive_parameter_value]), epv.[parameter_data_type]))
+							END ''processing-instruction(sensitive-value)'' FOR XML PATH(''''), TYPE
+							) 
+						ELSE
+							(SELECT
+							CASE [parameter_data_type]
+								WHEN ''datetime'' THEN CONVERT(nvarchar(50), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Proj_Param_'' + CONVERT(nvarchar(20), d.object_id)), NULL, [sensitive_parameter_value]), [parameter_data_type]), 126)
+								ELSE CONVERT(nvarchar(4000), [internal].[get_value_by_data_type](DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Proj_Param_'' + CONVERT(nvarchar(20), d.object_id)), NULL, epv.[sensitive_parameter_value]), epv.[parameter_data_type]))
+							END ''processing-instruction(sensitive-value)'' FOR XML PATH(''''), TYPE
+							) 
+					END
                 ELSE 
                     (SELECT [parameter_value]  ''processing-instruction(value)'' FOR XML PATH(''''), TYPE)
             END
-        FROM [internal].[execution_parameter_values] epv
+        FROM [internal].[execution_parameter_values] epv WITH(NOLOCK)
         WHERE epv.execution_id = d.execution_id
         ORDER BY [object_type], [parameter_name]
         FOR XML PATH(''Parameter''), ROOT(''Parameters''), TYPE)'
@@ -2551,17 +2566,40 @@ N'
                [property_id]        ''@id''
               ,[property_path]      ''@property_path''
               ,[sensitive]          ''@sensitive''
+            --,CASE
+            --    WHEN sensitive = 1 AND @decryptSensitive = 1 THEN 
+            --        (SELECT
+            --            CONVERT(nvarchar(4000), DECRYPTBYKEY([sensitive_property_value])) 
+            --            ''processing-instruction(sensitive-value)''
+            --        FOR XML PATH(''''), TYPE
+            --        )                     
+            --    ELSE 
+            --        (SELECT [property_value]  ''processing-instruction(value)'' FOR XML PATH(''''), TYPE)
+            --END
+
             ,CASE
+				WHEN sensitive = 1 AND @decryptSensitive = 0 THEN
+                    (SELECT ''''  ''sensitive-value-protected'' FOR XML PATH(''''), TYPE)
+				WHEN sensitive = 1 AND @decryptSensitive = 1 AND [sensitive_property_value] IS NULL THEN
+                    (SELECT ''''  ''sensitive-value-not-available'' FOR XML PATH(''''), TYPE)
                 WHEN sensitive = 1 AND @decryptSensitive = 1 THEN 
-                    (SELECT
-                        CONVERT(nvarchar(4000), DECRYPTBYKEY([sensitive_property_value])) 
-                        ''processing-instruction(sensitive-value)''
-                    FOR XML PATH(''''), TYPE
-                    )                     
+					CASE 
+						WHEN CERT_ID(N''MS_Cert_Exec_'' + CONVERT(nvarchar(20), d.execution_id)) IS NOT NULL THEN
+							(SELECT
+								CONVERT(nvarchar(4000), DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Exec_'' + CONVERT(nvarchar(20), d.execution_id)), NULL, [sensitive_property_value]))
+							''processing-instruction(sensitive-value)'' FOR XML PATH(''''), TYPE
+							) 
+						ELSE
+							(SELECT
+								CONVERT(nvarchar(4000), DECRYPTBYKEYAUTOCERT(CERT_ID(N''MS_Cert_Proj_Param_'' + CONVERT(nvarchar(20), d.object_id)), NULL, [sensitive_property_value]))
+							''processing-instruction(sensitive-value)'' FOR XML PATH(''''), TYPE
+							) 
+					END
                 ELSE 
                     (SELECT [property_value]  ''processing-instruction(value)'' FOR XML PATH(''''), TYPE)
             END
-        FROM [internal].[execution_property_override_values] epo
+
+        FROM [internal].[execution_property_override_values] epo WITH(NOLOCK)
         WHERE epo.execution_id = d.execution_id
         ORDER BY [property_path]
         FOR XML PATH(''PropertyOverride''), ROOT(''PropertyOverrides''), TYPE)
@@ -3285,7 +3323,7 @@ BEGIN
         IF @debugLevel > 3 
             SELECT @sql AS [executed_packages_query]
 
-        IF EXISTS(SELECT 1 FROM [internal].[executable_statistics] es WHERE es.execution_id = @id)
+        IF EXISTS(SELECT 1 FROM [internal].[executable_statistics] es WITH(NOLOCK) WHERE es.execution_id = @id)
         BEGIN
             EXEC sp_executesql @sql, N'@id bigint, @fromTZ datetimeoffset, @toTZ datetimeoffset', @id, @opFromTZ, @opToTZ
         END
@@ -3435,7 +3473,7 @@ BEGIN
         IF @debugLevel > 3 
             SELECT @sql AS [executable_statistics_query]
 
-        IF EXISTS(SELECT 1 FROM [internal].[executable_statistics] es WHERE es.execution_id = @id)
+        IF EXISTS(SELECT 1 FROM [internal].[executable_statistics] es WITH(NOLOCK) WHERE es.execution_id = @id)
         BEGIN
             EXEC sp_executesql @sql, N'@id bigint, @execRows int, @package_path nvarchar(max), @execution_path nvarchar(max), @fromTZ datetimeoffset, @toTZ datetimeoffset', @id, @execRows, @package_path, @execution_path, @opFromTZ, @opToTZ
         END
@@ -3788,7 +3826,7 @@ BEGIN
     END --IF @includeMessages = 1
 
     /* EXECUTABLE DATA STATISTICS */
-    IF @includeEDS = 1 AND EXISTS(SELECT 1 FROM [internal].[execution_data_statistics] WHERE execution_id = @id)
+    IF @includeEDS = 1 AND EXISTS(SELECT 1 FROM [internal].[execution_data_statistics] WITH(NOLOCK) WHERE execution_id = @id)
     BEGIN
         SET @tms = CONVERT(nvarchar(30), SYSDATETIME(), 121)
         SET @msg = N'%s - Starting retrieval of Execution Data Statistics... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @edsRows), N'All') + N' rows)';
