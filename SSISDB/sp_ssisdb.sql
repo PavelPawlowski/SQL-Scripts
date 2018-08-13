@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.80 (2018-08-09)
+sp_ssisdb v 0.81 (2018-08-13)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -220,6 +220,9 @@ DECLARE
     ,@filterExecutableStatus            bit             = 0     --Specifies whetehr @status filter is applied on Executable Statistics
     ,@filterExecutableStatusFilter      nvarchar(max)   = NULL  --contains list of status filters for Executable Statistics
     ,@availStatusFilter                 nvarchar(max)   = NULL  --contains list of status fulters for package execution statuses
+    ,@messageKind                       int             = 3     --Bitmast of message Keinds (bit 1 = Operational, bit 2 = Event)
+    ,@messageKindDesc                   nvarchar(max)   = N'OPERATIONAL, EVENT'
+    ,@tmp                               nvarchar(max)   = NULL  --Universal temporary variable
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -227,7 +230,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.80 (2018-08-09) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.81 (2018-08-13) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -275,21 +278,14 @@ VALUES
     ,('U'       ,'UNEXPECTED'           ,NULL)      --Unexpected
     ,('FORCE'   ,'FORCE'                ,NULL)      --Force
     ,('?'       ,'?'                    ,NULL)      --Help
-    ,('X'       ,'X'                    ,1)         --Max
     ,('X'       ,'X:'                   ,2)         --Max
-    ,('X'       ,'MAX'                  ,3)         --Max
     ,('X'       ,'MAX:'                 ,4)         --Max
-    ,('EM'      ,'EM'                   ,2)         --Include Event Messages
     ,('EM'      ,'EM:'                  ,3)         --Include Event Messages
-    ,('EM'      ,'EVENT_MESSAGES'       ,14)        --Include Event Messages
     ,('EM'      ,'EVENT_MESSAGES:'      ,15)        --Include Event Messages
-    ,('V'       ,'V'                    ,1)         --Verbose
     ,('V'       ,'V:'                   ,2)         --Verbose
-    ,('V'       ,'VERBOSE'              ,7)         --Verbose
     ,('V'       ,'VERBOSE:'             ,8)         --Verbose
     ,('EDS'     ,'EDS'                  ,3)         --Execution data statistics in details
     ,('EDS'     ,'EDS:'                 ,4)         --Execution data statistics in details
-    ,('EDS'     ,'EXECUTION_DATA_STATISTICS', 25)   --Execution data statistics in details
     ,('EDS'     ,'EXECUTION_DATA_STATISTICS:',26)   --Execution data statistics in details
     ,('ST'      ,'ST'                   ,2)         --Use Start TIme
     ,('ST'      ,'START_TIME'           ,10)        --Use Start Time
@@ -297,13 +293,9 @@ VALUES
     ,('ET'      ,'END_TIME'             ,8)         --Use EndTime
     ,('CT'      ,'CT'                   ,2)         --Use Create Time
     ,('CT'      ,'CREATE_TIME'          ,1)         --Use Create Time
-    ,('ECP'     ,'ECP'                  ,3)         --Execution Component Phases
     ,('ECP'     ,'ECP:'                 ,4)         --Execution Component Phases
-    ,('ECP'     ,'EXECUTION_COMPONENT_PHASES', 26)  --Execution Component Phases
     ,('ECP'     ,'EXECUTION_COMPONENT_PHASES:', 27)  --Execution Component Phases
-    ,('ES'      ,'ES'                   ,2)         --Executable Statistics
     ,('ES'      ,'ES:'                  ,3)         --Executable Statistics
-    ,('ES'      ,'EXECUTABLE_STATISTICS' , 21)      --Executable Statistics
     ,('ES'      ,'EXECUTABLE_STATISTICS:', 22)      --Executable Statistics
     ,('AGR'     ,'AGR'                  ,NULL)      --Include details about SQL Server Agent Jobs referencing package
     ,('AGR'     ,'AGENT_REFERENCES'     ,NULL)      --Include details about SQL Server Agent Jobs referencing package
@@ -350,6 +342,8 @@ VALUES
     ,('ESR'     ,'EXECUTABLE_STATISTICS_RESULT:',29)    --Filter Executable statistics status
     ,('PES'     ,'PES:'                 ,4)             --Package Execution Status
     ,('PES'     ,'PACKAGE_EXECUTION_STATUS', 24)        --Package Execution Status
+	,('MK'		,'MK:'					,3)				--Message Kind
+	,('MK'		,'MESSAGE_KIND:'		,12)			--MessageKind
 
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
@@ -416,6 +410,18 @@ VALUES
     ,(6,    N'Unexpected'  , N'U')
     ,(9,    N'Completed'   , N'P')
     ,(99,   N'Running'     , N'R')
+
+
+DECLARE @messageKinds TABLE (
+    Kind        CHAR(1)         NOT NULL PRIMARY KEY CLUSTERED
+    ,BitValue   int             NOT NULL
+    ,KindName   nvarchar(20)    NOT NULL
+)
+
+INSERT INTO @messageKinds (Kind, BitValue, KindName)
+VALUES
+    ('O', 1, N'OPERATIONAL')
+   ,('E', 2, N'EVENT')
 
 /* Update parameters to NULL where empty strings are passed */
 SELECT
@@ -1247,6 +1253,26 @@ BEGIN
             END
         END              
 
+        --Event Messages
+        IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'MK')
+        BEGIN
+            SELECT @tmp = NULLIF(StrVal, N'') FROM @opValData WHERE Val = 'MK' AND StrVal <> 'MK';
+            IF @tmp IS NOT NULL
+            BEGIN
+                SET @xml = N'<i>' + REPLACE(REPLACE(@tmp, N',', @xr), N' ', @xr) + N'</i>'
+
+                SET @messageKind = 0;
+                SET @messageKindDesc = N'';
+
+                SELECT 
+                    @messageKind = @messageKind | mk.BitValue
+                    ,@messageKindDesc = @messageKindDesc + N', ' + mk.KindName                    
+                FROM @xml.nodes('/i') T(n)
+                INNER JOIN @messageKinds mk ON RTRIM(LTRIM(T.n.value('.', N'char(1)'))) = mk.Kind
+
+                SET @messageKindDesc = STUFF(@messageKindDesc, 1, 2, N'');
+            END
+        END
 
 
 
@@ -1396,10 +1422,14 @@ BEGIN
 
     IF @includeMessages = 1
     BEGIN
-        SET @msg = N' - Including Event Messages... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @max_messages), N'All') + N' rows)';
+        SET @msg = N' - Including Execution Messages... (' + ISNULL(N'last ' + CONVERT(nvarchar(10), @max_messages), N'All') + N' rows)';
         IF  (@msgTypeFilter = 1)
             SET @msg = @msg + N' (' + STUFF((SELECT ', ' + m.msg FROM #msgTypes m FOR XML PATH('')), 1, 2, '') + N')';
         RAISERROR(@msg, 0, 0) WITH NOWAIT;
+
+        IF @messageKind < 3
+            RAISERROR(N'    - Filtering Execution Messages for message kind: %s', 0, 0, @messageKindDesc) WITH NOWAIT;
+
     END
 
     /* END PROCESS MESSAGE TYPES */
@@ -1703,7 +1733,9 @@ RAISERROR(N'  FILTER_PACKAGES(FP)                    - Apply @package filter als
   EXECUTION_MESSAGES(EM):iiiii           - Include event messages details in the overview list and in details list. 
                                            iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
                                            iiiii < 0 = All rows are returned.
-                                           For Overview by default only ERROR and TASK_FAILED are included. (Slow downs data retrieval)', 0, 0) WITH NOWAIT;
+                                           For Overview by default only ERROR and TASK_FAILED are included. (Slow downs data retrieval)
+  MESSAGE_KIND(MK):m                     - Allows filering the messages by message kind. 
+                                           m is comma seeparated list of message kinds. Supported O = Operations, E = Event messages. Default are both kinds of messages', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS):iiiii   - Include Execution Data Statistics in the details verbose output
                                            iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
@@ -2061,9 +2093,11 @@ N'
     ,d.status' +
     CASE WHEN @id IS NULL AND @includeMessages = 1 THEN N'
     ,(SELECT 
-        @messages_inrow              ''@maxMessages''
+        @messages_inrow              ''@maxMessages'' '
+        + CASE WHEN @messageKind < 3 THEN N', ''' + @messageKindDesc + N''' ''@messages_kind''' ELSE N'' END + N'
         ,(SELECT ' + CASE WHEN @max_messages IS NULL THEN N'' ELSE N'TOP (@messages_inrow)' END + N'
             mt.msg                      ''@type''
+			,CASE WHEN em.event_message_id IS NULL THEN ''OPERATION'' ELSE ''EVENT'' END ''@kind''
             ,om.message_time            ''@message_time''
             ,em.event_name              ''@event_name''
             ,em.message_code            ''@message_code''
@@ -2090,15 +2124,22 @@ N'
             ,CONVERT(xml, N''<?msg --
 '' + REPLACE(REPLACE(om.message, N''<?'', N''''), N''?>'', N'''') + N''
 --?>'') ''message''
-        FROM internal.event_messages em WITH(NOLOCK)
-        INNER JOIN internal.operation_messages om WITH(NOLOCK) ON om.operation_id = em.operation_id and om.operation_message_id = em.event_message_id 
+        FROM internal.operation_messages om WITH(NOLOCK) 
+        LEFT JOIN internal.event_messages em WITH(NOLOCK) ON om.operation_id = em.operation_id and om.operation_message_id = em.event_message_id 
         INNER JOIN #msgTypes mt ON mt.id = om.message_type
         WHERE 
-            em.operation_id = d.execution_id' +
+            om.operation_id = d.execution_id' +
             CASE
                 WHEN NULLIF(@msg_filter, '') IS NOT NULL THEN  N' AND (EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 1))'
                 ELSE N''
-            END + N'
+            END +
+            CASE 
+                WHEN @messageKind >= 3 THEN N''
+                WHEN (@messageKind & 1) = 1 THEN N' AND em.event_message_id IS NULL'
+                WHEN (@messageKind & 2) = 2 THEN N' AND em.event_message_id IS NOT NULL'
+                ELSE N''
+            END
+            + N'
         ORDER BY om.message_time DESC, om.operation_message_id DESC
         FOR XML PATH(''event_message''), TYPE
         )
@@ -3650,12 +3691,13 @@ BEGIN
 
             SET @sql = CONVERT(nvarchar(max), N'
             SELECT ' + CASE WHEN @max_messages IS NOT NULL THEN N'TOP (@max_messages)' ELSE N'' END + N'
-                em.event_message_id
+                om.operation_message_id
                 ,em.package_name
                 ,em.message_source_name                     AS source_name
                 ,em.subcomponent_name
                 ,em.event_name ') +
                 CASE WHEN @localTime = 1 THEN N',CONVERT(datetime2(7), om.message_time) AS message_time' ELSE N',om.message_time' END + N'
+				,CASE WHEN em.event_message_id IS NULL THEN ''OPERATION'' ELSE ''EVENT'' END AS message_kind
                 ,CASE om.message_type
                     WHEN 120 THEN N''ERROR''
                     WHEN 110 THEN N''WARNING''
@@ -3726,7 +3768,7 @@ BEGIN
                 ,em.threadID
 
             FROM internal.operation_messages om WITH(NOLOCK)
-            INNER JOIN internal.event_messages em WITH(NOLOCK) ON em.event_message_id = om.operation_message_id ' +
+            LEFT JOIN internal.event_messages em WITH(NOLOCK) ON em.event_message_id = om.operation_message_id ' +
             CASE 
                 WHEN @pkgFilter = 1 THEN N'
                  INNER JOIN #packages pkg ON pkg.package_name = em.package_name'
@@ -3753,6 +3795,12 @@ BEGIN
                 ELSE N''
             END + N'
             WHERE om.operation_id = @id' +
+            CASE 
+                WHEN @messageKind >= 3 THEN N''
+                WHEN (@messageKind & 1) = 1 THEN N' AND em.event_message_id IS NULL'
+                WHEN (@messageKind & 2) = 2 THEN N' AND em.event_message_id IS NOT NULL'
+                ELSE N''
+            END +
             CASE
                 WHEN @sourceFilter = 1 THEN N'
                  AND (EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 1))'
