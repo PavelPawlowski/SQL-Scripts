@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.81 (2018-08-13)
+sp_ssisdb v 0.82 (2018-08-14)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -230,7 +230,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.81 (2018-08-13) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.82 (2018-08-14) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -280,6 +280,7 @@ VALUES
     ,('?'       ,'?'                    ,NULL)      --Help
     ,('X'       ,'X:'                   ,2)         --Max
     ,('X'       ,'MAX:'                 ,4)         --Max
+    ,('EM'      ,'EM'                  ,NULL)         --Include Event Messages
     ,('EM'      ,'EM:'                  ,3)         --Include Event Messages
     ,('EM'      ,'EVENT_MESSAGES:'      ,15)        --Include Event Messages
     ,('V'       ,'V:'                   ,2)         --Verbose
@@ -293,6 +294,7 @@ VALUES
     ,('ET'      ,'END_TIME'             ,8)         --Use EndTime
     ,('CT'      ,'CT'                   ,2)         --Use Create Time
     ,('CT'      ,'CREATE_TIME'          ,1)         --Use Create Time
+    ,('ECP'     ,'ECP'                 ,NULL)         --Execution Component Phases
     ,('ECP'     ,'ECP:'                 ,4)         --Execution Component Phases
     ,('ECP'     ,'EXECUTION_COMPONENT_PHASES:', 27)  --Execution Component Phases
     ,('ES'      ,'ES:'                  ,3)         --Executable Statistics
