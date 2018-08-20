@@ -1,16 +1,17 @@
-USE [master]
+IF  SERVERPROPERTY('EngineEdition') <> 5
+    USE [master]
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].[sp_find]') AND TYPE = 'P')
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_find] AS BEGIN PRINT ''Container for sp_find (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_find v 0.92 (2017-10-30)
+sp_find v 0.94 (2018-08-20)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2017 Pavel Pawlowski
+Copyright (c) 2014-2018 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -106,7 +107,7 @@ DECLARE
     ,@lastAtGroup tinyint = 0                           -- Last Allowed Types group for help printing purposes
 
 --Set and print the procedure output caption
-SET @caption =  N'sp_find v0.92 (2017-10-30) (C) 2014-2017 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+SET @caption =  N'sp_find v0.94 (2018-08-20) (C) 2014-2018 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
                 N'========================================================' + NCHAR(13) + NCHAR(10);
 RAISERROR(@caption, 0, 0) WITH NOWAIT;
 
@@ -550,7 +551,7 @@ FROM @inputTypes IT
 INNER JOIN @allowedTypes AT ON IT.ObjectType = AT.ObjectType
 
 --Get databases
-IF (@databaseName IS NULL)
+IF (@databaseName IS NULL OR SERVERPROPERTY('EngineEdition') = 5)
     SET @databaseName = DB_NAME();
 SET @xml = CONVERT(xml, N'<db>' + REPLACE(@databaseName, N',', N'</db><db>') + N'</db>');
 
@@ -2194,7 +2195,7 @@ WHERE
 ');
 
 --server_principals
-IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (SELECT ObjectType FROM #typesMapping WHERE ParentObjectType = N'SERVER_PRINCIPAL'))
+IF SERVERPROPERTY('EngineEdition') <> 5 AND EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (SELECT ObjectType FROM #typesMapping WHERE ParentObjectType = N'SERVER_PRINCIPAL'))
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (1, 'server_principals',
 N'SELECT --server_principals
@@ -2821,9 +2822,9 @@ DECLARE scope CURSOR LOCAL FAST_FORWARD FOR
                 RAISERROR(N'%s SEARCH_START      - Searching through [%s]', 0, 0, @now, @searchDescription) WITH NOWAIT;
 
                 --Update the search SQL for the currently processed database and proper searching collation
-                SET @searchSQL = N'
+                SET @searchSQL = CASE WHEN SERVERPROPERTY('EngineEdition') <> 5 THEN N'
                 USE [' + @dbName + N'];
-                ' + REPLACE(@searchBaseSQL, N'COLLATE database_default', N'COLLATE ' + @dbCollation);
+                ' ELSE N'' END + REPLACE(@searchBaseSQL, N'COLLATE database_default', N'COLLATE ' + @dbCollation);
 
                 --PRINT @searchSQL
                 --execute database objectssearch with proper parameters
@@ -2883,5 +2884,5 @@ DROP TABLE #objTypes;
 
 END --End of Procedure
 GO
-EXECUTE sp_ms_marksystemobject N'dbo.sp_find'
-GO
+IF  SERVERPROPERTY('EngineEdition') <> 5
+    EXEC(N'EXECUTE sp_ms_marksystemobject N''dbo.sp_find''');
