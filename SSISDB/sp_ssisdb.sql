@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.82 (2018-08-14)
+sp_ssisdb v 0.83 (2018-09-12)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -223,6 +223,7 @@ DECLARE
     ,@messageKind                       int             = 3     --Bitmast of message Keinds (bit 1 = Operational, bit 2 = Event)
     ,@messageKindDesc                   nvarchar(max)   = N'OPERATIONAL, EVENT'
     ,@tmp                               nvarchar(max)   = NULL  --Universal temporary variable
+    ,@useRuntime                        bit             = 0     --Specifies whether Runtime should be used for searching instead of Create/Start/End time
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -230,7 +231,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.82 (2018-08-14) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.83 (2018-09-12) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -288,6 +289,8 @@ VALUES
     ,('EDS'     ,'EDS'                  ,3)         --Execution data statistics in details
     ,('EDS'     ,'EDS:'                 ,4)         --Execution data statistics in details
     ,('EDS'     ,'EXECUTION_DATA_STATISTICS:',26)   --Execution data statistics in details
+	,('RT'		,'RT'		            ,NULL)			--RunTime specifier
+	,('RT'		,'RUN_TIME'		    ,NULL)			--Runtime Specifier
     ,('ST'      ,'ST'                   ,2)         --Use Start TIme
     ,('ST'      ,'START_TIME'           ,10)        --Use Start Time
     ,('ET'      ,'ET'                   ,2)         --Use End TIme
@@ -767,6 +770,11 @@ BEGIN
         SET @localTime = 1
     END
 
+    IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'RT')
+    BEGIN
+        SET @useRuntime = 1
+    END
+
     --Executed Packages Status Filter
     IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'EPR')
     BEGIN
@@ -1104,8 +1112,11 @@ BEGIN
                 BEGIN
                     SET @msg = '   - From ' + CONVERT(nvarchar(30), @opFromTZ, 120)    
                 END
-
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
+
+                IF @useRuntime = 1 
+                    RAISERROR(N'   - Using Runtime for Searching', 0, 0) WITH NOWAIT;
+
             END
 
 
@@ -1640,7 +1651,8 @@ RAISERROR(N'
   yyyy-mm-dd                        - If only date is provided, then it is intepreted as midnigth of that day (YYYY-MM-DDTHH:MM:SS)
   yyyy-mm-ddThh:MM:ss               - When Date/Time is passed, then Time is separated by T from date. In that case hours have to be provided as two digits
 
-
+  RUN_TIME (RT)                     - Use Run Time for searching. This means if Above Date/Time specifiers are provided, then it returns all jobs which Start or End time fits to specified period.
+                                      Can be combined with below specifies for appropriate sorting.
   START_TIME (ST)[_A|_ASC]          - Use Start Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending. Used also for Data Filters.
   END_TIME (ET)[_A|_ASC]            - Use End Time for searching (By Default Create Time is used). Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending. Used Also for Date Filters.
   CREATE_TIME (CT)[_A|_ASC]         - Use Create Time forr searching. This is the default. Optional [_A] or [_ASC] modifier can be used to use Ascending Sorting. Default is Descending.', 0, 0) WITH NOWAIT;
@@ -2038,8 +2050,16 @@ Data AS (
                 (CASE WHEN @id IS NOT NULL THEN N'e.execution_id = @id' ELSE NULL END)
                 ,(CASE
                     WHEN @id IS NOT NULL THEN NULL
-                    WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useStartTime =1 THEN N'(ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'(end_time' ELSE N'(created_time' END + N' BETWEEN  @fromTZ AND @toTZ)'
-                    WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useStartTime =1 THEN N'(ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'(ISNULL(end_time, ''99991231'')' ELSE N'(created_time' END +' > @fromTZ)'
+                    WHEN @useRuntime = 0 THEN
+                        CASE
+                            WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useStartTime =1 THEN N'(ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'(end_time' ELSE N'(created_time' END + N' BETWEEN  @fromTZ AND @toTZ)'
+                            WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useStartTime =1 THEN N'(ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'(ISNULL(end_time, ''99991231'')' ELSE N'(created_time' END +' > @fromTZ)'
+                        END
+                    WHEN @useRuntime = 1 THEN
+                        CASE
+                            WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN N'( ((ISNULL(start_time, ''99991231'') BETWEEN  @fromTZ AND @toTZ) AND end_time IS NULL) OR (end_time BETWEEN  @fromTZ AND @toTZ) OR (start_time < @fromTZ AND (end_time IS NULL or end_time > @toTZ)))'
+                            WHEN @opFromTZ IS NOT NULL THEN N'((ISNULL(start_time, ''99991231'')  > @fromTZ OR ISNULL(start_time, ''99991231'')  > @fromTZ))'
+                        END
                   END
                 )
                 ,(CASE
