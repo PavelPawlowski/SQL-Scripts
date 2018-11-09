@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.83 (2018-09-12)
+sp_ssisdb v 0.85 (2018-11-08)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -224,6 +224,7 @@ DECLARE
     ,@messageKindDesc                   nvarchar(max)   = N'OPERATIONAL, EVENT'
     ,@tmp                               nvarchar(max)   = NULL  --Universal temporary variable
     ,@useRuntime                        bit             = 0     --Specifies whether Runtime should be used for searching instead of Create/Start/End time
+    ,@detailedMessageTracking           bit             = 0     --enables detailed message tracking to track proper source for all messages
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -231,7 +232,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.83 (2018-09-12) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.85 (2018-11-08) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -349,7 +350,8 @@ VALUES
     ,('PES'     ,'PACKAGE_EXECUTION_STATUS', 24)        --Package Execution Status
 	,('MK'		,'MK:'					,3)				--Message Kind
 	,('MK'		,'MESSAGE_KIND:'		,12)			--MessageKind
-
+    ,('DMT'     ,'DMT'                  ,NULL)          --Detailed Message Tracking
+    ,('DMT'     ,'DETAILED_MESSAGE_TRACKING', NULL)     --Detailed Message Tracking
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -978,6 +980,9 @@ BEGIN
                     SET @max_messages = NULL
                 ELSE IF @max_messages = 0
                     SET @max_messages = 1000
+
+                IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'DMT')
+                    SET @detailedMessageTracking = 1
             END
 
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'EDS')
@@ -1443,6 +1448,8 @@ BEGIN
         IF @messageKind < 3
             RAISERROR(N'    - Filtering Execution Messages for message kind: %s', 0, 0, @messageKindDesc) WITH NOWAIT;
 
+        IF @detailedMessageTracking = 1
+            RAISERROR(N'    - Using Detailed Messages Tracking', 0, 0) WITH NOWAIT;
     END
 
     /* END PROCESS MESSAGE TYPES */
@@ -1749,7 +1756,10 @@ RAISERROR(N'  FILTER_PACKAGES(FP)                    - Apply @package filter als
                                            iiiii < 0 = All rows are returned.
                                            For Overview by default only ERROR and TASK_FAILED are included. (Slow downs data retrieval)
   MESSAGE_KIND(MK):m                     - Allows filering the messages by message kind. 
-                                           m is comma seeparated list of message kinds. Supported O = Operations, E = Event messages. Default are both kinds of messages', 0, 0) WITH NOWAIT;
+                                           m is comma seeparated list of message kinds. Supported O = Operations, E = Event messages. Default are both kinds of messages
+  DETAILED_MESSAGE_TRACKING(DMT)         - Enables detailed messages tracking. This allows tracking of proper package and package path for log messages from scripts
+                                           which are otherwise logged under control package
+                                           ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS):iiiii   - Include Execution Data Statistics in the details verbose output
                                            iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
@@ -2193,17 +2203,14 @@ N'
 					 ROW_NUMBER() OVER(PARTITION BY e.package_name ORDER BY CASE WHEN e.package_path = ''\Package'' THEN 0 ELSE 1 END ASC, es.start_time ASC) AS pno
                     ,CASE WHEN e.package_path = ''\Package'' OR d.status_code IN (3, 4, 6, 7, 9) THEN N''Final'' ELSE N''Preliminary'' END AS status_info
 					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status_code = 3 THEN 3 WHEN d.status_code = 6 THEN 6 WHEN d.status_code = 7 THEN 0 WHEN d.status_code = 4 THEN 1 WHEN d.status_code = 9 THEN 2 ELSE 99 END)
 						WHEN 0 THEN N''S''  --Success
 						WHEN 1 THEN N''F''  --Failure
 						WHEN 2 THEN N''O''  --Completed
 						WHEN 3 THEN N''C''  --Cancelled
-                        WHEN 99 THEN
-                            CASE d.status_code
-                                WHEN 6 THEN N''U''  --Unexpected
-                                WHEN 9 THEN N''P''  --Completed
-                                ELSE N''R'' --Running
-                            END 
+                        WHEN 6 THEN N''U''  --Unexpected
+                        WHEN 9 THEN N''P''  --Completed
+                        WHEN 99 THEN N''R'' --Running
 						ELSE N''K'' --Unknown
 					END                 AS res
 
@@ -2222,22 +2229,19 @@ N'
 					,e.package_name              package_name
 
 					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status_code = 3 THEN 3 WHEN d.status_code = 6 THEN 6 WHEN d.status_code = 7 THEN 0 WHEN d.status_code = 4 THEN 1 WHEN d.status_code = 9 THEN 2 ELSE 99 END)
 						WHEN 0 THEN N''Success''
 						WHEN 1 THEN N''Failure''
 						WHEN 2 THEN N''Completion''
 						WHEN 3 THEN N''Cancelled''
-                        WHEN 99 THEN
-                            CASE d.status_code
-                                WHEN 6 THEN N''Unexpected''
-                                WHEN 9 THEN N''Completed''
-                                ELSE N''Running''
-                            END 
+                        WHEN 6 THEN N''Unexpected''
+                        WHEN 9 THEN N''Completed''
+                        WHEN 99 THEN N''Running''
 						ELSE N''Unknown''
 					END                 AS result
 
-					,CONVERT(nvarchar(36), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status_code IN (6, 9) THEN d.end_time ELSE NULL END))  end_time
-					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status_code IN (6, 9) THEN d.[status_code] ELSE 99 END, -9999)      result_code
+					,CONVERT(nvarchar(36), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status_code IN (3, 4, 6, 7, 9) THEN d.end_time ELSE NULL END))  end_time
+					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status_code = 3 THEN 3 WHEN d.status_code = 6 THEN 6 WHEN d.status_code = 7 THEN 0 WHEN d.status_code = 4 THEN 1 WHEN d.status_code = 9 THEN 2 ELSE 99 END, -9999)      result_code
 				FROM internal.executable_statistics es WITH(NOLOCK)
 				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id
 				LEFT JOIN  (
@@ -2253,18 +2257,6 @@ N'
 				) MM ON e.package_name = MM.package_name
 				WHERE 
 					es.execution_id = d.execution_id
-					--AND
-					--(
-					--	e.package_path = ''\Package'' 
-					--	OR
-					--	(
-					--		d.status_code IN (2, 5, 8)
-					--		AND
-					--		(
-     --                           MM.start_time IS NULL
-					--		)
-					--	)
-					--)
 		) EPD
 		WHERE EPD.pno = 1 ' + 
         CASE WHEN @filterPkgStatus = 1 
@@ -3270,45 +3262,39 @@ BEGIN
 					 ROW_NUMBER() OVER(PARTITION BY e.package_name ORDER BY CASE WHEN e.package_path = ''\Package'' THEN 0 ELSE 1 END ASC, es.start_time ASC) AS pno
                     ,CASE WHEN e.package_path = ''\Package'' OR d.status IN (3, 4, 6, 7, 9) THEN N''Final'' ELSE N''Preliminary'' END AS status_info
 					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status = 3 THEN 3 WHEN d.status = 6 THEN 6 WHEN d.status = 7 THEN 0 WHEN d.status = 4 THEN 1 WHEN d.status = 9 THEN 2 ELSE 99 END)
 						WHEN 0 THEN N''S''  --Success
 						WHEN 1 THEN N''F''  --Failure
 						WHEN 2 THEN N''O''  --Completed
 						WHEN 3 THEN N''C''  --Cancelled
-                        WHEN 99 THEN
-                            CASE d.status
-                                WHEN 6 THEN N''U''  --Unexpected
-                                WHEN 9 THEN N''P''  --Completed
-                                ELSE N''R'' --Running
-                            END 
+                        WHEN 6 THEN N''U''  --Unexpected
+                        WHEN 9 THEN N''P''  --Completed
+                        WHEN 99 THEN N''R'' --Running
 						ELSE N''K''
 					END                 AS res
 
 					,es.start_time
-					,ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE NULL END)  end_time
+					,ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status IN (3, 4, 6, 7, 9) THEN d.end_time ELSE NULL END)  end_time
 
                     ,DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(MINUTE, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1440, es.start_time), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), DATEADD(DAY, DATEDIFF(MINUTE, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status IN (6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1400, CONVERT(datetime2(7), ''19000101''))) durationDate
+						CASE WHEN d.status IN (3, 6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1440, es.start_time), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status IN (3, 6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), DATEADD(DAY, DATEDIFF(MINUTE, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
+						CASE WHEN d.status IN (3, 6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1400, CONVERT(datetime2(7), ''19000101''))) durationDate
 					,e.package_name              package_name
 
 					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result ELSE 99 END)
+						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status = 3 THEN 3 WHEN d.status = 6 THEN 6 WHEN d.status = 7 THEN 0 WHEN d.status = 4 THEN 1 WHEN d.status = 9 THEN 2 ELSE 99 END)
 						WHEN 0 THEN N''Success''
 						WHEN 1 THEN N''Failure''
 						WHEN 2 THEN N''Completion''
 						WHEN 3 THEN N''Cancelled''
-                        WHEN 99 THEN
-                            CASE d.status
-                                WHEN 6 THEN N''Unexpected''
-                                WHEN 9 THEN N''Completed''
-                                ELSE N''Running''
-                            END 
+                        WHEN 6 THEN N''Unexpected''
+                        WHEN 9 THEN N''Completed''
+                        WHEN 99 THEN N''Running''
 						ELSE N''Unknown''
 					END                 AS result
 
-					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status IN (6, 9) THEN d.[status] ELSE 99 END, -9999)      result_code
+					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status = 3 THEN 3 WHEN d.status = 6 THEN 6 WHEN d.status = 7 THEN 0 WHEN d.status = 4 THEN 1 WHEN d.status = 9 THEN 2 ELSE 99 END, -9999)      result_code
                      ' +
 
                     CASE 
@@ -3711,10 +3697,16 @@ BEGIN
         END
 
 
-            SET @sql = CONVERT(nvarchar(max), N'
+            SET @sql = CONVERT(nvarchar(max), N'WITH MessageData AS (
             SELECT ' + CASE WHEN @max_messages IS NOT NULL THEN N'TOP (@max_messages)' ELSE N'' END + N'
-                om.operation_message_id
+                om.operation_message_id ' +
+                CASE WHEN @detailedMessageTracking = 1 THEN N'
+                ,ISNULL(mpk.package_name, em.package_name) AS package_name
+                ,ISNULL(mpk.package_path, em.package_path) AS package_path'
+                ELSE N'
                 ,em.package_name
+                ,em.package_path'
+                END + N'
                 ,em.message_source_name                     AS source_name
                 ,em.subcomponent_name
                 ,em.event_name ') +
@@ -3781,20 +3773,24 @@ BEGIN
                     ELSE ''Unknown''
                 END                                         AS source_type_desc
 
-                ,em.package_path
                 ,em.execution_path
                 ,em.message_source_id
                 ,em.package_location_type
                 ,om.message_source_type                     AS source_type
                 ,om.message_type                            AS message_type
                 ,em.threadID
-
             FROM internal.operation_messages om WITH(NOLOCK)
+            INNER JOIN internal.executions ex WITH(NOLOCK) ON om.operation_id = ex.execution_id
             LEFT JOIN internal.event_messages em WITH(NOLOCK) ON em.event_message_id = om.operation_message_id ' +
             CASE 
-                WHEN @pkgFilter = 1 THEN N'
+                WHEN @detailedMessageTracking = 1 THEN N'
+                OUTER APPLY (SELECT TOP 1 package_name, package_path FROM internal.executables e WHERE e.project_version_lsn = ex.project_lsn AND e.executable_guid = em.message_source_id) mpk'
+                ELSE N''
+            END +
+            CASE 
+                WHEN @detailedMessageTracking = 0 AND @pkgFilter = 1 THEN N'
                  INNER JOIN #packages pkg ON pkg.package_name = em.package_name'
-                ELSE ''
+                ELSE N''
             END + 
             CASE
                 WHEN @msgTypeFilter = 1 THEN N'
@@ -3822,25 +3818,50 @@ BEGIN
                 WHEN (@messageKind & 1) = 1 THEN N' AND em.event_message_id IS NULL'
                 WHEN (@messageKind & 2) = 2 THEN N' AND em.event_message_id IS NOT NULL'
                 ELSE N''
-            END +
+            END + N')
+            SELECT
+                 md.operation_message_id
+                ,md.package_name
+                ,md.source_name
+                ,md.subcomponent_name
+                ,md.event_name
+                ,md.message_time
+                ,md.message_kind
+                ,md.message_type_desc
+                ,md.message
+                ,md.source_type_desc
+                ,md.package_path
+                ,md.execution_path
+                ,md.message_source_id
+                ,md.package_location_type
+                ,md.source_type
+                ,md.message_type
+                ,md.threadID
+            FROM MessageData md ' +
+            CASE 
+                WHEN @detailedMessageTracking = 1 AND @pkgFilter = 1 THEN N'
+                 INNER JOIN #packages pkg ON pkg.package_name = md.package_name'
+                ELSE N''
+            END +  N'
+            WHERE (1=1) ' +
             CASE
                 WHEN @sourceFilter = 1 THEN N'
-                 AND (EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #src_names f WHERE em.message_source_name LIKE f.filter AND f.exclusive = 1))'
+                 AND (EXISTS(SELECT 1 FROM #src_names f WHERE md.source_name LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #src_names f WHERE md.source_name LIKE f.filter AND f.exclusive = 1))'
                 ELSE N''
             END + 
             CASE
                 WHEN NULLIF(@execution_path, '') IS NOT NULL THEN N'
-                 AND (EXISTS(SELECT 1 FROM #execution_paths f WHERE em.execution_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #execution_paths f WHERE em.execution_path LIKE f.filter AND f.exclusive = 1))'
+                 AND (EXISTS(SELECT 1 FROM #execution_paths f WHERE md.execution_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #execution_paths f WHERE md.execution_path LIKE f.filter AND f.exclusive = 1))'
                 ELSE N''
             END + 
             CASE
                 WHEN NULLIF(@msg_filter, '') IS NOT NULL THEN  N'
-                 AND (EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 1))'
+                 AND (EXISTS(SELECT 1 FROM #msg_filters mf WHERE md.message LIKE mf.filter AND mf.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #msg_filters mf WHERE md.message LIKE mf.filter AND mf.exclusive = 1))'
                 ELSE N''
             END +
             CASE
                 WHEN NULLIF(@package_path, '') IS NOT NULL THEN N'
-                 AND (EXISTS(SELECT 1 FROM #package_paths f WHERE em.package_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE em.package_path LIKE f.filter AND f.exclusive = 1))'
+                 AND (EXISTS(SELECT 1 FROM #package_paths f WHERE md.package_path LIKE f.filter AND f.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #package_paths f WHERE md.package_path LIKE f.filter AND f.exclusive = 1))'
                 ELSE N''
             END +
             CASE
@@ -3849,8 +3870,8 @@ BEGIN
                 ELSE N''
             END + N'
             ORDER BY 
-                 om.message_time' + CASE WHEN @useTimeDescending = 1 THEN  N' DESC' ELSE N' ASC' END + N'
-                ,om.operation_message_id' + CASE WHEN @useTimeDescending = 1 THEN  N' DESC' ELSE N' ASC' END 
+                 md.message_time' + CASE WHEN @useTimeDescending = 1 THEN  N' DESC' ELSE N' ASC' END + N'
+                ,md.operation_message_id' + CASE WHEN @useTimeDescending = 1 THEN  N' DESC' ELSE N' ASC' END 
 
 
             IF @opFromTZ IS NOT NULL
@@ -3866,7 +3887,7 @@ BEGIN
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
             END
             IF @sourceFilter = 1
-                RAISERROR(N'                            - Using source__name Filter(s): %s', 0, 0, @source_filter) WITH NOWAIT;
+                RAISERROR(N'                            - Using source_name Filter(s): %s', 0, 0, @source_filter) WITH NOWAIT;
             IF @subComponentFilter = 1
             BEGIN                             
                 SET @msg = N'                            - Using SubComponent Filter(s): ' + @subcomponent_filter
