@@ -4,7 +4,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
 	EXECUTE ('CREATE PROCEDURE [dbo].[sp_HelpPartitionScheme] AS BEGIN PRINT ''Container for [dbo].[sp_HelpPartitionScheme] (C) Pavel Pawlowski'' END')
 GO
 /* *******************************************************
-sp_HelpPartitionScheme v 0.53 (2018-03-20)
+sp_HelpPartitionScheme v 0.54 (2019-02-19)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -57,7 +57,7 @@ CREATE TABLE #Results(
 );
 */
 ALTER PROCEDURE [dbo].[sp_HelpPartitionScheme]
-     @psName            nvarchar(128)   = NULL  --Name of the partition scheme
+     @psName            nvarchar(128)   = NULL  --Name of the partition scheme or partitioned table
     ,@listDependencies  bit             = 0     --Specifies whether list dependencies of the partition scheme
     ,@noInfoMsg         bit             = 0     --Disbles printing of header and informationals messages
 AS
@@ -66,12 +66,15 @@ BEGIN
     DECLARE
         @caption            nvarchar(max)	    --Procedure caption
         ,@msg               nvarchar(max)		--message
-        ,@psID              int                 --ID of partition Function
+        ,@psID              int                 --ID of partition Scheme
         ,@partitionsCount   int                 --count of boundary values
+        ,@tableObjectID     int                 --ID of the Table Specified
+        ,@tableName         nvarchar(261)       --name of the partitioned table
+        ,@partitionColumnn  nvarchar(max)       --list of patition columns
 
     IF @noInfoMsg = 0
     BEGIN
-        SET @caption = N'sp_HelpPartitionScheme v 0.53 (2018-03-20) (C) 2014 - 2018 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+        SET @caption = N'sp_HelpPartitionScheme v 0.54 (2019-02-19) (C) 2014 - 2019 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
 				       N'==========================================================================';
     	RAISERROR(@caption, 0, 0) WITH NOWAIT;
     END
@@ -84,18 +87,24 @@ BEGIN
         RAISERROR(N'Provides information about depended objects like tables/indexed views/indexes utilizing the partition scheme', 0, 0) WITH NOWAIT;
 		RAISERROR(N'', 0, 0);
 		RAISERROR(N'Usage:', 0, 0);
-		RAISERROR(N'[sp_HelpPartitionScheme] {@psName = ''partition_scheme_name''} [,@listDependencies]', 0, 0);
+		RAISERROR(N'[sp_HelpPartitionScheme] {@psName = ''partition_scheme_name|partitioned_table_name''} [,@listDependencies]', 0, 0);
 		RAISERROR(N'', 0, 0);
 		SET @msg = N'Parameters:
-     @psName            nvarchar(128)   = NULL - name of the partition scheme for which the information should be returned
+     @psName            nvarchar(128)   = NULL - name of the partition scheme or patitioned table for which the information should be returned
     ,@listDependencies  bit             = 1    - Specifies whether list dependencies of the partition scheme';
+        RAISERROR(N'', 0, 0);
+        RAISERROR(N'When partitioned_table_name is provided, then also information about partition columns is returned for the table as firt recordset', 0, 0);
 		RAISERROR(@msg, 0, 0);
 
 	SET @msg = N'
 Table schema to hold results for partition scheme information
 -------------------------------------------------------------
 CREATE TABLE #Results(
-     [PartitionSchemeName]   sysname         NOT NULL   --Partition scheme name
+     [TableName]             nvarchar(261)   NULL       --Name of partitioned table in case table name was provided
+    ,[TableID]               int             NULL       --ID of the partitioned table in case table name was provided
+    ,[PartitionColumn]       nvarchar(max)   NULL       --List of partition columns used
+    ,[PartitionSchemeName]   sysname         NOT NULL   --Partition scheme name
+    ,[PartitionSchemeID]     int             NOT NULL   --Partition scheme ID
     ,[PartitionFunctionName] sysname         NOT NULL   --Associated partition function name
     ,[PartitionFunctionID]   int             NOT NULL   --Associated partition function ID
     ,[ParameterDataType]     sysname         NOT NULL   --PF parameter data type
@@ -113,17 +122,66 @@ CREATE TABLE #Results(
 		RETURN
 	END
 
-    --Get the partition function ID and count of partitions it will generate
     SELECT
-         @psID              = ps.data_space_id
-    FROM sys.partition_schemes ps
-    WHERE ps.[name] = @psName
+        @tableObjectID = object_id
+        ,@tableName = QUOTENAME(SCHEMA_NAME(t.schema_id)) + N'.' + QUOTENAME(t.name)
+    FROM sys.tables t
+    WHERE t.object_id = OBJECT_ID(@psName)
 
-    IF @psID IS NULL
+    IF @tableObjectID IS NOT NULL
     BEGIN
-        RAISERROR(N'Partition scheme [%s] does not exists', 15, 0, @psName) WITH NOWAIT;
-        RETURN;
-    END;
+        --Get table data Space Information (Partition scheme)
+        SELECT
+            @psID       = ds.data_space_id
+            ,@psName    = ds.name
+        FROM sys.indexes i
+        INNER JOIN sys.data_spaces ds ON i.data_space_id = ds.data_space_id
+        WHERE
+            i.object_id = @tableObjectID
+            AND
+            i.index_id <= 1
+            AND
+            ds.type = 'PS'
+
+        IF @psID IS NULL
+        BEGIN
+            RAISERROR(N'Table %s is not partitioned', 15, 0, @tableName) WITH NOWAIT;
+            RETURN;
+        END
+        
+        --Get partition column information
+        SET @partitionColumnn =
+        STUFF((
+        SELECT
+            N', ' + QUOTENAME(c.name) 
+        FROM sys.index_columns ic
+        INNER JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+        WHERE
+            ic.object_id = @tableObjectID
+            AND
+            ic.index_id <= 1
+            AND
+            ic.partition_ordinal > 0
+        ORDER BY ic.partition_ordinal
+        FOR XML PATH(N'')), 1, 2, N'')
+
+        IF @noInfoMsg = 0
+            RAISERROR(N'Retrieving information for partitioned table "%s"', 0, 0, @psName) WITH NOWAIT;        
+    END
+    ELSE
+    BEGIN
+        --Get ID of partition scheme.
+        SELECT
+             @psID              = ps.data_space_id
+        FROM sys.partition_schemes ps
+        WHERE ps.[name] = @psName
+
+        IF @psID IS NULL
+        BEGIN
+            RAISERROR(N'Partition scheme [%s] does not exists', 15, 0, @psName) WITH NOWAIT;
+            RETURN;
+        END;
+    END
 
     IF @noInfoMsg = 0
         RAISERROR(N'Retrieving information for partition scheme [%s]', 0, 0, @psName) WITH NOWAIT;
@@ -169,7 +227,11 @@ CREATE TABLE #Results(
             ps.data_space_id = @psID
     )
     SELECT
-         pbd.PartitionSchemeName                                    AS PartitionSchemeName
+         @tableName                                                 AS TableName
+        ,@tableObjectID                                             AS TableID
+        ,@partitionColumnn                                          AS PartitionColumn
+        ,pbd.PartitionSchemeName                                    AS PartitionSchemeName
+        ,@psID                                                      AS PartitionSchemeID
         ,pbd.PartitionFunctionName                                  AS PartitionFunctionName
         ,pbd.PartitionFunctionID                                    AS PartitionFunctionID
         ,pbd.ParameterDataType                                      AS ParameterDataType
