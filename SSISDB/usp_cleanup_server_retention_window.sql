@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[u
     EXEC (N'CREATE PROCEDURE [dbo].[usp_cleanup_server_retention_window] AS PRINT ''Placeholder for [dbo].[usp_cleanup_server_retention_window]''')
 GO
 /* ****************************************************
-usp_cleanup_server_retention_window v 1.00 (2017-01-26)
+usp_cleanup_server_retention_window v 1.01 (2019-03-13)
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
@@ -80,7 +80,7 @@ AS
         operation_id bigint PRIMARY KEY CLUSTERED
     )
 
-    RAISERROR(N'usp_cleanup_server_retention_window v1.00 (2017-01-26) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+    RAISERROR(N'usp_cleanup_server_retention_window v1.01 (2019-03-13) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
     RAISERROR(N'===============================================================================', 0, 0) WITH NOWAIT;
     RAISERROR(N'usp_cleanup_server_retention_window cleanups SSISDB.', 0, 0) WITH NOWAIT;
     RAISERROR(N'Logs for operations out of retention window are cleared.', 0, 0) WITH NOWAIT;
@@ -206,35 +206,6 @@ AS
                 RAISERROR(@msg, 0, 0) WITH NOWAIT;
         END
 
-        SET @msg = CONVERT(nvarchar(36), SYSDATETIMEOFFSET()) + N'   - Cleaning Operation messages...'
-        IF @no_infomsg = 0
-            RAISERROR(@msg, 0, 0) WITH NOWAIT;
-        IF @check_only = 0
-        BEGIN
-            SET @rowCnt = @batch_size;
-            WHILE @rowCnt >= @batch_size
-            BEGIN
-                IF @delay IS NOT NULL WAITFOR DELAY @delay
-                SET @start = GETDATE();
-                DELETE TOP (@batch_size)
-                FROM internal.operation_messages 
-                WHERE operation_id = @operation_to_cleanup
-                SET @rowCnt = @@ROWCOUNT
-                SET @total_rows = @total_rows + @rowCnt;
-                SET @msg = CONVERT(nvarchar(36), SYSDATETIMEOFFSET()) + N'     - Cleared rows: ' + CONVERT(nvarchar(10), @rowCnt) + N', Duration: ' + CONVERT(nvarchar(20), CONVERT(time, GETDATE() - @start))
-                IF @no_infomsg = 0
-                    RAISERROR(@msg, 0, 0) WITH NOWAIT;
-            END
-        END
-        ELSE
-        BEGIN
-            SET @rowCnt = ISNULL((SELECT COUNT(1) FROM internal.operation_messages WITH(NOLOCK) WHERE operation_id = @operation_to_cleanup), 0);
-            SET @msg = CONVERT(nvarchar(36), SYSDATETIMEOFFSET()) + N'     - Rows to cleanup: ' + CONVERT(nvarchar(10), @rowCnt);
-            SET @total_rows = @total_rows + @rowCnt;
-            IF @no_infomsg = 0
-                RAISERROR(@msg, 0, 0) WITH NOWAIT;
-        END
-
         SET @msg = CONVERT(nvarchar(36), SYSDATETIMEOFFSET()) + N'   - Cleaning Event message contexts...'
         IF @no_infomsg = 0
             RAISERROR(@msg, 0, 0) WITH NOWAIT;
@@ -316,6 +287,35 @@ AS
         ELSE
         BEGIN
             SET @rowCnt = ISNULL((SELECT COUNT(1) FROM internal.executable_statistics WITH(NOLOCK) WHERE execution_id = @operation_to_cleanup), 0);
+            SET @msg = CONVERT(nvarchar(36), SYSDATETIMEOFFSET()) + N'     - Rows to cleanup: ' + CONVERT(nvarchar(10), @rowCnt);
+            SET @total_rows = @total_rows + @rowCnt;
+            IF @no_infomsg = 0
+                RAISERROR(@msg, 0, 0) WITH NOWAIT;
+        END
+
+        SET @msg = CONVERT(nvarchar(36), SYSDATETIMEOFFSET()) + N'   - Cleaning Operation messages...'
+        IF @no_infomsg = 0
+            RAISERROR(@msg, 0, 0) WITH NOWAIT;
+        IF @check_only = 0
+        BEGIN
+            SET @rowCnt = @batch_size;
+            WHILE @rowCnt >= @batch_size
+            BEGIN
+                IF @delay IS NOT NULL WAITFOR DELAY @delay
+                SET @start = GETDATE();
+                DELETE TOP (@batch_size)
+                FROM internal.operation_messages 
+                WHERE operation_id = @operation_to_cleanup
+                SET @rowCnt = @@ROWCOUNT
+                SET @total_rows = @total_rows + @rowCnt;
+                SET @msg = CONVERT(nvarchar(36), SYSDATETIMEOFFSET()) + N'     - Cleared rows: ' + CONVERT(nvarchar(10), @rowCnt) + N', Duration: ' + CONVERT(nvarchar(20), CONVERT(time, GETDATE() - @start))
+                IF @no_infomsg = 0
+                    RAISERROR(@msg, 0, 0) WITH NOWAIT;
+            END
+        END
+        ELSE
+        BEGIN
+            SET @rowCnt = ISNULL((SELECT COUNT(1) FROM internal.operation_messages WITH(NOLOCK) WHERE operation_id = @operation_to_cleanup), 0);
             SET @msg = CONVERT(nvarchar(36), SYSDATETIMEOFFSET()) + N'     - Rows to cleanup: ' + CONVERT(nvarchar(10), @rowCnt);
             SET @total_rows = @total_rows + @rowCnt;
             IF @no_infomsg = 0
