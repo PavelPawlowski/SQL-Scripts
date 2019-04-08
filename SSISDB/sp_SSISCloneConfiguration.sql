@@ -11,13 +11,13 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISCloneConfiguration] AS PRINT ''Placeholder for [dbo].[sp_SSISCloneConfiguration]''')
 GO
 /* ****************************************************
-sp_SSISCloneConfiguration v 0.67 (2017-12-07)
+sp_SSISCloneConfiguration v 0.68 (2019-04-08)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2017 Pavel Pawlowski
+Copyright (c) 2017 - 2019 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -44,12 +44,12 @@ Description:
 Parameters:
      @folder                                nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Supports wildcards
     ,@project                               nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
-	,@object                                nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
+    ,@object                                nvarchar(max)    = '%'    --Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
     ,@parameter                             nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
     ,@cloneReferences                       bit             = 1     --Specifies whether to clone References to environments
     ,@cloneReferencedEnvironments           bit             = 0     --Specifies whether to clone referenced environments
     ,@destinationFolder                     nvarchar(128)   = '%'   --Pattern for naming Destination Folder. It is a default value for the script.
-    ,@destinationProject		            nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
+    ,@destinationProject                    nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
     ,@destinationEnvironment                nvarchar(128)   = '%'   --Pattern for naming destination Environments. It is a default value for the script
     ,@destinationFolderReplacements         nvarchar(max)   = NULL  -- Comma separated list of destination folder replacements. 
     ,@destinationEnvironmentReplacements    nvarchar(max)   = NULL  -- Comma separated list of destination environment replacements. 
@@ -58,12 +58,12 @@ Parameters:
 ALTER PROCEDURE [dbo].[sp_SSISCloneConfiguration]
      @folder                                nvarchar(max)   = NULL  --Comma separated list of project folders to script configurations. Supports wildcards
     ,@project                               nvarchar(max)   = '%'   --Comma separated list of projects to script configurations. Support wildcards
-	,@object                                nvarchar(max)	= '%'	--Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
+    ,@object                                nvarchar(max)    = '%'    --Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
     ,@parameter                             nvarchar(max)   = '%'   --Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
     ,@cloneReferences                       bit             = 1     --Specifies whether to clone References to environments
     ,@cloneReferencedEnvironments           bit             = 0     --Specifies whether to clone referenced environments
     ,@destinationFolder                     nvarchar(128)   = '%'   --Pattern for naming Destination Folder. It is a default value for the script.
-    ,@destinationProject		            nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
+    ,@destinationProject                    nvarchar(128)   = '%'   --Pattern for naming Destination Project. It is a default value for the script.
     ,@destinationEnvironment                nvarchar(128)   = '%'   --Pattern for naming destination Environments. It is a default value for the script
     ,@destinationFolderReplacements         nvarchar(max)   = NULL  -- Comma separated list of destination folder replacements. 
     ,@destinationEnvironmentReplacements    nvarchar(max)   = NULL  -- Comma separated list of destination environment replacements. 
@@ -84,14 +84,14 @@ BEGIN
         ,@project_id                    bigint
         ,@folder_name                   nvarchar(128)
         ,@project_name                  nvarchar(128)
-        ,@object_type                   smallint				--Object type from object configuration
-        ,@object_name                   nvarchar(260)			--Object name in the objects configurations
-        ,@parameter_name                nvarchar(128)			--Parameter name in the objects configurations
-        ,@parameter_data_type           nvarchar(128)			--Dada type of the parameter
+        ,@object_type                   smallint                --Object type from object configuration
+        ,@object_name                   nvarchar(260)            --Object name in the objects configurations
+        ,@parameter_name                nvarchar(128)            --Parameter name in the objects configurations
+        ,@parameter_data_type           nvarchar(128)            --Dada type of the parameter
         ,@sensitive                     bit                     --Identifies sensitive parameter
         ,@default_value                 sql_variant             
         ,@string_value                  nvarchar(4000)          
-        ,@value_type                    char(1)					--Specifies the value type of the parameter (V - direct value or R - reference)
+        ,@value_type                    char(1)                    --Specifies the value type of the parameter (V - direct value or R - reference)
         ,@referenced_variable_name      nvarchar(128)
         ,@reference_type                varchar(10)
         ,@environment_folder            nvarchar(128)
@@ -174,16 +174,16 @@ BEGIN
     IF @folder IS NULL
         SET @printHelp = 1
 
-	--Set and print the procedure output caption
+    --Set and print the procedure output caption
     IF (@printHelp = 0)
     BEGIN
         SET @captionBegin = N'RAISERROR(N''';
         SET @captionEnd = N''', 0, 0) WITH NOWAIT;';
     END
 
-	SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.67 (2017-12-07) (C) 2017 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
-					@captionBegin + N'=====================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
-	RAISERROR(@caption, 0, 0) WITH NOWAIT;
+    SET @caption =  @captionBegin + N'sp_SSISCloneConfiguration v0.68 (2019-04-08) (C) 2017-2019 Pavel Pawlowski' + @captionEnd + NCHAR(13) + NCHAR(10) + 
+                    @captionBegin + N'==========================================================================' + @captionEnd + NCHAR(13) + NCHAR(10);
+    RAISERROR(@caption, 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
 
     IF @printHelp = 1
@@ -199,7 +199,7 @@ BEGIN
                                                                       Configurations for projects in matching folders will be scripted
     ,@project                               nvarchar(max)   = ''%%''   - Comma separated list of projects to script configurations. Support wildcards
                                                                       Configurations for matching projects will be scripted
-	,@object                                nvarchar(max)	= ''%%''   - Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
+    ,@object                                nvarchar(max)    = ''%%''   - Comma separated list of source objects which parameter configuration should be cloned. Supports Wildcards.
                                                                       Configurations for matching objects will be scripted
     ,@parameter                             nvarchar(max)   = ''%%''   - Comma separated list of parameter names which configuration should be cloned. Supports wildcards.
                                                                       Configurations for matching parameters will be scripted
@@ -619,7 +619,10 @@ SET NOCOUNT ON;
                 RAISERROR(N'-- --------------------------------------------------------------------------------', 0, 0) WITH NOWAIT;
             RAISERROR(N'-- Object: %s', 0, 0, @object_name) WITH NOWAIT;
             RAISERROR(N'-- --------------------------------------------------------------------------------', 0, 0) WITH NOWAIT;
-            RAISERROR(N'SET @object_name = %s', 0, 0, @objNameQuoted) WITH NOWAIT;
+            IF @object_name = @project_name
+                RAISERROR(N'SET @object_name = REPLACE(@destinationProject, ''%%'', %s)', 0, 0, @objNameQuoted) WITH NOWAIT;
+            ELSE
+                RAISERROR(N'SET @object_name = %s', 0, 0, @objNameQuoted) WITH NOWAIT;
             RAISERROR(N'SET @object_type = %d   -- %s', 0, 0, @object_type, @objectTypeDesc) WITH NOWAIT;
             RAISERROR(N'-- --------------------------------------------------------------------------------', 0, 0) WITH NOWAIT;
         END
@@ -1356,9 +1359,9 @@ RAISERROR(N'
 RAISERROR(N'                IF EXISTS (
                     SELECT
                         1
-                    FROM catalog.environment_references er
-                    INNER JOIN catalog.projects p ON p.project_id = er.project_id
-                    INNER JOIN catalog.folders f ON f.folder_id = p.folder_id
+                    FROM [SSISDB].[catalog].[environment_references] er
+                    INNER JOIN [SSISDB].[catalog].[projects] p ON p.project_id = er.project_id
+                    INNER JOIN [SSISDB].[catalog].[folders] f ON f.folder_id = p.folder_id
                     WHERE
                         f.name = @folder_name
                         AND
@@ -1382,8 +1385,8 @@ RAISERROR(N'
 RAISERROR(N'                        IF NOT EXISTS(
                             SELECT 
                                 1 
-                            FROM catalog.environments e 
-                            INNER JOIN catalog.folders f on f.folder_id = e.folder_id
+                            FROM [SSISDB].[catalog].[environments] e 
+                            INNER JOIN [SSISDB].[catalog].[folders] f on f.folder_id = e.folder_id
                             WHERE
                                 e.name = @environment_name
                                 AND
