@@ -3,7 +3,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ScheduleStatus] AS PRINT ''Placeholder for [dbo].[sp_ScheduleStatus]''')
 GO
 /* ****************************************************
-sp_ScheduleStatus v 0.16 (2017-11-21)
+sp_ScheduleStatus v 0.20 (2019-07-23)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -37,12 +37,14 @@ Parameters:
     ,@status        bit             = 1         --Status of the schedule to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
     ,@job           nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job names
     ,@category      nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job categories
+    ,@scriptName    bit             = 0         --Specifes whether Name should be scripted instead of schedule_id. Default 0 = schedule_id is used
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_ScheduleStatus]
     @filter         nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules. When not provided all schedules are scripted
     ,@status        bit             = 1         --Status of the schedule to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
     ,@job           nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job names
     ,@category      nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job categories
+    ,@scriptName    bit             = 0         --Specifes whether Name should be scripted instead of schedule_id. Default 0 = schedule_id is used
 AS
 SET NOCOUNT ON;
 DECLARE
@@ -65,8 +67,8 @@ DECLARE @schedules TABLE (
     ,name       nvarchar(128)
 )
 
-RAISERROR(N'--sp_ScheduleStatus v0.16 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
-RAISERROR(N'--=============================================================', 0, 0) WITH NOWAIT;
+RAISERROR(N'--sp_ScheduleStatus v0.20 (2019-07-23) (c) 2017-2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'--==================================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'--sp_ScheduleStatus Generates script for enabling or disabling job schedules', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
 
@@ -83,6 +85,7 @@ Params:
                                                   If provided then only schedules for jobs with matching names are scripted
     ,@category      nvarchar(max)   = NULL      - Comma separated list of LIKE filter to limit schedules by job categories.
                                                   If provided then only schedules for jobs from matching job categories are scripted
+    ,@scriptName    bit             = 0         - Specifes whether Name should be scripted instead of schedule_id. Default 0 = schedule_id is used
 
 @filter, @status, @job and @category are combined with AND when provided together.
 ', 0, 0) WITH NOWAIT;
@@ -212,7 +215,10 @@ WHILE @@FETCH_STATUS = 0
 BEGIN
     RAISERROR(N'-- [%s] (%d)', 0, 0, @name, @schedule_id) WITH NOWAIT;
     RAISERROR(N'RAISERROR(N''%%s schedule [%s] (%d)'', 0, 0, @status) WITH NOWAIT;', 0, 0, @name, @schedule_id) WITH NOWAIT;
-    RAISERROR(N'EXEC msdb.dbo.sp_update_schedule @schedule_id=%d, @enabled = @enabled', 0, 0, @schedule_id) WITH NOWAIT;
+    IF @scriptName = 1
+        RAISERROR(N'EXEC msdb.dbo.sp_update_schedule @name=''%s'', @enabled = @enabled', 0, 0, @name) WITH NOWAIT;
+    ELSE
+        RAISERROR(N'EXEC msdb.dbo.sp_update_schedule @schedule_id=%d, @enabled = @enabled', 0, 0, @schedule_id) WITH NOWAIT;
     FETCH NEXT FROM cr INTO @schedule_id, @name
 END
 

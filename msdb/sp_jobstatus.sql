@@ -3,7 +3,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_JobStatus] AS PRINT ''Placeholder for [dbo].[sp_JobStatus]''')
 GO
 /* ****************************************************
-sp_JobStatus v 0.25 (2017-11-21)
+sp_JobStatus v 0.30 (2019-07-23)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -36,11 +36,13 @@ Parameters:
     @filter         nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed
     ,@status        bit             = 1         --Status of the jobs to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
     ,@category      nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job categories
+    ,@scriptName    bit             = 0         --Specifes whether Name should be scripted instead of job_id. Default 0 = job_id is used
  ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_JobStatus]
     @filter         nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit jobs. When not provided all jobs are printed
     ,@status        bit             = 1         --Status of the jobs to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
     ,@category      nvarchar(max)   = NULL      --Comma separated list of LIKE filter to limit schedules by job categories
+    ,@scriptName    bit             = 0         --Specifes whether Name should be scripted instead of job_id. Default 0 = job_id is used
 AS
 SET NOCOUNT ON;
 DECLARE
@@ -59,8 +61,8 @@ DECLARE @jobs TABLE (
     ,name   nvarchar(128)
 )
 
-RAISERROR(N'--sp_JobStatus v0.25 (2017-11-21) (c) 2017 Pavel Pawlowski', 0, 0) WITH NOWAIT;
-RAISERROR(N'--========================================================', 0, 0) WITH NOWAIT;
+RAISERROR(N'--sp_JobStatus v0.30 (2019-07-23) (c) 2017-2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'--=============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'--sp_JobStatus Generates script for enabling or disabling jobs', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
 
@@ -75,6 +77,7 @@ Params:
     ,@status    bit             = 1     - Status of the jobs to be printed. 1 = Enabled, 0 - Disabled, NULL = both disable and enabled
     ,@category  nvarchar(max)   = NULL  - Comma separated list of LIKE filter to limit schedules by job categories.
                                           If provided then only jobs from matching job categories are scripted.
+    ,@scriptName    bit         = 0     - Specifes whether Name should be scripted instead of job_id. Default 0 = job_id is used
 
 @filter, @status and @category are combined with AND when provided together.
 
@@ -174,7 +177,10 @@ WHILE @@FETCH_STATUS = 0
 BEGIN
     SET @job_id_str = CONVERT(nvarchar(50), @job_id);
     RAISERROR(N'RAISERROR(N''%%s job [%s] (%s)'', 0, 0, @status) WITH NOWAIT;', 0, 0, @name, @job_id_str) WITH NOWAIT;
-    RAISERROR(N'EXEC msdb.dbo.sp_update_job @job_id=N''%s'', @enabled = @enabled', 0, 0, @job_id_str) WITH NOWAIT;
+    IF @scriptName = 1
+        RAISERROR(N'EXEC msdb.dbo.sp_update_job @job_name=N''%s'', @enabled = @enabled', 0, 0, @name) WITH NOWAIT;
+    ELSE
+        RAISERROR(N'EXEC msdb.dbo.sp_update_job @job_id=N''%s'', @enabled = @enabled', 0, 0, @job_id_str) WITH NOWAIT;
     FETCH NEXT FROM cr INTO @job_id, @name
 END
 
