@@ -4,7 +4,7 @@ IF NOT EXISTS(SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID('[dbo].[sp_t
 	EXEC (N'CREATE PROCEDURE [dbo].[sp_tblCreatePartitionFunction] AS PRINT ''Container''')
 GO
 /* ****************************************************
-sp_tblCreatePartitionFunction v 0.33 (2017-10-30)
+sp_tblCreatePartitionFunction v 0.34 (2019-08-01)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -42,7 +42,7 @@ Parameters:
     ,@rangeEnd          sql_variant     = NULL      --End of the Range. You should pass proper data type or string in proper format
     ,@boundaryType      nvarchar(5)     = ''RIGHT''   --Range Boundary Type (RIGHT or LEFT)
     ,@incrementValue    int             = 1         --Specifies how many increment units should be incremented in each step
-    ,@incrementUnit     nvarchar(10)    = ''MONTH''   --Range Increment Type eg. YEAR, MONTH, WEEK, ISO_WEEK, DAY. 
+    ,@incrementUnit     nvarchar(10)    = ''MONTH''   --Range Increment Type eg. YEAR, QUARTER, MONTH, WEEK, ISO_WEEK, DAY. 
                                                     --Used only for date ranges
     ,@useIntegerDates   bit             = 1         --Specifies whether dates should be interpreted as integers or as original range date data type in case of Dates
     ,@integerFormatType tinyint         = 2         --Specifies how the int data type is being formatted. 1 or 2. 
@@ -74,7 +74,7 @@ ALTER PROCEDURE [dbo].[sp_tblCreatePartitionFunction]
     ,@rangeEnd          sql_variant     = NULL      --End of the Range. You should pass proper data type or string in proper format
     ,@boundaryType      nvarchar(5)     = 'RIGHT'   --Range Boundary Type (RIGHT or LEFT)
     ,@incrementValue    int             = 1         --Specifies how many increment units should be incremented
-    ,@incrementUnit     nvarchar(10)    = 'MONTH'   --Range Increment Type eg. YEAR, MONTH, WEEK, ISO_WEEK, DAY. Used only for date ranges
+    ,@incrementUnit     nvarchar(10)    = 'MONTH'   --Range Increment Type eg. YEAR, QUARTER, MONTH, WEEK, ISO_WEEK, DAY. Used only for date ranges
     ,@useIntegerDates   bit             = 1         --Specifies whether dates should be interpreted as integers or as original range date data type
     ,@integerFormatType tinyint         = 2         --Specifies how the int data type is being formatted. 1 or 2. 1 = format is yyyymmdd and 2 = format using yyyxx(x) where xx(x) represents month, week or day
     ,@printScriptOnly   bit             = 1         --Specifies whether script should be printed or the function should be automatically created. Default is print script
@@ -98,7 +98,7 @@ BEGIN
         ,@strRangeStart         nvarchar(50)
         ,@strRangeEnd           nvarchar(50)
 
-	SET @caption = N'--sp_tblCreatePartitionFunction v 0.33 (2017-10-30) (C) 2014 - 2017 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+	SET @caption = N'--sp_tblCreatePartitionFunction v 0.34 (2019-08-01) (C) 2014 - 2019 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
 				   N'--=================================================================================' + NCHAR(13) + NCHAR(10);
 	RAISERROR(@caption, 0, 0) WITH NOWAIT;
 
@@ -190,9 +190,9 @@ BEGIN
 		SET @printHelp = 1;
 	END
 
-	IF @incrementUnit NOT IN (N'YEAR', N'MONTH', N'DAY', N'WEEK', N'ISO_WEEK')
+	IF @incrementUnit NOT IN (N'YEAR', N'QUARTER', N'MONTH', N'DAY', N'WEEK', N'ISO_WEEK')
 	BEGIN
-		RAISERROR(N'@incrementUnit has to be one of following: YEAR, MONTH, DATE, WEEK, ISO_WEEK', 16, 5);
+		RAISERROR(N'@incrementUnit has to be one of following: YEAR, QUARTER, MONTH, DATE, WEEK, ISO_WEEK', 16, 5);
 		SET @printHelp = 1;
 	END
 	IF @integerFormatType NOT IN (1,2)
@@ -215,7 +215,7 @@ Parameters:
     ,@rangeEnd          sql_variant     = NULL      --End of the Range. You should pass proper data type or string in proper format
     ,@boundaryType      nvarchar(5)     = ''RIGHT''   --Range Boundary Type (RIGHT or LEFT)
     ,@incrementValue    int             = 1         --Specifies how many increment units should be incremented in each step
-    ,@incrementUnit     nvarchar(10)    = ''MONTH''   --Range Increment Type eg. YEAR, MONTH, WEEK, ISO_WEEK, DAY. 
+    ,@incrementUnit     nvarchar(10)    = ''MONTH''   --Range Increment Type eg. YEAR, QUARTER, MONTH, WEEK, ISO_WEEK, DAY. 
                                                     --Used only for date ranges
     ,@useIntegerDates   bit             = 1         --Specifies whether dates should be interpreted as integers or as original range date data type in case of Dates
     ,@integerFormatType tinyint         = 2         --Specifies how the int data type is being formatted. 1 or 2. 
@@ -252,6 +252,7 @@ In addition a Format specifier can be used as first character of the string:
         SET @isDateRange    =   1
         SET @currentDate    =   CASE @incrementUnit                                 
 									WHEN 'YEAR' THEN DATEADD(YEAR, DATEDIFF(YEAR, 0, CONVERT(datetime, @rangeStart)), 0)
+									WHEN N'QUARTER' THEN DATEADD(QUARTER, DATEDIFF(QUARTER, 0, CONVERT(datetime, @rangeStart)), 0)
 									WHEN N'MONTH' THEN DATEADD(MONTH, DATEDIFF(MONTH, 0, CONVERT(datetime, @rangeStart)), 0)
 									WHEN N'DAY' THEN DATEADD(DAY, DATEDIFF(DAY, 0, CONVERT(datetime, @rangeStart)), 0)
 									WHEN N'WEEK' THEN DATEADD(WEEK, DATEDIFF(WEEK, 0, CONVERT(datetime, @rangeStart)), 0)
@@ -293,6 +294,7 @@ In addition a Format specifier can be used as first character of the string:
         BEGIN
 			SET @currentPartitionValue = CASE @incrementUnit
 											WHEN N'YEAR' THEN CONVERT(nvarchar(20), YEAR(@currentDate))
+											WHEN N'QUARTER' THEN CONVERT(nvarchar(20), @currentDate, 112)
 											WHEN N'MONTH' THEN CONVERT(nvarchar(20), @currentDate, 112)
 											WHEN N'DAY' THEN CONVERT(nvarchar(20), YEAR(@currentDate) * 1000 + DATEPART(DAYOFYEAR, @currentDate))
 											WHEN N'WEEK' THEN CONVERT(nvarchar(20), YEAR(@currentDate) * 100 + DATEPART(WEEK, @currentDate))
@@ -326,6 +328,7 @@ In addition a Format specifier can be used as first character of the string:
         BEGIN
 		    SET @currentDate =  CASE @incrementUnit
 									WHEN N'YEAR' THEN DATEADD(YEAR, @incrementValue, CONVERT(datetime, @currentDate))
+									WHEN N'QUARTER' THEN DATEADD(QUARTER, @incrementValue, CONVERT(datetime, @currentDate))
 									WHEN N'MONTH' THEN DATEADD(MONTH, @incrementValue, CONVERT(datetime, @currentDate))
 									WHEN N'DAY' THEN DATEADD(DAY, @incrementValue, CONVERT(datetime, @currentDate))
 									WHEN N'WEEK' THEN DATEADD(WEEK, @incrementValue, CONVERT(datetime, @currentDate))
