@@ -43,6 +43,7 @@ Description:
     This stored procedure deletes the log information in smaller batches and many smaller tnrasactions thuss not flooding the transaction log and
     allowing the normal opertaion of the SSISDB
 
+    This stored procedure should be added as first step in the SSIS Server Maintenance Job
 
 Paramters:
      @max_date      datetime    = NULL          --Specifies maximum date to cleanup. If Not provided, retention window is being used

@@ -65,6 +65,14 @@ Allows decryption of encrypted variable values.
 
 Stored procedure allows easy reset of Project/Object/Parameter configuration values.
 
+### usp_cleanup_server_retention_window
+
+Cleanups SSISDB catalog from all kind of log mesasges belonging to operations past specified data or retention window
+
+### usp_cleanup_key_certificates
+
+Cleanups SSISDB catalog from left over certificates and symmetric keys
+
 ## msdb
 
 Stored procedures for stuff related to msdb.
