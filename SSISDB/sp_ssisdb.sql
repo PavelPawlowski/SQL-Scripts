@@ -17,7 +17,7 @@ Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2017-2018 Pavel Pawlowski
+Copyright (c) 2017-2019 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.85 (2018-11-08)
+sp_ssisdb v 0.87 (2019-08-20)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -225,6 +225,7 @@ DECLARE
     ,@tmp                               nvarchar(max)   = NULL  --Universal temporary variable
     ,@useRuntime                        bit             = 0     --Specifies whether Runtime should be used for searching instead of Create/Start/End time
     ,@detailedMessageTracking           bit             = 0     --enables detailed message tracking to track proper source for all messages
+	,@messageFiltersExecutions          bit             = 0     --Specifies whether Messages filter filters executions base list
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -232,9 +233,10 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.85 (2018-11-08) (c) 2017 - 2018 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.87 (2019-08-20) (c) 2017 - 2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
+RAISERROR(N'https://github.com/PavelPawlowski/SQL-Scripts', 0, 0) WITH NOWAIT;
 RAISERROR(N'', 0, 0) WITH NOWAIT;
 
 
@@ -352,6 +354,8 @@ VALUES
 	,('MK'		,'MESSAGE_KIND:'		,12)			--MessageKind
     ,('DMT'     ,'DMT'                  ,NULL)          --Detailed Message Tracking
     ,('DMT'     ,'DETAILED_MESSAGE_TRACKING', NULL)     --Detailed Message Tracking
+	,('MFE'		,'MFE', NULL)                           --Message Filters Executions
+	,('MFE'		,'MESSAGE_FILTER_EXECUTIONS', NULL)     --Message Filters Executions
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -574,6 +578,11 @@ SELECT
             Modifier AS UnknownModifier
         FROM Unknown
 
+        SELECT
+            m.Val
+            ,m.Modifier AS AvailableModifier
+            ,m.LeftChars
+        FROM @valModifiers m
 
     END
 
@@ -1475,10 +1484,22 @@ BEGIN
     FROM FilterValues
 
     IF NULLIF(@msg_filter, N'') IS NOT NULL
+    BEGIN
         RAISERROR(N' - Using Message Filter(s): %s', 0, 0, @msg_filter) WITH NOWAIT;
 
+        /* MESSAGE FILTERS EXECUTIONS */
 
+        IF EXISTS(SELECT 1 FROM @opVal WHERE Val = N'MFE')
+        BEGIN
+            SET @messageFiltersExecutions = 1
+            RAISERROR(N'   - Applying Mesage Filter(s) to Executions List', 0, 0) WITH NOWAIT;
+        END
+
+        /*END MESSAGE FILTERS EXECUTIONS */
+    END
     /* END PROCES MESSAGE FILTERS */
+
+
 
     IF @id IS NULL AND @help <> 1
     BEGIN    
@@ -1759,6 +1780,8 @@ RAISERROR(N'  FILTER_PACKAGES(FP)                    - Apply @package filter als
                                            m is comma seeparated list of message kinds. Supported O = Operations, E = Event messages. Default are both kinds of messages
   DETAILED_MESSAGE_TRACKING(DMT)         - Enables detailed messages tracking. This allows tracking of proper package and package path for log messages from scripts
                                            which are otherwise logged under control package
+  MESSAGE_FILTER_EXECUTIONS(MFE)         - Enables filtering executions list by message filter. In this case the result of executions
+                                           list is filtered by @message_filter. Only executions containing message matching the filter are returned.
                                            ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS):iiiii   - Include Execution Data Statistics in the details verbose output
@@ -2049,10 +2072,10 @@ Data AS (
         ELSE ''
     END + N'
 ' +  /*WHERE Condition - each line as part of VALUES */
-  REPLACE(REPLACE(ISNULL(
+  ISNULL(
     ' WHERE ' +
     NULLIF(
-        STUFF(
+        STUFF(CONVERT(xml,
             (SELECT
                 N' AND ' + Val
 
@@ -2086,15 +2109,31 @@ Data AS (
                 END
                 )
                 ,(@durationCondition)
+                ,(
+                    CASE 
+                        WHEN @messageFiltersExecutions = 1 THEN N'
+                    EXISTS(
+                        SELECT 
+                            1 
+                        FROM internal.operation_messages om WITH(NOLOCK) 
+                        INNER JOIN #msgTypes mt ON mt.id = om.message_type
+                        WHERE 
+                            om.operation_id = o.operation_id
+                            AND
+                            (EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 0) AND NOT EXISTS(SELECT 1 FROM #msg_filters mf WHERE om.message LIKE mf.filter AND mf.exclusive = 1))
+                    )'
+                        ELSE NULL
+                    END
+                )
                 )T(val)
-            FOR XML PATH('')
-            )
+            FOR XML PATH(''), TYPE
+            )).value('.', 'nvarchar(max)')
             ,1, 5, N''
         )
         ,''
     )
   ,N''
-  ), N'&gt;', N'>'), N'&lt;', N'<') +
+  ) +
     CASE  
         WHEN @totalMaxRows IS NOT NULL THEN N' ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''99991231'')' ELSE N'created_time' END + N' DESC ' 
         ELSE N'' 
@@ -2679,15 +2718,18 @@ LEFT JOIN #JobsExecutionData je ON je.execution_id = d.execution_id
 '
         ELSE N''
     END +
+N'WHERE 
+' +
     CASE 
-        WHEN @id IS NOT NULL THEN ''
-        WHEN @opLastCnt IS NOT NULL THEN 'WHERE row_no <= @opLastCnt'
-        WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL AND @minInt = @maxInt THEN ''
-        WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL THEN ''
-        WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN ''
-        WHEN @opFromTZ IS NOT NULL THEN ''
-        ELSE 'WHERE row_no < 100'
-    END + N'
+        WHEN @id IS NOT NULL THEN '1=1'
+        WHEN @opLastCnt IS NOT NULL THEN 'row_no <= @opLastCnt'
+        WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL AND @minInt = @maxInt THEN '1=1'
+        WHEN @maxInt IS NOT NULL AND @minInt IS NOT NULL THEN '1=1'
+        WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN '1=1'
+        WHEN @opFromTZ IS NOT NULL THEN '1=1'
+        ELSE 'row_no < 100'
+    END +
+     + N'
 ORDER BY d.rank, d.row_no
 ' 
 
