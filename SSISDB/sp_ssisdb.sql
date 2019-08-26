@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.87 (2019-08-20)
+sp_ssisdb v 0.88 (2019-08-26)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -226,6 +226,8 @@ DECLARE
     ,@useRuntime                        bit             = 0     --Specifies whether Runtime should be used for searching instead of Create/Start/End time
     ,@detailedMessageTracking           bit             = 0     --enables detailed message tracking to track proper source for all messages
 	,@messageFiltersExecutions          bit             = 0     --Specifies whether Messages filter filters executions base list
+    ,@NoVerboseRow                      bit             = 0     --No Verbose row in Verbose Mode
+    ,@NoExecutedPackages                bit             = 0     --No Executed Packages in Verbose Mode
 
     EXECUTE AS CALLER;
         IF IS_MEMBER('ssis_sensitive_access') = 1 OR IS_MEMBER('db_owner') = 1 OR IS_SRVROLEMEMBER('sysadmin') = 1
@@ -233,7 +235,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.87 (2019-08-20) (c) 2017 - 2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.88 (2019-08-26) (c) 2017 - 2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'https://github.com/PavelPawlowski/SQL-Scripts', 0, 0) WITH NOWAIT;
@@ -356,6 +358,10 @@ VALUES
     ,('DMT'     ,'DETAILED_MESSAGE_TRACKING', NULL)     --Detailed Message Tracking
 	,('MFE'		,'MFE', NULL)                           --Message Filters Executions
 	,('MFE'		,'MESSAGE_FILTER_EXECUTIONS', NULL)     --Message Filters Executions
+    ,('NEP'     ,'NEP', NULL)                           --No executed packages in Verbose Mode
+    ,('NEP'     ,'NO_EXECUTED_PACKAGES', NULL)          --No executed packages in Verbose Mode
+    ,('NVR'     ,'NVR', NULL)                           --No verbose row
+    ,('NVR'     ,'NO_VERBOSE_ROW', NULL)                --No verbose row
 
     ,('DBG','DBG', 3)    --TEMPORARY DEBUG
 
@@ -974,11 +980,24 @@ BEGIN
                               END
             RAISERROR(N'   - Sorting Executed Packages by: %s %s', 0, 0, @pkgSortStr, @msg) WITH NOWAIT;    
 
-            IF @id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM internal.operations WITH(NOLOCK) WHERE operation_id = @id)
+            --IF @id IS NOT NULL AND NOT EXISTS(SELECT 1 FROM internal.operations WITH(NOLOCK) WHERE operation_id = @id)
+            --BEGIN
+            --    RAISERROR(N'   << No Executable statistics were found for execution_id = %I64d >>' , 0, 0, @id) WITH NOWAIT;
+            --    RETURN;
+            --END
+
+            IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'NVR')
             BEGIN
-                RAISERROR(N'   << No Executable statistics were found for execution_id = %I64d >>' , 0, 0, @id) WITH NOWAIT;
-                RETURN;
+                SET @NoVerboseRow = 1
+                RAISERROR(N'   - Excluding Maint Verbose Row', 0, 0) WITH NOWAIT;
             END
+
+            IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'NEP')
+            BEGIN
+                SET @NoExecutedPackages = 1
+                RAISERROR(N'   - Excluding executed packages', 0, 0) WITH NOWAIT;
+            END
+
 
             /*Get EVENT MESSAGES param */
             IF EXISTS(SELECT 1 FROM @opVal WHERE Val = 'EM')
@@ -1781,7 +1800,7 @@ RAISERROR(N'  FILTER_PACKAGES(FP)                    - Apply @package filter als
   DETAILED_MESSAGE_TRACKING(DMT)         - Enables detailed messages tracking. This allows tracking of proper package and package path for log messages from scripts
                                            which are otherwise logged under control package
   MESSAGE_FILTER_EXECUTIONS(MFE)         - Enables filtering executions list by message filter. In this case the result of executions
-                                           list is filtered by @message_filter. Only executions containing message matching the filter are returned.
+                                           list is filtered by @msg_filter and @msg_type. Only executions containing message matching the filter are returned.
                                            ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS):iiiii   - Include Execution Data Statistics in the details verbose output
@@ -1835,13 +1854,15 @@ Samples:
 RAISERROR(N'
 @status - Execution Statuses
 ----------------------------
+Comma separated list of status filters.
+
 Below list of execution statuses are available for filter:
 
   CREATED(TD)   - Operation was created but not executed yet
   (R)UNNING     - Operation is running
   (S)UCCESS     - Operation ended successfully
-  (F)FAILED     - Operation execution failed
-  (C)CANCELLED  - Operation execution was cancelled
+  (F)AILED      - Operation execution failed
+  (C)ANCELLED   - Operation execution was cancelled
   (P)ENDING     - Operation was set for exectuion, but he execution is stil pending
   (U)NEXPECTED  - Operetion edend unexpectedly
   STOPPIN(G)    - Operation is in process of stpping
@@ -1854,6 +1875,13 @@ Below list of execution statuses are available for filter:
 RAISERROR(N'
 @msg_type - Message Types
 -------------------------
+Comma separated list of message type filters.
+Used for detailed results filtering in VERBOSE mode as well as for filtering in-row event messages which are included by the EVENT_MESSAGES(ME) specifier.
+Default NULL means filter is not applied.
+IF MESSAGE_FILTER_EXECUTIONS(MFE) modifier is used, then the @msg_filter is appied also on Executions list. See MESSAGE_FILTER_EXECUTIONS(MFE) for details
+
+Default NULL corresponds to ERROR,TASK_FAILED for in-row event messages and no filter detailed VERBOSE mode.
+
 Below message filters are supported. By default ERROR and TASK_FAILED messages are included
 
   (E)  ERROR                   - error message
@@ -1941,6 +1969,7 @@ RAISERROR(N'
 Used for detailed results filtering in VERBOSE mode as well as for filtering in-row event messages which are included by the EVENT_MESSAGES(ME) specifier.
 Comma separated list of filters which are applied on the message body.
 Supports LIKE filters. Default NULL means filter is not applied.
+IF MESSAGE_FILTER_EXECUTIONS(MFE) modifier is used, then the @msg_filter is appied also on Executions list. See MESSAGE_FILTER_EXECUTIONS(MFE) for details.
 ', 0, 0) WITH NOWAIT;
 
 RAISERROR(N'
@@ -2017,6 +2046,7 @@ Data AS (
         ,o.created_time
         ,o.status as status_code
         ,o.process_id
+        ,o.caller_name
         ,e.project_lsn
         ,e.use32bitruntime
         ,e.environment_folder_name
@@ -2154,6 +2184,7 @@ SELECT
 N'
     ,d.rank
     ,d.row_no           AS r_no
+    ,d.caller_name
     ,' + CASE WHEN @localTime = 1 THEN N'CONVERT(datetime2(7), d.start_time) AS start_time' ELSE N' d.start_time' END + N'
     ,' + CASE WHEN @localTime = 1 THEN N'CONVERT(datetime2(7), d.end_time) AS end_time' ELSE N' d.end_time' END + N'
     ,d.duration ' +
