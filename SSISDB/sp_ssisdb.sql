@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.90 (2019-08-28)
+sp_ssisdb v 0.91 (2019-09-23)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -238,7 +238,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.90 (2019-08-28) (c) 2017 - 2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v0.91 (2019-09-23) (c) 2017 - 2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'https://github.com/PavelPawlowski/SQL-Scripts', 0, 0) WITH NOWAIT;
@@ -2196,13 +2196,9 @@ Data AS (
         ,e.executed_as_sid
         ,o.stopped_by_name
         ,o.stopped_by_sid
-
-') 
-  + CONVERT(nvarchar(max), CASE WHEN @filterOperationType = 1 OR @id IS NOT NULL THEN N'
         ,ot.operation_code
-        ,ot.operation_description'
-        ELSE N''
-    END)
+        ,ot.operation_description
+') 
  + CASE 
         WHEN @id IS NULL AND @opLastCnt IS NOT NULL AND @opLastGrp IS NOT NULL THEN
             N',ROW_NUMBER() OVER(PARTITION BY ' +
@@ -2226,12 +2222,9 @@ Data AS (
         ELSE ',ROW_NUMBER() OVER(ORDER BY ' + CASE WHEN @useStartTime =1 THEN N'ISNULL(start_time, ''99991231'')' WHEN @useEndTime = 1 THEN N'ISNULL(end_time, ''99991231'')' ELSE N'created_time' END + CASE WHEN @useTimeDescending = 1THEN  N' DESC' ELSE N' ASC' END + N') AS rank'
     END + N'
     FROM BaseOperations o 
+    INNER JOIN #operationTypes ot ON ot.operation_type = o.operation_type
     LEFT JOIN internal.executions e WITH(NOLOCK) ON e.execution_id = o.operation_id
 ' +
-    CASE
-        WHEN @id IS NULL AND @filterOperationType = 1 OR @id IS NOT NULL THEN N'INNER JOIN #operationTypes ot ON ot.operation_type = o.operation_type'
-        ELSE N''
-    END +
     CASE
         WHEN @id IS NULL AND @fldFilter = 1 THEN N' INNER JOIN #folders fld ON fld.folder_name = e.folder_name'
         ELSE N''
