@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28307.645
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SSISDB.Export", "SSISDB.Export\SSISDB.Export.csproj", "{987FD3E8-0C65-46F9-AD9D-26CA2A5D065B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestApp", "TestApp\TestApp.csproj", "{2D6990A8-A13F-4E2D-B73A-6EBB17676BE1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{987FD3E8-0C65-46F9-AD9D-26CA2A5D065B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{987FD3E8-0C65-46F9-AD9D-26CA2A5D065B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{987FD3E8-0C65-46F9-AD9D-26CA2A5D065B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{987FD3E8-0C65-46F9-AD9D-26CA2A5D065B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2D6990A8-A13F-4E2D-B73A-6EBB17676BE1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2D6990A8-A13F-4E2D-B73A-6EBB17676BE1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2D6990A8-A13F-4E2D-B73A-6EBB17676BE1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2D6990A8-A13F-4E2D-B73A-6EBB17676BE1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {3380EDD5-F387-4D69-B3D9-A21494430026}
+	EndGlobalSection
+EndGlobal

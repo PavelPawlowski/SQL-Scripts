@@ -1921,8 +1921,8 @@ RAISERROR(N'  FILTER_PACKAGES(FP)                    - Apply @package filter als
                                            iiiii < 0 = All rows are returned.
                                            For Overview by default only ERROR and TASK_FAILED are included. (Slow downs data retrieval)
   MESSAGE_KIND(MK):m                     - Allows filering the messages by message kind. 
-                                           m is comma seeparated list of message kinds. Supported O = Operations, E = Event messages. Default are both kinds of messages
-  DETAILED_MESSAGE_TRACKING(DMT)         - Enables detailed messages tracking. This allows tracking of proper package and package path for log messages from scripts
+                                           m is comma seeparated list of message kinds. Supported O = Operations, E = Event messages. Default are both kinds of messages', 0, 0) WITH NOWAIT;
+RAISERROR(N'  DETAILED_MESSAGE_TRACKING(DMT)         - Enables detailed messages tracking. This allows tracking of proper package and package path for log messages from scripts
                                            which are otherwise logged under control package
   MESSAGE_FILTER_EXECUTIONS(MFE)         - Enables filtering executions list by message filter. In this case the result of executions
                                            list is filtered by @msg_filter and @msg_type. Only executions containing message matching the filter are returned.
