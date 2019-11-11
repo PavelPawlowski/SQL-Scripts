@@ -53,6 +53,7 @@ Parameters:
     ,@version           bigint          = NULL  -- Specifies version_lsn number of the project to be exported. When no @version or @version date is specified then he current active version is exported.
     ,@version_date      datetime2(7)    = NULL  -- Specifies version creation timestamp of the project to be exported. When no @version or @version date is specified then he current active version is exported.
     ,@listVersion       bit             = 0     -- When 1 then list of projects and versions is provided and no export is performed.
+    ,@create_path       bit             = 0     --Specifies whether the path portion of the destination file should be automatically created
 ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISExportProject]
     @folder             nvarchar(128)   = NULL  -- Folder name of the project to be exported
@@ -61,6 +62,7 @@ ALTER PROCEDURE [dbo].[sp_SSISExportProject]
     ,@version           bigint          = NULL  -- Specifies version_lsn number of the project to be exported. When no @version or @version date is specified then he current active version is exported.
     ,@version_date      datetime2(7)    = NULL  -- Specifies version creation timestamp of the project to be exported. When no @version or @version date is specified then he current active version is exported.
     ,@listVersion       bit             = 0     -- When 1 then list of projects and versions is provided and no export is performed.
+    ,@create_path       bit             = 0     --Specifies whether the path portion of the destination file should be automatically created
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 BEGIN
@@ -115,6 +117,7 @@ Usage:
                                                       Only @version or @version_date can be specified at a time.
                                                       When no @version or @version date is specified then he current active version is exported.
     ,@listVersion       bit                 = 0     - When 1 then list of projects and versions is provided and no export is performed.
+    ,@create_path       bit                 = 0     - Specifies whether the path portion of the destination file should be automatically created
 
 ', 0, 0) WITH NOWAIT;
 
@@ -187,7 +190,8 @@ Usage:
             @project_name			= @project
 	        ,@project_id			= @project_id
 	        ,@project_version		= @version_lsn
-	        ,@destination_file		= @destination            
+	        ,@destination_file		= @destination
+            ,@create_path           = @create_path            
     END
 END
 GO

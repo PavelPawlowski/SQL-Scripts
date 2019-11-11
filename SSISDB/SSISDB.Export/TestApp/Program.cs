@@ -11,7 +11,7 @@ namespace TestApp
         static void Main(string[] args)
         {
 
-            SSISDBExport.ExportProjectTest("L00SRV2122,5001", "TestProject", 145, 2398, @"FC:\temp\test.ispac");
+            SSISDBExport.ExportProjectTest("L00SRV2122,5001", "TestProject", 145, 2398, @"FC:\temp\test.ispac", true);
         }
 
 

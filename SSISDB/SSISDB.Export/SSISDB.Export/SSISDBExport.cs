@@ -21,7 +21,7 @@ public class SSISDBExport
     /// <param name="project_version">object_version_lsn of the project to export</param>
     /// <param name="destination_file">path to destination .ispac file</param>
     /// <param name="connectionString">connection string to the SSISDB</param>
-    private static void ExportProjectInternal(string project_name, long project_id, long project_version, string destination_file, string connectionString)
+    private static void ExportProjectInternal(string project_name, long project_id, long project_version, string destination_file, string connectionString, bool createPath)
     {
         byte[] buffer = new byte[65536];
         long bytesRead = 0;
@@ -42,6 +42,12 @@ public class SSISDBExport
             {
                 if (reader.Read())
                 {
+                    if (createPath)
+                    {
+                        var path = Path.GetDirectoryName(destination_file);
+                        Directory.CreateDirectory(path);
+                    }
+
                     //Create the ouptu .ispac file
                     using (FileStream fs = File.Open(destination_file, FileMode.Create))
                     {
@@ -73,7 +79,7 @@ public class SSISDBExport
     /// <param name="project_id">project_id of project to export</param>
     /// <param name="project_version">object_version_lsn of the project to export</param>
     /// <param name="destination_file">path to destination .ispac file</param>
-    public static void ExportProjectTest(string dataSource, string project_name, long project_id, long project_version, string destination_file)
+    public static void ExportProjectTest(string dataSource, string project_name, long project_id, long project_version, string destination_file, bool createPath)
     {
 
         SqlConnectionStringBuilder builder = new SqlConnectionStringBuilder();
@@ -81,7 +87,7 @@ public class SSISDBExport
         builder.IntegratedSecurity = true;
         builder.DataSource = dataSource;
 
-        ExportProjectInternal(project_name, project_id, project_version, destination_file, builder.ToString());
+        ExportProjectInternal(project_name, project_id, project_version, destination_file, builder.ToString(), createPath);
     }
 
     /// <summary>
@@ -92,10 +98,10 @@ public class SSISDBExport
     /// <param name="project_version">object_version_lsn of the project to export</param>
     /// <param name="destination_file">path to destination .ispac file</param>
     [Microsoft.SqlServer.Server.SqlProcedure]
-    public static void ExportProject(string project_name, long project_id, long project_version, string destination_file)
+    public static void ExportProject(string project_name, long project_id, long project_version, string destination_file, bool createPath)
     {
 
-        ExportProjectInternal(project_name, project_id, project_version, destination_file, ContextConnectionString);
+        ExportProjectInternal(project_name, project_id, project_version, destination_file, ContextConnectionString, createPath);
 
     }
 }
