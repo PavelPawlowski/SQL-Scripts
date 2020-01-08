@@ -128,11 +128,15 @@ Usage:
     IF @listVersion = 1
     BEGIN
         SELECT
-	        f.[name]                AS [folder_name]
-	        ,p.[name]               AS [project_name]
-	        ,p.project_id           AS [project_id]
-	        ,ov.object_version_lsn  AS [version]
-	        ,ov.created_time        AS [version_date]
+	        f.[name]                    AS [folder_name]
+	        ,p.[name]                   AS [project_name]
+	        ,p.project_id               AS [project_id]
+	        ,ov.object_version_lsn      AS [version]
+	        ,ov.created_time            AS [version_date]
+            ,ov.created_by              AS [created_by]
+            ,ov.[description]           AS [description]  
+            ,ov.[restored_by]           AS [restored_by]
+            ,ov.[last_restored_time]    AS [last_restored_time]
 	        ,CASE WHEN ov.object_version_lsn = p.object_version_lsn THEN 1 ELSE 0 END AS [is_current_version]
             ,N'sp_SSISExportProject @folder = ''' + f.[name] + N''', @project = ''' + p.[name] + N''', @version = ' + CONVERT(nvarchar(20), ov.object_version_lsn) + N', @destination = ''' + ISNULL(@destination, N'<<path_to.ispac>>') + N'''' AS [export_command]
         FROM internal.object_versions ov
