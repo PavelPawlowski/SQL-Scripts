@@ -1,17 +1,24 @@
-IF  SERVERPROPERTY('EngineEdition') <> 5
-    USE [master]
+/* *****************************************************************************************
+	                                  AZURE SQL DB Notice
+
+   Commet-out the unsupported USE [master] when running in Azure SQL DB/Synapse Analytics
+   or ignore error caused by unsupported USE statement
+******************************************************************************************** */
+USE [master]
 GO
+
+
 IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].[sp_find]') AND TYPE = 'P')
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_find] AS BEGIN PRINT ''Container for sp_find (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_find v 0.94 (2018-08-20)
+sp_find v 1.0 (2020-05-31)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2014-2018 Pavel Pawlowski
+Copyright (c) 2014-2020 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -37,23 +44,23 @@ Description:
 Parameters:
      @searchString              nvarchar(max)   = NULL          -- String to search for To search for substring include wildcards like '%searchString%'
     ,@objectTypes               nvarchar(max)   = N'DATABASE'   -- Comma separated list of Object Types to search
-    ,@databaseName              nvarchar(max)   = NULL          -- Comma separated list of databases to search. NULL means current database. Supports wildcards and ''%%'' means all databases
+    ,@databaseName              nvarchar(max)   = NULL          -- Comma separated list of databases to search. NULL means current database. Supports wildcards and ''%%'' means all databases. Supported only for "OnPremise" editions and Azure Managed Instance.
     ,@searchInDefinition        bit             = 1             -- Specifies whether to search in object definitions
     ,@caseSensitive             bit             = 0             -- Specifies whether a Case Sensitive search should be done
  
  Results table Schema:
  --------------------
  CREATE TABLE #Results(
-     [DatabaseName]          nvarchar(128)   NULL       -- Database name of the match. In case of server scoped objects NULL
+     [DatabaseName]          nvarchar(128)   NOT NULL   -- Database name of the match. In case of server scoped objects NULL
     ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whether match was in NAME or in definition
     ,[ObjectType]            nvarchar(66)    NOT NULL   -- Type of object found
-    ,[ObjectID]              varchar(36)     NOT NULL   -- ID of the object found
-    ,[ObjectSchema]          nvarchar(128)   NULL       -- Object schema. NULL for not schema bound objects
     ,[ObjectName]            nvarchar(128)   NULL       -- Object name
+    ,[ObjectSchema]          nvarchar(128)   NULL       -- Object schema. NULL for not schema bound objects
+    ,[ParentObjectName]      nvarchar(128)   NULL       -- Parent Object Name
+    ,[ParentObjectSchema]    nvarchar(128)   NULL       -- Parent object schema. NULL for not schema bound objects
+    ,[ObjectID]              varchar(36)     NOT NULL   -- ID of the object found
     ,[ParentObjectType]      nvarchar(60)    NULL       -- Parent object type
     ,[ParentObjectID]        varchar(36)     NULL       -- Parent object ID
-    ,[ParentObjectSchema]    nvarchar(128)   NULL       -- Parent object schema. NULL for not schema bound objects
-    ,[ParentObjectName]      nvarchar(128)   NULL       -- Parent Object Name
     ,[ObjectCreationDate]    datetime        NULL       -- Object creation date if available
     ,[ObjectModifyDate]      datetime        NULL       -- Object modification date if available
     ,[ObjectPath]            nvarchar(max)   NULL       -- Path to the Object in SSMS Object Explorer
@@ -105,16 +112,22 @@ DECLARE
     ,@basePath nvarchar(max) = N''                      -- Base ObjectPath - for database object searches it contains path to the Database
     ,@atGroup tinyint                                   -- Allowed Types group for help printing purposes
     ,@lastAtGroup tinyint = 0                           -- Last Allowed Types group for help printing purposes
+    ,@unsupportedEngineScope tinyint = NULL
 
 --Set and print the procedure output caption
-SET @caption =  N'sp_find v0.94 (2018-08-20) (C) 2014-2018 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
-                N'========================================================' + NCHAR(13) + NCHAR(10);
+SET @caption =  STUFF(N'
+sp_find v1.00 (2020-05-31) (C) 2014-2020 Pavel Pawlowski
+========================================================
+Feedback mail to: pavel.pawlowski@hotmail.cz
+--------------------------------------------------------
+', 1, 2, '');
 RAISERROR(@caption, 0, 0) WITH NOWAIT;
 
 --Temp table to hold list of search types --we need temp table to be available inside dynamic search SQL
 CREATE TABLE #objTypes (
-     ObjectType nvarchar(128) COLLATE Latin1_General_CI_AS NOT NULL PRIMARY KEY CLUSTERED
-    ,[Type] char(2) COLLATE Latin1_General_CI_AS
+     ObjectType     nvarchar(128) COLLATE Latin1_General_CI_AS NOT NULL PRIMARY KEY CLUSTERED
+    ,[Type]         char(2) COLLATE Latin1_General_CI_AS
+    ,[ServiceScope] tinyint
 );
 
 --Temp table to hold mappings between object types and covering parent types
@@ -131,8 +144,8 @@ DECLARE @inputTypes TABLE (
 
 
 --Table variable to hold Search results
-DECLARE @Results TABLE(
-     [DatabaseName]          nvarchar(128)  NULL
+CREATE TABLE #Results (
+     [DatabaseName]          nvarchar(128)  NOT NULL
     ,[MatchIn]               varchar(10)    NOT NULL
     ,[ObjectType]            nvarchar(66)   NOT NULL
     ,[ObjectID]              varchar(36)    NOT NULL
@@ -155,13 +168,14 @@ DECLARE @databases TABLE(
 
 --Table variable for storing allowed object types
 DECLARE @allowedTypes TABLE ( 
-     RowID                  int NOT NULL IDENTITY(1,1)                                          --RowID of the Allowed Types
-    ,[Group]                tinyint                                                             --Group fo allowed types for sorting purposes during help printing
-    ,ObjectType             nvarchar(128)   COLLATE Latin1_General_CI_AS PRIMARY KEY CLUSTERED  --Object Type
-    ,[Type]                 char(2)                                                             --Type corresponding to internal system type codes
-    ,SearchScope            char(1)                                                             --Scope of the search name/definition
-    ,ObjectDescription      varchar(256)    COLLATE Latin1_General_CI_AS                        --Description of the object type
-    ,DefinitionSearchScope  varchar(256)    COLLATE Latin1_General_CI_AS                        --Description of the Definition search scope
+     RowID                      int NOT NULL IDENTITY(1,1)                                          --RowID of the Allowed Types
+    ,[Group]                    tinyint                                                             --Group fo allowed types for sorting purposes during help printing
+    ,[ServiceScope]             tinyint                                                             --0 = All Services; 1 = Server; 2 = SSISDB (OnPrem + Managed Instance) ; 3 = msdb (OnPrem Only)
+    ,[ObjectType]               nvarchar(128)   COLLATE Latin1_General_CI_AS PRIMARY KEY CLUSTERED  --Object Type
+    ,[Type]                     char(2)                                                             --Type corresponding to internal system type codes
+    ,[SearchScope]              char(1)                                                             --Scope of the search name/definition
+    ,[ObjectDescription]        varchar(256)    COLLATE Latin1_General_CI_AS                        --Description of the object type
+    ,[DefinitionSearchScope]    varchar(256)    COLLATE Latin1_General_CI_AS                        --Description of the Definition search scope
 );
 
 --For purpose of version numbers storage
@@ -179,106 +193,110 @@ DECLARE @searches TABLE (
 )
 
 --Inert allowed object types into @allowedTypes table variable
-INSERT INTO @allowedTypes([Group], ObjectType, [Type], SearchScope, ObjectDescription, DefinitionSearchScope)
+INSERT INTO @allowedTypes([Group], [ServiceScope], [ObjectType], [Type], [SearchScope], [ObjectDescription], [DefinitionSearchScope])
 VALUES
-         (0,    N'DATABASE'                          ,''     ,'D'    ,'Any database scoped object'                                       ,'Depends on concrete object type')          --Custom Group Type
-        ,(0,    N'SERVER'                            ,''     ,'D'    ,'Any Server Scoped object'                                         ,'Depends on concrete object type')          --Custom Group Type
-        ,(0,    N'SSIS'                              ,''     ,'D'    ,'Any SSIS related object (SSISDB or legacy in msdb)'               ,'Depends on concrete object type')          --Custom Group Type
-                                               
-        ,(1,    N'OBJECT'                            ,''     ,'D'    ,'Any schema scoped database object'                                ,'Depends on concrete object type')          --Custom Group Type
-        ,(1,    N'SYSTEM_OBJECT'                     ,''     ,'D'    ,'Any system objects (EXPLICIT)'                                    ,'Depends on concrete object type')          --Custom Group TYpe
-        ,(1,    N'AGGREGATE_FUNCTION'                ,'AF'   ,'D'    ,'Aggregate function (CLR)'                                         ,'assembly_class & assembly_method names')
-        ,(1,    N'CHECK_CONSTRAINT'                  ,'C'    ,'D'    ,'CHECK constraint'                                                 ,'T-SQL definition of the constraint')
-        ,(1,    N'CLR_SCALAR_FUNCTION'               ,'FS'   ,'D'    ,'Scalar function (CLR)'                                            ,'assembly_class & assembly_method names')
-        ,(1,    N'FUNCTION'                          ,''     ,'D'    ,'Any function (SQL or CLR'                                         ,'Depends on concrete function type')        --Custom Group Type
-        ,(1,    N'SQL_FUNCTION'                      ,''     ,'D'    ,'Any SQL function (scalar, inline table-valued, table valued'      ,'Whole T-SQL Definition')                   --Custom Type
-        ,(1,    N'CLR_FUNCTION'                      ,''     ,'D'    ,'Any CLR function (scalar, table-valued'                           ,'assembly_class & assembly_method names')   --Custom Group Type
-        ,(1,    N'PROCEDURE'                         ,''     ,'D'    ,'Any stored procedure (SQL, CLR or Extended)'                      ,'Depends on concrete procedure type')       --Custom Group Type
-        ,(1,    N'CLR_STORED_PROCEDURE'              ,'PC'   ,'D'    ,'Stored Procedure (CLR)'                                           ,'assembly_class & assembly_method names')
-        ,(1,    N'CLR_TABLE_VALUED_FUNCTION'         ,'FT'   ,'D'    ,'Table Valued Function (CLR)'                                      ,'assembly_class & assembly_method names')
-        ,(1,    N'TRIGGER'                           ,''     ,'D'    ,'Any (CLR, SQL) DML, DDL (database or server) Trigger'             ,'depends on concrete object type')          --Custom Group Type
-        ,(1,    N'DATABASE_TRIGGER'                  ,''     ,'D'    ,'Any (CLR, SQL) DDL (database) Trigger'                            ,'depends on concrete object type')	        --Custom Group Type
-        ,(1,    N'SERVER_TRIGGER'                    ,''     ,'D'    ,'Any (CLR, SQL) DDL (server) Trigger'                              ,'depends on concrete object type')	        --Custom Group Type
-        ,(1,    N'CLR_TRIGGER'                       ,'TA'   ,'D'    ,'Assembly (CLR) DML or DDL (database or server) Trigger'           ,'assembly_class & assembly_method names')
-        ,(1,    N'CLR_DATABASE_TRIGGER'              ,'TA'   ,'D'    ,'Assembly (CLR) DML or DDL database Trigger'                       ,'assembly_class & assembly_method names')
-        ,(1,    N'CLR_SERVER_TRIGGER'                ,'TA'   ,'D'    ,'Assembly (CLR) DML or DDL server Trigger'                         ,'assembly_class & assembly_method names')
-        ,(1,    N'SQL_DATABASE_TRIGGER'              ,'TR'   ,'D'    ,'Assembly (CLR) DML or DDL database Trigger'                       ,'assembly_class & assembly_method names')
-        ,(1,    N'SQL_SERVER_TRIGGER'                ,'TR'   ,'D'    ,'Assembly (CLR) DML or DDL server Trigger'                         ,'assembly_class & assembly_method names')
-        ,(1,    N'DEFAULT_CONSTRAINT'                ,'D'    ,'D'    ,'DEFAULT constraint'                                               ,'T-SQL definition of the constraint')
-        ,(1,    N'EXTENDED_STORED_PROCEDURE'         ,'X'    ,'N'    ,'Extended stored procedure'                                        ,'')
-        ,(1,    N'FOREIGN_KEY_CONSTRAINT'            ,'F'    ,'N'    ,'FOREIGN KEY constraint'                                           ,'')
-        ,(1,    N'INTERNAL_TABLE'                    ,'IT'   ,'N'    ,'Internal Table (EXPLICIT)'                                        ,'')
-        ,(1,    N'PLAN_GUIDE'                        ,''     ,'N'    ,'Plan Guide'                                                       ,'')
-        ,(1,    N'PRIMARY_KEY_CONSTRAINT'            ,'PK'   ,'N'    ,'PRIMARY KEY constraint'                                           ,'')
-        ,(1,    N'REPLICATION_FILTER_PROCEDURE'      ,'RF'   ,'D'    ,'Replication filter procedure'                                     ,'Whole T-SQL Definition')
-        ,(1,    N'RULE'                              ,'R'    ,'N'    ,'Rule'                                                             ,'')
-        ,(1,    N'SEQUENCE_OBJECT'                   ,'SO'   ,'N'    ,'Sequence Object (SQL Server 212 and above'                        ,'')
-        ,(1,    N'SERVICE_QUEUE'                     ,'SQ'   ,'N'    ,'Service Queue'                                                    ,'')
-        ,(1,    N'SQL_INLINE_TABLE_VALUED_FUNCTION'  ,'IF'   ,'D'    ,'SQL inline table valued function'                                 ,'Whole T-SQL Definition')
-        ,(1,    N'SQL_SCALAR_FUNCTION'               ,'FN'   ,'D'    ,'SQL scalar function'                                              ,'Whole T-SQL Definition')
-        ,(1,    N'SQL_STORED_PROCEDURE'              ,'P'    ,'D'    ,'SQL stored procedure'                                             ,'Whole T-SQL Definition')
-        ,(1,    N'SQL_TABLE_VALUED_FUNCTION'         ,'TF'   ,'D'    ,'SQL table valued function'                                        ,'Whole T-SQL Definition')
-        ,(1,    N'SQL_TRIGGER'                       ,''     ,'D'    ,'SQL DML or DDL (database or server) Trigger'                      ,'Whole T-SQL Definition')
-        ,(1,    N'SYNONYM'                           ,'SN'   ,'N'    ,'Synonym'                                                          ,'')
-        ,(1,    N'SYSTEM_TABLE'                      ,'S'    ,'N'    ,'System table (EXPLICIT)'                                          ,'')
-        ,(1,    N'TABLE_TYPE'                        ,'TT'   ,'N'    ,'Table type'                                                       ,'')
-        ,(1,    N'UNIQUE_CONSTRAINT'                 ,'UQ'   ,'N'    ,'UNIQUE constraint'                                                ,'')
-        ,(1,    N'USER_TABLE'                        ,'U'    ,'N'    ,'Table (user-defined)'                                             ,'')
-        ,(1,    N'VIEW'                              ,'V'    ,'D'    ,'View'                                                             ,'Whole T-SQL Definition')
-        ,(1,    N'INDEX'                             ,''     ,'D'    ,'Any index type'                                                   ,'index column names')	--Custom Group Type
-        ,(1,    N'INDEX_CLUSTERED'                   ,'1'    ,'D'    ,'CLUSTERED index'                                                  ,'index column names')
-        ,(1,    N'INDEX_NONCLUSTERED'                ,'2'    ,'D'    ,'NONCLUSTERED index'                                               ,'index column names')
-        ,(1,    N'INDEX_XML'                         ,'3'    ,'D'    ,'XML index'                                                        ,'index column names')
-        ,(1,    N'INDEX_SPATIAL'                     ,'4'    ,'D'    ,'SPATIAL index'                                                    ,'index column names')
-        ,(1,    N'INDEX_CLUSTERED COLUMNSTORE'       ,'5'    ,'D'    ,'CLUSTERED COLUMNSTORE index'                                      ,'index column names')
-        ,(1,    N'INDEX_NONCLUSTERED COLUMNSTORE'    ,'6'    ,'D'    ,'NONCLUSTERED COLUMNSTORE index'                                   ,'index column names')
-        ,(1,    N'INDEX_NONCLUSTERED HASH'           ,'7'    ,'D'    ,'HASH Index (SQL Server 2014 and above)'                           ,'index column names')
-        ,(1,    N'COLUMN'                            ,''     ,'D'    ,'Column'                                                           ,'T-SQL definition of computed columns')
-        ,(1,    N'SYSTEM_COLUMN'                     ,''     ,'D'    ,'Column of system and internal tables'                             ,'T-SQL definition of computed columns')    --Custom Type
-        ,(1,    N'SCHEMA'                            ,''     ,'N'    ,'Schema'                                                           ,'')	--Custom Type
-        ,(1,    N'DATABASE_PRINCIPAL'                ,''     ,'N'    ,'Any database principal'                                           ,'')	--Custom Group Type
-        ,(1,    N'SQL_USER'                          ,'S'    ,'N'    ,'SQL user'                                                         ,'')
-        ,(1,    N'WINDOWS_USER'                      ,'U'    ,'N'    ,'Windows user'                                                     ,'')
-        ,(1,    N'WINDOWS_GROUP'                     ,'G'    ,'N'    ,'Windows group user or login'                                      ,'')
-        ,(1,    N'APPLICATION_ROLE'                  ,'A'    ,'N'    ,'Application role'                                                 ,'')
-        ,(1,    N'DATABASE_ROLE'                     ,'R'    ,'N'    ,'Database role'                                                    ,'')
-        ,(1,    N'CERTIFICATE_MAPPED_USER'           ,'C'    ,'N'    ,'Certificate mapped user'                                          ,'')
-        ,(1,    N'ASYMMETRIC_KEY_MAPPED_USER'        ,'K'    ,'N'    ,'Asymmetric key mapped user'                                       ,'')
-        ,(1,    N'EXTERNAL_USER'                     ,'E'    ,'N'    ,'External user from Azure Active Directory'                        ,'')
-        ,(1,    N'EXTERNAL_GROUP'                    ,'X'    ,'N'    ,'External group from Azure Active Directory group or applications' ,'')
-        ,(1,    N'TYPE'                              ,''     ,'N'    ,'Type'                                                             ,'')	--Custom Type
-        ,(1,    N'ASSEMBLY'                          ,''     ,'N'    ,'Assembly'                                                         ,'assembly_class, assembly_method_names, assembly file_names')	--Custom Type
-        ,(1,    N'XML_SCHEMA_COLLECTION'             ,''     ,'N'    ,'XML schema collection'                                            ,'')    --Custom Type
-        ,(1,    N'SERVICE_MESSAGE_TYPE'              ,''     ,'N'    ,'Service message type'                                             ,'')    --Custom Type
-        ,(1,    N'SERVICE_CONTRACT'                  ,''     ,'N'    ,'Service contract'                                                 ,'')    --Custom Type
-        ,(1,    N'SERVICE'                           ,''     ,'N'    ,'Service'                                                          ,'')    --Custom Type
-        ,(1,    N'REMOTE_SERVICE_BINDING'            ,''     ,'N'    ,'Remote service binding'                                           ,'')    --Custom Type
-        ,(1,    N'ROUTE'                             ,''     ,'N'    ,'Route'                                                            ,'')    --Custom Type
-        ,(1,    N'FULLTEXT_CATALOG'                  ,''     ,'N'    ,'Fulltext catalog'                                                 ,'')    --Custom Type
-        ,(1,    N'SYMMETRIC_KEY'                     ,''     ,'N'    ,'Symmetric key'                                                    ,'')    --Custom Type
-        ,(1,    N'CERTIFICATE'                       ,''     ,'N'    ,'Certificate'                                                      ,'')    --Custom Type
-        ,(1,    N'ASYMMETRIC_KEY'                    ,''     ,'N'    ,'Asymmetric key'                                                   ,'')    --Custom Type
-        ,(1,    N'PARTITION_SCHEME'                  ,''     ,'N'    ,'Partition scheme'                                                 ,'')    --Custom Type
-        ,(1,    N'PARTITION_FUNCTION'                ,''     ,'D'    ,'partition function'                                               ,'Partition range values')  --Custom Type
-        ,(1,    N'SERVER_PRINCIPAL'                  ,''     ,'N'    ,'Any server principal'                                             ,'')    --Custom Group Type
-        ,(1,    N'SQL_LOGIN'                         ,'S'    ,'N'    ,'SQL login'                                                        ,'')
-        ,(1,    N'WINDOWS_LOGIN'                     ,'U'    ,'N'    ,'Windows login'                                                    ,'')
-        ,(1,    N'SERVER_ROLE'                       ,'R'    ,'N'    ,'Server role'                                                      ,'')
-        ,(1,    N'CERTIFICATE_MAPPED_LOGIN'          ,'C'    ,'N'    ,'Certificate mapped login'                                         ,'')
-        ,(1,    N'ASYMMETRIC_KEY_MAPPED_LOGIN'       ,'K'    ,'N'    ,'Asymmetric key mapped login'                                      ,'')
-        ,(1,    N'CREDENTIAL'                        ,''     ,'N'    ,'Credential'                                                       ,'')    --Custom Type
-        ,(1,    N'LINKED_SERVER'                     ,''     ,'D'    ,'LinkedServer'                                                     ,'Provider string')	--Custom Type
-        ,(1,    N'SSISDB'                            ,''     ,'D'    ,'Any SSIS related object in SSISDB'                                ,'Depends on concrete object type')     --Custom Type
-        ,(1,    N'SSIS_FOLDER'                       ,''     ,'N'    ,'SSIS Folder in SSISDB'                                            ,'')    --Custom Type
-        ,(1,    N'SSIS_ENVIRONMENT'                  ,''     ,'N'    ,'SSIS Environment'                                                 ,'')    --Custom Type
-        ,(1,    N'SSIS_VARIABLE'                     ,''     ,'D'    ,'SSIS Environment Variable'                                        ,'Description, Non sensitive values')   --Custom Type
-        ,(1,    N'SSIS_PROJECT'                      ,''     ,'D'    ,'SSIS Project'                                                     ,'Description')     --Custom Type
-        ,(1,    N'SSIS_PACKAGE'                      ,''     ,'D'    ,'SSIS Package'                                                     ,'Description')     --Custom Type
-		,(1,    N'SSIS_PACKAGE_VERSION'              ,''     ,'D'    ,'SSIS Package iv all project versions (EXPLICIT)'                  ,'Description')     --Custom Type
-        ,(1,    N'SSIS_MSDB'                         ,''     ,'D'    ,'Any Legacy SSIS related object in msdb'                           ,'Depends on concrete object type')     --Custom Type
-        ,(1,    N'SSIS_MSDB_FOLDER'                  ,''     ,'N'    ,'SSIS Folder in msdb'                                              ,'')    --Custom Type
-        ,(1,    N'SSIS_MSDB_PACKAGE'                 ,''     ,'D'    ,'SSIS Legacy Package in msdb'                                      ,'Description, content of SSIS Package')     --Custom Type
-        
+         (0,    0,  N'DATABASE'                          ,''     ,'D'    ,'Any database scoped object'                                       ,'Depends on concrete object type')          --Custom Group Type
+        ,(0,    1,  N'SERVER'                            ,''     ,'D'    ,'Any Server Scoped object'                                         ,'Depends on concrete object type')          --Custom Group Type
+        ,(0,    3,  N'SSIS'                              ,''     ,'D'    ,'Any SSISDB related object'                                        ,'Depends on concrete object type')          --Custom Group Type
+
+        ,(1,    0,  N'OBJECT'                            ,''     ,'D'    ,'Any schema scoped database object'                                ,'Depends on concrete object type')          --Custom Group Type
+        ,(1,    0,  N'SYSTEM_OBJECT'                     ,''     ,'D'    ,'Any system objects (EXPLICIT)'                                    ,'Depends on concrete object type')          --Custom Group TYpe
+        ,(1,    0,  N'AGGREGATE_FUNCTION'                ,'AF'   ,'D'    ,'Aggregate function (CLR)'                                         ,'assembly_class & assembly_method names')
+        ,(1,    0,  N'CHECK_CONSTRAINT'                  ,'C'    ,'D'    ,'CHECK constraint'                                                 ,'T-SQL definition of the constraint')
+        ,(1,    0,  N'CLR_SCALAR_FUNCTION'               ,'FS'   ,'D'    ,'Scalar function (CLR)'                                            ,'assembly_class & assembly_method names')
+        ,(1,    0,  N'FUNCTION'                          ,''     ,'D'    ,'Any function (SQL or CLR'                                         ,'Depends on concrete function type')        --Custom Group Type
+        ,(1,    0,  N'SQL_FUNCTION'                      ,''     ,'D'    ,'Any SQL function (scalar, inline table-valued, table valued'      ,'Whole T-SQL Definition')                   --Custom Type
+        ,(1,    0,  N'CLR_FUNCTION'                      ,''     ,'D'    ,'Any CLR function (scalar, table-valued'                           ,'assembly_class & assembly_method names')   --Custom Group Type
+        ,(1,    0,  N'PROCEDURE'                         ,''     ,'D'    ,'Any stored procedure (SQL, CLR or Extended)'                      ,'Depends on concrete procedure type')       --Custom Group Type
+        ,(1,    0,  N'CLR_STORED_PROCEDURE'              ,'PC'   ,'D'    ,'Stored Procedure (CLR)'                                           ,'assembly_class & assembly_method names')
+        ,(1,    0,  N'CLR_TABLE_VALUED_FUNCTION'         ,'FT'   ,'D'    ,'Table Valued Function (CLR)'                                      ,'assembly_class & assembly_method names')
+        ,(1,    0,  N'TRIGGER'                           ,''     ,'D'    ,'Any (CLR, SQL) DML, DDL (database or server) Trigger'             ,'depends on concrete object type')          --Custom Group Type
+        ,(1,    0,  N'DATABASE_TRIGGER'                  ,''     ,'D'    ,'Any (CLR, SQL) DDL (database) Trigger'                            ,'depends on concrete object type')	        --Custom Group Type
+        ,(1,    1,  N'SERVER_TRIGGER'                    ,''     ,'D'    ,'Any (CLR, SQL) DDL (server) Trigger'                              ,'depends on concrete object type')	        --Custom Group Type
+        ,(1,    0,  N'CLR_TRIGGER'                       ,'TA'   ,'D'    ,'Assembly (CLR) DML or DDL (database or server) Trigger'           ,'assembly_class & assembly_method names')
+        ,(1,    0,  N'CLR_DATABASE_TRIGGER'              ,'TA'   ,'D'    ,'Assembly (CLR) DML or DDL database Trigger'                       ,'assembly_class & assembly_method names')
+        ,(1,    0,  N'CLR_SERVER_TRIGGER'                ,'TA'   ,'D'    ,'Assembly (CLR) DML or DDL server Trigger'                         ,'assembly_class & assembly_method names')
+        ,(1,    0,  N'SQL_DATABASE_TRIGGER'              ,'TR'   ,'D'    ,'Assembly (CLR) DML or DDL database Trigger'                       ,'assembly_class & assembly_method names')
+        ,(1,    1,  N'SQL_SERVER_TRIGGER'                ,'TR'   ,'D'    ,'Assembly (CLR) DML or DDL server Trigger'                         ,'assembly_class & assembly_method names')
+        ,(1,    0,  N'DEFAULT_CONSTRAINT'                ,'D'    ,'D'    ,'DEFAULT constraint'                                               ,'T-SQL definition of the constraint')
+        ,(1,    0,  N'EXTENDED_STORED_PROCEDURE'         ,'X'    ,'N'    ,'Extended stored procedure'                                        ,'')
+        ,(1,    0,  N'FOREIGN_KEY_CONSTRAINT'            ,'F'    ,'N'    ,'FOREIGN KEY constraint'                                           ,'')
+        ,(1,    0,  N'INTERNAL_TABLE'                    ,'IT'   ,'N'    ,'Internal Table (EXPLICIT)'                                        ,'')
+        ,(1,    0,  N'PLAN_GUIDE'                        ,''     ,'N'    ,'Plan Guide'                                                       ,'')
+        ,(1,    0,  N'PRIMARY_KEY_CONSTRAINT'            ,'PK'   ,'N'    ,'PRIMARY KEY constraint'                                           ,'')
+        ,(1,    0,  N'REPLICATION_FILTER_PROCEDURE'      ,'RF'   ,'D'    ,'Replication filter procedure'                                     ,'Whole T-SQL Definition')
+        ,(1,    0,  N'RULE'                              ,'R'    ,'N'    ,'Rule'                                                             ,'')
+        ,(1,    0,  N'SEQUENCE_OBJECT'                   ,'SO'   ,'N'    ,'Sequence Object (SQL Server 212 and above'                        ,'')
+        ,(1,    0,  N'SERVICE_QUEUE'                     ,'SQ'   ,'N'    ,'Service Queue'                                                    ,'')
+        ,(1,    0,  N'SQL_INLINE_TABLE_VALUED_FUNCTION'  ,'IF'   ,'D'    ,'SQL inline table valued function'                                 ,'Whole T-SQL Definition')
+        ,(1,    0,  N'SQL_SCALAR_FUNCTION'               ,'FN'   ,'D'    ,'SQL scalar function'                                              ,'Whole T-SQL Definition')
+        ,(1,    0,  N'SQL_STORED_PROCEDURE'              ,'P'    ,'D'    ,'SQL stored procedure'                                             ,'Whole T-SQL Definition')
+        ,(1,    0,  N'SQL_TABLE_VALUED_FUNCTION'         ,'TF'   ,'D'    ,'SQL table valued function'                                        ,'Whole T-SQL Definition')
+        ,(1,    0,  N'SQL_TRIGGER'                       ,''     ,'D'    ,'SQL DML or DDL (database or server) Trigger'                      ,'Whole T-SQL Definition')
+        ,(1,    0,  N'SYNONYM'                           ,'SN'   ,'N'    ,'Synonym'                                                          ,'')
+        ,(1,    0,  N'SYSTEM_TABLE'                      ,'S'    ,'N'    ,'System table (EXPLICIT)'                                          ,'')
+        ,(1,    0,  N'TABLE_TYPE'                        ,'TT'   ,'N'    ,'Table type'                                                       ,'')
+        ,(1,    0,  N'UNIQUE_CONSTRAINT'                 ,'UQ'   ,'N'    ,'UNIQUE constraint'                                                ,'')
+        ,(1,    0,  N'USER_TABLE'                        ,'U'    ,'N'    ,'Table (user-defined)'                                             ,'')
+        ,(1,    0,  N'TABLE'                             ,''     ,'N'    ,'Table (user-defined) or COLUMN of TABLE'                          ,'') --Custom Group Type - Alias for USER_TABLE
+        ,(1,    0,  N'VIEW'                              ,'V'    ,'D'    ,'View'                                                             ,'Whole T-SQL Definition')
+        ,(1,    0,  N'INDEX'                             ,''     ,'D'    ,'Any index type'                                                   ,'index column names')	--Custom Group Type
+        ,(1,    0,  N'INDEX_CLUSTERED'                   ,'1'    ,'D'    ,'CLUSTERED index'                                                  ,'index column names')
+        ,(1,    0,  N'INDEX_NONCLUSTERED'                ,'2'    ,'D'    ,'NONCLUSTERED index'                                               ,'index column names')
+        ,(1,    0,  N'INDEX_XML'                         ,'3'    ,'D'    ,'XML index'                                                        ,'index column names')
+        ,(1,    0,  N'INDEX_SPATIAL'                     ,'4'    ,'D'    ,'SPATIAL index'                                                    ,'index column names')
+        ,(1,    0,  N'INDEX_CLUSTERED COLUMNSTORE'       ,'5'    ,'D'    ,'CLUSTERED COLUMNSTORE index'                                      ,'index column names')
+        ,(1,    0,  N'INDEX_NONCLUSTERED COLUMNSTORE'    ,'6'    ,'D'    ,'NONCLUSTERED COLUMNSTORE index'                                   ,'index column names')
+        ,(1,    0,  N'INDEX_NONCLUSTERED HASH'           ,'7'    ,'D'    ,'HASH Index (SQL Server 2014 and above)'                           ,'index column names')
+        ,(1,    0,  N'COLUMN'                            ,''     ,'D'    ,'Column of table, view or table valued function'                   ,'T-SQL definition of computed columns')
+        ,(1,    0,  N'TABLE_COLUMN'                      ,''     ,'D'    ,'Column of table'                                                  ,'T-SQL definition of computed columns')
+        ,(1,    0,  N'VIEW_COLUMN'                       ,''     ,'D'    ,'Column of view'                                                   ,'T-SQL definition of computed columns')        
+        ,(1,    0,  N'FUNCTION_COLUMN'                   ,''     ,'D'    ,'Column of table valued function'                                  ,'T-SQL definition of computed columns')        
+        ,(1,    0,  N'TYPE_COLUMN'                       ,''     ,'D'    ,'Column of table type'                                             ,'T-SQL definition of computed columns')        
+        ,(1,    0,  N'SYSTEM_COLUMN'                     ,''     ,'D'    ,'Column of system and internal tables'                             ,'T-SQL definition of computed columns')    --Custom Type
+        ,(1,    0,  N'SCHEMA'                            ,''     ,'N'    ,'Schema'                                                           ,'')	--Custom Type
+        ,(1,    0,  N'DATABASE_PRINCIPAL'                ,''     ,'N'    ,'Any database principal'                                           ,'')	--Custom Group Type
+        ,(1,    0,  N'SQL_USER'                          ,'S'    ,'N'    ,'SQL user'                                                         ,'')
+        ,(1,    0,  N'WINDOWS_USER'                      ,'U'    ,'N'    ,'Windows user'                                                     ,'')
+        ,(1,    0,  N'WINDOWS_GROUP'                     ,'G'    ,'N'    ,'Windows group user or login'                                      ,'')
+        ,(1,    0,  N'APPLICATION_ROLE'                  ,'A'    ,'N'    ,'Application role'                                                 ,'')
+        ,(1,    0,  N'DATABASE_ROLE'                     ,'R'    ,'N'    ,'Database role'                                                    ,'')
+        ,(1,    0,  N'CERTIFICATE_MAPPED_USER'           ,'C'    ,'N'    ,'Certificate mapped user'                                          ,'')
+        ,(1,    0,  N'ASYMMETRIC_KEY_MAPPED_USER'        ,'K'    ,'N'    ,'Asymmetric key mapped user'                                       ,'')
+        ,(1,    0,  N'EXTERNAL_USER'                     ,'E'    ,'N'    ,'External user from Azure Active Directory'                        ,'')
+        ,(1,    0,  N'EXTERNAL_GROUP'                    ,'X'    ,'N'    ,'External group from Azure Active Directory group or applications' ,'')
+        ,(1,    0,  N'TYPE'                              ,''     ,'N'    ,'Type'                                                             ,'')	--Custom Type
+        ,(1,    0,  N'ASSEMBLY'                          ,''     ,'N'    ,'Assembly'                                                         ,'assembly_class, assembly_method_names, assembly file_names')	--Custom Type
+        ,(1,    0,  N'XML_SCHEMA_COLLECTION'             ,''     ,'N'    ,'XML schema collection'                                            ,'')    --Custom Type
+        ,(1,    0,  N'SERVICE_MESSAGE_TYPE'              ,''     ,'N'    ,'Service message type'                                             ,'')    --Custom Type
+        ,(1,    0,  N'SERVICE_CONTRACT'                  ,''     ,'N'    ,'Service contract'                                                 ,'')    --Custom Type
+        ,(1,    0,  N'SERVICE'                           ,''     ,'N'    ,'Service'                                                          ,'')    --Custom Type
+        ,(1,    0,  N'REMOTE_SERVICE_BINDING'            ,''     ,'N'    ,'Remote service binding'                                           ,'')    --Custom Type
+        ,(1,    0,  N'ROUTE'                             ,''     ,'N'    ,'Route'                                                            ,'')    --Custom Type
+        ,(1,    0,  N'FULLTEXT_CATALOG'                  ,''     ,'N'    ,'Fulltext catalog'                                                 ,'')    --Custom Type
+        ,(1,    0,  N'SYMMETRIC_KEY'                     ,''     ,'N'    ,'Symmetric key'                                                    ,'')    --Custom Type
+        ,(1,    0,  N'CERTIFICATE'                       ,''     ,'N'    ,'Certificate'                                                      ,'')    --Custom Type
+        ,(1,    0,  N'ASYMMETRIC_KEY'                    ,''     ,'N'    ,'Asymmetric key'                                                   ,'')    --Custom Type
+        ,(1,    0,  N'PARTITION_SCHEME'                  ,''     ,'N'    ,'Partition scheme'                                                 ,'')    --Custom Type
+        ,(1,    0,  N'PARTITION_FUNCTION'                ,''     ,'D'    ,'partition function'                                               ,'Partition range values')  --Custom Type
+        ,(1,    1,  N'SERVER_PRINCIPAL'                  ,''     ,'N'    ,'Any server principal'                                             ,'')    --Custom Group Type
+        ,(1,    1,  N'SQL_LOGIN'                         ,'S'    ,'N'    ,'SQL login'                                                        ,'')
+        ,(1,    1,  N'WINDOWS_LOGIN'                     ,'U'    ,'N'    ,'Windows login'                                                    ,'')
+        ,(1,    1,  N'SERVER_ROLE'                       ,'R'    ,'N'    ,'Server role'                                                      ,'')
+        ,(1,    1,  N'CERTIFICATE_MAPPED_LOGIN'          ,'C'    ,'N'    ,'Certificate mapped login'                                         ,'')
+        ,(1,    1,  N'ASYMMETRIC_KEY_MAPPED_LOGIN'       ,'K'    ,'N'    ,'Asymmetric key mapped login'                                      ,'')
+        ,(1,    0,  N'CREDENTIAL'                        ,''     ,'N'    ,'Credential'                                                       ,'')    --Custom Type
+        ,(1,    1,  N'LINKED_SERVER'                     ,''     ,'D'    ,'LinkedServer'                                                     ,'Provider string')	--Custom Type
+        ,(1,    2,  N'SSISDB'                            ,''     ,'D'    ,'Any SSIS related object in SSISDB'                                ,'Depends on concrete object type')     --Custom Type
+        ,(1,    2,  N'SSIS_FOLDER'                       ,''     ,'N'    ,'SSIS Folder in SSISDB'                                            ,'')    --Custom Type
+        ,(1,    2,  N'SSIS_ENVIRONMENT'                  ,''     ,'N'    ,'SSIS Environment'                                                 ,'')    --Custom Type
+        ,(1,    2,  N'SSIS_VARIABLE'                     ,''     ,'D'    ,'SSIS Environment Variable'                                        ,'Description, Non sensitive values')   --Custom Type
+        ,(1,    2,  N'SSIS_PROJECT'                      ,''     ,'D'    ,'SSIS Project'                                                     ,'Description')     --Custom Type
+        ,(1,    2,  N'SSIS_PACKAGE'                      ,''     ,'D'    ,'SSIS Package'                                                     ,'Description')     --Custom Type
+		,(1,    2,  N'SSIS_PACKAGE_VERSION'              ,''     ,'D'    ,'SSIS Package iv all project versions (EXPLICIT)'                  ,'Description')     --Custom Type
+        ,(1,    3,  N'SSIS_MSDB'                         ,''     ,'D'    ,'Any Legacy SSIS related object in msdb'                           ,'Depends on concrete object type')     --Custom Type
+        ,(1,    3,  N'SSIS_MSDB_FOLDER'                  ,''     ,'N'    ,'SSIS Folder in msdb'                                              ,'')    --Custom Type
+        ,(1,    3,  N'SSIS_MSDB_PACKAGE'                 ,''     ,'D'    ,'SSIS Legacy Package in msdb'                                      ,'Description, content of SSIS Package')     --Custom Type        
 ;
 --Define mappings between types and their parent types
 INSERT INTO #typesMapping(ObjectType, ParentObjectType)
@@ -326,6 +344,7 @@ VALUES
     ,(N'TABLE_TYPE'                             ,N'OBJECT')
     ,(N'UNIQUE_CONSTRAINT'                      ,N'OBJECT')
     ,(N'USER_TABLE'                             ,N'OBJECT')
+    ,(N'USER_TABLE'                             ,N'TABLE')
     ,(N'VIEW'                                   ,N'OBJECT')
     ,(N'INTERNAL_TABLE'                         ,N'SYSTEM_OBJECT')
     ,(N'SYSTEM_TABLE'                           ,N'SYSTEM_OBJECT')
@@ -395,7 +414,14 @@ VALUES
     ,(N'CREDENTIAL'                             ,N'SERVER')
     ,(N'LINKED_SERVER'                          ,N'SERVER')
     ,(N'SSIS_MSDB'                              ,N'SSIS')
+    ,(N'SSIS_MSDB_PACKAGE'                      ,N'SSIS_MSDB')
     ,(N'SSIS_MSDB_FOLDER'                       ,N'SSIS_MSDB')
+    ,(N'TABLE_COLUMN'                           ,N'TABLE')
+    ,(N'TABLE_COLUMN'                           ,N'COLUMN')
+    ,(N'VIEW_COLUMN'                            ,N'COLUMN')
+    ,(N'FUNCTION_COLUMN'                        ,N'COLUMN')
+    ,(N'TYPE_COLUMN'                            ,N'COLUMN')
+
 
 --Split provided ObjectTypes and store them
 IF ISNULL(RTRIM(LTRIM(@objectTypes)), N'') = N''
@@ -442,11 +468,81 @@ BEGIN
     RAISERROR(N'You have to provide @searchString which is not NULL, empty and does not contains only spaces.', 15, 0);
 END
 
+;WITH TypesMapping AS (
+    SELECT
+         ObjectType
+        ,ParentObjectType
+    FROM #typesMapping
+    WHERE ParentObjectType IN (SELECT ObjectType FROM @inputTypes)
+
+    UNION ALL
+
+    SELECT
+         tm.ObjectType
+        ,tm.ParentObjectType
+    FROM #typesMapping tm
+    INNER JOIN TypesMapping pt ON tm.ParentObjectType = pt.ObjectType
+)
+INSERT INTO #objTypes (
+     ObjectType
+    ,[Type]
+    ,[ServiceScope]
+)
+SELECT DISTINCT
+     TM.ObjectType
+    ,alt.[Type]
+    ,alt.[ServiceScope]
+FROM TypesMapping TM
+INNER JOIN @allowedTypes alt ON TM.ObjectType = alt.ObjectType
+UNION
+SELECT
+     IT.ObjectType
+    ,alt.[Type]
+    ,alt.[ServiceScope]
+FROM @inputTypes IT
+INNER JOIN @allowedTypes alt ON IT.ObjectType = alt.ObjectType
+
+--Get databases
+IF (@databaseName IS NOT NULL AND SERVERPROPERTY('EngineEdition') NOT IN (1, 2, 3, 4, 8))
+BEGIN
+    SET @printHelp = 1
+    RAISERROR(N'@databaseName is only supported on "OnPremise" editions of SQL Engine and Azure Managed Instance.', 15, 0);
+END;
+
+--Verify compatibility of Object Types with Azure engines
+IF SERVERPROPERTY('EngineEdition') IN (8) AND EXISTS(SELECT 1 FROM #objTypes ot WHERE ot.ServiceScope > 2)
+BEGIN
+    SET @unsupportedEngineScope = 2;
+END
+
+IF SERVERPROPERTY('EngineEdition') IN (5,6) AND EXISTS(SELECT 1 FROM #objTypes ot WHERE ot.ServiceScope > 0)
+BEGIN
+    SET @unsupportedEngineScope = 0
+END
+
+IF @unsupportedEngineScope IS NOT NULL
+BEGIN
+    SET @printHelp = 1;
+
+    SET @msg = STUFF(
+    (
+        SELECT
+            N', ' + ot.ObjectType
+        FROM #objTypes ot
+        INNER JOIN @inputTypes it ON it.ObjectType = ot.ObjectType
+        WHERE
+            ServiceScope > @unsupportedEngineScope
+        FOR XML PATH('')
+    ), 1, 2, N'');
+
+    RAISERROR(N'Object Type(s) "%s" is/are unsupported for this Engine Edition.', 11, 0, @msg) WITH NOWAIT;
+    RAISERROR(N'', 0, 0) WITH NOWAIT;
+END
 
 --Print help when the @searchString is NULL or in case of error in input parameters
 IF @searchString IS NULL OR @printHelp = 1
 BEGIN
-    RAISERROR(N'Searches databases and server objects for specified string', 0, 0);
+    RAISERROR(N'sp_find Searches databases and server objects for specified string', 0, 0);
     RAISERROR(N'', 0, 0);
     RAISERROR(N'Usage:', 0, 0);
     RAISERROR(N'[sp_find] parameters', 0, 0)
@@ -457,21 +553,31 @@ BEGIN
     ,@objectTypes               nvarchar(max)   = N''DATABASE''   - Comma separated list of Object Types to search
     ,@databaseName              nvarchar(max)   = NULL          - Comma separated list of databases to search. NULL means current database. 
                                                                   Supports wildcards and ''%%'' means all databases
+                                                                  Supported only on "OnPremise" editions and Azure Managed Instance.
     ,@searchInDefinition        bit             = 1             - Specifies whether to search in object definitions
     ,@caseSensitive             bit             = 0             - Specifies whether a Case Sensitive search should be done'
     RAISERROR(@msg, 0, 0);
     RAISERROR(N'', 0, 0);
     
     RAISERROR(N'To search through system objects, the system object types has to be explicitly specified in the @objectTypes parameter', 0, 0);
-    
     RAISERROR(N'', 0, 0);
-    RAISERROR(N'Allowed Object Type                Search Scope          Desccription                                                 Definition search scope', 0, 0)
-    RAISERROR(N'--------------------------------   -------------------   -----------------------------------------------------------  -----------------------------------------------------------', 0, 0);
+    
+    RAISERROR(N'SRV - Supported Services: O = On Premise; M = Azure Managed Instance; A = Azure SQL Database', 0, 0);
+    RAISERROR(N'', 0, 0);
+    RAISERROR(N'Allowed Object Type               SRV  Search Scope          Desccription                                                 Definition search scope', 0, 0)
+    RAISERROR(N'--------------------------------  ---  -------------------   -----------------------------------------------------------  -----------------------------------------------------------', 0, 0);
     											                     
     DECLARE tc CURSOR FAST_FORWARD FOR
     	SELECT 
               [Group]
-    		, LEFT(ObjectType + SPACE(35), 35) 
+    		, LEFT(ObjectType + SPACE(34), 34) 
+                + CASE ServiceScope
+                    WHEN 0 THEN N'OMA  '
+                    WHEN 1 THEN N'OM-  '
+                    WHEN 2 THEN N'OM-  '
+                    WHEN 3 THEN N'O--  '
+                    ELSE        N'---  '
+                  END 
     		    + LEFT(CASE SearchScope WHEN N'N' THEN N'Name' ELSE N'Name + Definition' END + SPACE(22), 22)
     		    + LEFT(ObjectDescription + Space(61), 61)
     		    + DefinitionSearchScope
@@ -497,16 +603,16 @@ BEGIN
     RAISERROR(N'Table schema to hold results', 0, 0);
     RAISERROR(N'----------------------------', 0, 0);
     SET @msg = N'CREATE TABLE #Results(
-     [DatabaseName]          nvarchar(128)   NULL       -- Database name of the match. In case of server scoped objects NULL
+     [DatabaseName]          nvarchar(128)   NOT NULL   -- Database name of the match. In case of server scoped objects NULL
     ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whether match was in NAME or in definition
     ,[ObjectType]            nvarchar(66)    NOT NULL   -- Type of object found
-    ,[ObjectID]              varchar(36)     NOT NULL   -- ID of the object found
-    ,[ObjectSchema]          nvarchar(128)   NULL       -- Object schema. NULL for non-schema bound objects
     ,[ObjectName]            nvarchar(128)   NULL       -- Object name
+    ,[ObjectSchema]          nvarchar(128)   NULL       -- Object schema. NULL for non-schema bound objects
+    ,[ParentObjectName]      nvarchar(128)   NULL       -- Parent Object Name
+    ,[ParentObjectSchema]    nvarchar(128)   NULL       -- Parent object schema. NULL for no-schema bound objects
+    ,[ObjectID]              varchar(36)     NOT NULL   -- ID of the object found
     ,[ParentObjectType]      nvarchar(60)    NULL       -- Parent object type
     ,[ParentObjectID]        varchar(36)     NULL       -- Parent object ID
-    ,[ParentObjectSchema]    nvarchar(128)   NULL       -- Parent object schema. NULL for no-schema bound objects
-    ,[ParentObjectName]      nvarchar(128)   NULL       -- Parent Object Name
     ,[ObjectCreationDate]    datetime        NULL       -- Object creation date if available
     ,[ObjectModifyDate]      datetime        NULL       -- Object modification date if available
     ,[ObjectPath]            nvarchar(max)   NULL       -- Path to the Object in SSMS Object Explorer
@@ -517,41 +623,16 @@ BEGIN
 	RETURN;
 END
 
+--Check supported egine editions - if not supported, raise warning
+IF SERVERPROPERTY('EngineEdition') NOT IN (1, 2, 3, 4, 5, 6, 8)
+BEGIN
+    RAISERROR('*****', 0, 0) WITH NOWAIT;
+    RAISERROR('sp_find is executed on unsupported EngineEdition of SQL Server. Some functionalities may not work properly', 0, 0) WITH NOWAIT;
+    RAISERROR('*****', 0, 0) WITH NOWAIT;
+END
 
 
-;WITH TypesMapping AS (
-    SELECT
-         ObjectType
-        ,ParentObjectType
-    FROM #typesMapping
-    WHERE ParentObjectType IN (SELECT ObjectType FROM @inputTypes)
-
-    UNION ALL
-
-    SELECT
-         tm.ObjectType
-        ,tm.ParentObjectType
-    FROM #typesMapping tm
-    INNER JOIN TypesMapping pt ON tm.ParentObjectType = pt.ObjectType
-)
-INSERT INTO #objTypes (
-     ObjectType
-    ,[Type]
-)
-SELECT DISTINCT
-     TM.ObjectType
-    ,AT.[Type]
-FROM TypesMapping TM
-INNER JOIN @allowedTypes AT ON TM.ObjectType = AT.ObjectType
-UNION
-SELECT
-     IT.ObjectType
-    ,AT.[Type]
-FROM @inputTypes IT
-INNER JOIN @allowedTypes AT ON IT.ObjectType = AT.ObjectType
-
---Get databases
-IF (@databaseName IS NULL OR SERVERPROPERTY('EngineEdition') = 5)
+IF (@databaseName IS NULL)
     SET @databaseName = DB_NAME();
 SET @xml = CONVERT(xml, N'<db>' + REPLACE(@databaseName, N',', N'</db><db>') + N'</db>');
 
@@ -559,6 +640,7 @@ INSERT INTO @databases(DatabaseName)
 SELECT
 	LTRIM(RTRIM(n.value(N'.', N'nvarchar(128)')))
 FROM @xml.nodes(N'db') AS T(n)
+
 
 --Get Product Version in format major.minor.build.revision - We need version to enable additional features on newer editions
 SET @version = CONVERT(nvarchar(128), SERVERPROPERTY('productversion'));
@@ -1449,9 +1531,9 @@ N'SELECT --Schema Bound Objects
 ');
 
 --Columns
-IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (N'COLUMN', N'SYSTEM_COLUMN', N'SYSTEM_OBJECT'))
-INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
-VALUES (0, 'Columns',
+IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (N'COLUMN', N'SYSTEM_COLUMN', N'SYSTEM_OBJECT', 'TABLE_COLUMN', 'VIEW_COLUMN', 'FUNCTION_COLUMN', N'TYPE_COLUMN'))
+BEGIN
+SET @sql = CONVERT(nvarchar(max), N'') +
 N'SELECT --Columns
     DB_NAME() COLLATE database_default                  AS [DatabaseName]
     ,CASE WHEN c.name COLLATE database_default LIKE @searchStr COLLATE database_default THEN @matchInName ELSE @matchInDefinition END AS [MatchIn]
@@ -1494,8 +1576,6 @@ FROM sys.all_columns c
 INNER JOIN sys.all_objects o ON o.object_id = c.object_id
 LEFT JOIN sys.computed_columns cc ON cc.object_id = c.object_id AND cc.column_id = c.column_id
 WHERE
-    ((o.type NOT IN (''S'', ''IT'') AND o.is_ms_shipped = 0) OR EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (N''SYSTEM_COLUMN'', N''SYSTEM_OBJECT'')))
-    AND 
     (
         (c.name COLLATE database_default LIKE @searchStr COLLATE database_default)
         OR
@@ -1505,7 +1585,29 @@ WHERE
             cc.definition COLLATE database_default LIKE @searchStr COLLATE database_default
         )
     )	
-');
+' + 
+CASE 
+    WHEN EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (N'SYSTEM_COLUMN', N'SYSTEM_OBJECT')) THEN N''
+    ELSE N'AND (o.type NOT IN (''S'', ''IT'') AND o.is_ms_shipped = 0)
+'
+END +
+CASE 
+    WHEN EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN ('COLUMN')) THEN N''
+    ELSE
+        N'AND
+(
+  (1=0)' 
+      + CASE WHEN EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN ('TABLE_COLUMN')) THEN ' OR o.type = ''U''' ELSE N'' END
+      + CASE WHEN EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN ('VIEW_COLUMN')) THEN ' OR o.type = ''V''' ELSE N'' END
+      + CASE WHEN EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN ('FUNCTION_COLUMN')) THEN ' OR o.type = ''TF'' OR o.type = ''IF'' OR o.type = ''FT''' ELSE N'' END
+      + CASE WHEN EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (N'TYPE_COLUMN')) THEN ' OR o.type = ''TT''' ELSE N'' END
++ N'
+)'
+END;
+
+INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
+VALUES (0, 'Columns', @sql);
+END
 
 --Indexes
 IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (SELECT ObjectType FROM #typesMapping WHERE ParentObjectType = N'INDEX'))
@@ -2136,7 +2238,7 @@ WHERE
 IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (SELECT ObjectType FROM #typesMapping WHERE ParentObjectType = N'SERVER_TRIGGER'))
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (1, 'server_triggers',
-N'SELECT --sys.seerver_triggers
+N'SELECT --sys.server_triggers
     DB_NAME() COLLATE database_default      AS [DatabaseName]
     ,CASE WHEN tr.name COLLATE database_default LIKE @searchStr COLLATE database_default THEN @matchInName ELSE @matchInDefinition END AS [MatchIn]
     ,tr.type_desc                           AS [ObjectType]
@@ -2195,7 +2297,7 @@ WHERE
 ');
 
 --server_principals
-IF SERVERPROPERTY('EngineEdition') <> 5 AND EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (SELECT ObjectType FROM #typesMapping WHERE ParentObjectType = N'SERVER_PRINCIPAL'))
+IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (SELECT ObjectType FROM #typesMapping WHERE ParentObjectType = N'SERVER_PRINCIPAL'))
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (1, 'server_principals',
 N'SELECT --server_principals
@@ -2692,7 +2794,17 @@ SET @paramDefinition = N'
 DECLARE scope CURSOR LOCAL FAST_FORWARD FOR
     SELECT DISTINCT
         SearchScope
-    FROM @searches;
+    FROM @searches
+    WHERE
+        SearchScope = 0
+        OR
+        (
+            SearchScope  IN (1, 2)
+            AND
+            SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8) --Searchscopes other than 0 (DATABASE) only supported on OnPremise or Mnaged Instance
+        )
+        OR
+        SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4) --SearchScope 3 only supported on NonAzure.
 
     OPEN scope;
 
@@ -2822,13 +2934,13 @@ DECLARE scope CURSOR LOCAL FAST_FORWARD FOR
                 RAISERROR(N'%s SEARCH_START      - Searching through [%s]', 0, 0, @now, @searchDescription) WITH NOWAIT;
 
                 --Update the search SQL for the currently processed database and proper searching collation
-                SET @searchSQL = CASE WHEN SERVERPROPERTY('EngineEdition') <> 5 THEN N'
+                SET @searchSQL = CASE WHEN SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8) THEN N'
                 USE [' + @dbName + N'];
                 ' ELSE N'' END + REPLACE(@searchBaseSQL, N'COLLATE database_default', N'COLLATE ' + @dbCollation);
 
                 --PRINT @searchSQL
                 --execute database objectssearch with proper parameters
-                INSERT INTO @Results                
+                INSERT INTO #Results                
                 EXECUTE sp_executesql @searchSQL, @paramDefinition, @searchStr = @searchStr, @objectTypes=@objectTypes, @searchInDefinition = @searchInDefinition, 
                     @caseSensitive = @caseSensitive, @matchInName=@matchInName, @matchInDefinition = @matchInDefinition, @basePath = @basePath
 
@@ -2875,14 +2987,29 @@ DEALLOCATE scope;   --Deallocates the SearchScope Cursor
 
 --Return results to caller
 SELECT
-    *
-FROM @Results
-ORDER BY DatabaseName, ObjectType, ObjectName;
+     [DatabaseName]       
+    ,[MatchIn]            
+    ,[ObjectType]         
+    ,[ObjectName]         
+    ,[ObjectSchema]       
+    ,[ParentObjectName]   
+    ,[ParentObjectSchema] 
+    ,[ObjectID]           
+    ,[ParentObjectType]   
+    ,[ParentObjectID]     
+    ,[ObjectCreationDate] 
+    ,[ObjectModifyDate]   
+    ,[ObjectPath]         
+    ,[ObjectDetails]         
+FROM #Results
+ORDER BY DatabaseName, ObjectType, ParentObjectName, ObjectName;
 
 --DROP temprorary tables
+DROP TABLE #Results;
 DROP TABLE #objTypes;
 
 END --End of Procedure
 GO
-IF  SERVERPROPERTY('EngineEdition') <> 5
+IF SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8)
     EXEC(N'EXECUTE sp_ms_marksystemobject N''dbo.sp_find''');
+GO
