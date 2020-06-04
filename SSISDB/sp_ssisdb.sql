@@ -17,7 +17,7 @@ Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2017-2019 Pavel Pawlowski
+Copyright (c) 2017-2020 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -79,13 +79,13 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 0.91 (2019-09-23)
+sp_ssisdb v 1.00 (2020-06-05)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2017-2018 Pavel Pawlowski
+Copyright (c) 2017-2020 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -146,7 +146,7 @@ AS
 SET NOCOUNT ON;
 DECLARE
 	@xml						     xml
-    ,@xr                                nvarchar(10)    = N'</i><i>'    --xml replacement'
+    ,@xr                                nvarchar(10)    = N'</i><i>'    --xml replacement
     ,@defaultLastOp	                    int             = 100           --default number of rows to retrieve
     ,@msg                               nvarchar(max)                   --general purpose message variable
     ,@sql                               nvarchar(max)                   --variable for storing queries to be executed
@@ -155,7 +155,7 @@ DECLARE
      @id                                bigint          = NULL  --for storage of execution id to provide detailed output
     ,@opLastCnt                         int             = NULL  --specifies if last count is retrieved
     ,@lastSpecified                     bit             = 0     --Indicates whether the LAST keyword was specified
-    ,@opLastGrp                         CHAR(1)	      = NULL  --Specifies type of grouping for Last retrieval
+    ,@opLastGrp                         CHAR(1)	        = NULL  --Specifies type of grouping for Last retrieval
     ,@opFrom                            datetime                --variable to hold initial from date/time value in @op param
     ,@opTo                              datetime                --variable to hold initial to date/time value in @op param
     ,@minInt                            bigint                  --variable to hold min integer passed in @op param
@@ -172,7 +172,6 @@ DECLARE
     ,@includeEDS                        bit             = 0     --Identifies whether executable data statistics should be included in detailed output
     ,@includeECP                        bit             = 0     --Identifies whether execution component phases should be included in the detailed output
     ,@projId                            bigint          = NULL  --project ID or LSN for internal purposes
-    ,@force                             bit             = 0     --Specifies whether execution should be forced even large result set should be returned
     ,@totalMaxRows                      int             = NULL
     ,@edsRows                           int             = NULL  --maximum number of EDS rows
     ,@ecpRows                           int             = NULL  --maximum number of ECP rows
@@ -220,7 +219,7 @@ DECLARE
     ,@filterExecutableStatus            bit             = 0     --Specifies whetehr @status filter is applied on Executable Statistics
     ,@filterExecutableStatusFilter      nvarchar(max)   = NULL  --contains list of status filters for Executable Statistics
     ,@availStatusFilter                 nvarchar(max)   = NULL  --contains list of status fulters for package execution statuses
-    ,@messageKind                       int             = 3     --Bitmast of message Keinds (bit 1 = Operational, bit 2 = Event)
+    ,@messageKind                       int             = 3     --Bitmask of message Kinds (bit 1 = Operational, bit 2 = Event)
     ,@messageKindDesc                   nvarchar(max)   = N'OPERATIONAL, EVENT'
     ,@tmp                               nvarchar(max)   = NULL  --Universal temporary variable
     ,@useRuntime                        bit             = 0     --Specifies whether Runtime should be used for searching instead of Create/Start/End time
@@ -238,7 +237,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v0.91 (2019-09-23) (c) 2017 - 2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v1.00 (2020-06-05) (c) 2017 - 2020 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'https://github.com/PavelPawlowski/SQL-Scripts', 0, 0) WITH NOWAIT;
@@ -289,7 +288,7 @@ VALUES
     ,('?'       ,'?'                    ,NULL)      --Help
     ,('X'       ,'X:'                   ,2)         --Max
     ,('X'       ,'MAX:'                 ,4)         --Max
-    ,('EM'      ,'EM'                  ,NULL)         --Include Event Messages
+    ,('EM'      ,'EM'                   ,NULL)      --Include Event Messages
     ,('EM'      ,'EM:'                  ,3)         --Include Event Messages
     ,('EM'      ,'EVENT_MESSAGES:'      ,15)        --Include Event Messages
     ,('V'       ,'V:'                   ,2)         --Verbose
@@ -297,17 +296,17 @@ VALUES
     ,('EDS'     ,'EDS'                  ,3)         --Execution data statistics in details
     ,('EDS'     ,'EDS:'                 ,4)         --Execution data statistics in details
     ,('EDS'     ,'EXECUTION_DATA_STATISTICS:',26)   --Execution data statistics in details
-	,('RT'		,'RT'		            ,NULL)			--RunTime specifier
-	,('RT'		,'RUN_TIME'		    ,NULL)			--Runtime Specifier
+	,('RT'		,'RT'		            ,NULL)		--RunTime specifier
+	,('RT'		,'RUN_TIME'		        ,NULL)		--Runtime Specifier
     ,('ST'      ,'ST'                   ,2)         --Use Start TIme
     ,('ST'      ,'START_TIME'           ,10)        --Use Start Time
     ,('ET'      ,'ET'                   ,2)         --Use End TIme
     ,('ET'      ,'END_TIME'             ,8)         --Use EndTime
     ,('CT'      ,'CT'                   ,2)         --Use Create Time
     ,('CT'      ,'CREATE_TIME'          ,1)         --Use Create Time
-    ,('ECP'     ,'ECP'                 ,NULL)         --Execution Component Phases
+    ,('ECP'     ,'ECP'                 ,NULL)       --Execution Component Phases
     ,('ECP'     ,'ECP:'                 ,4)         --Execution Component Phases
-    ,('ECP'     ,'EXECUTION_COMPONENT_PHASES:', 27)  --Execution Component Phases
+    ,('ECP'     ,'EXECUTION_COMPONENT_PHASES:', 27) --Execution Component Phases
     ,('ES'      ,'ES:'                  ,3)         --Executable Statistics
     ,('ES'      ,'EXECUTABLE_STATISTICS:', 22)      --Executable Statistics
     ,('AGR'     ,'AGR'                  ,NULL)      --Include details about SQL Server Agent Jobs referencing package
@@ -337,8 +336,8 @@ VALUES
     ,('FD'      ,'FOLDER_DETAILS'       ,NULL)      --Include folder details
     ,('PRD'     ,'PRD'                  ,NULL)      --Include Project details
     ,('PRD'     ,'PROJECT_DETAILS'      ,NULL)      --Include Project Details
-    ,('OBD'     ,'OBD'                   ,NULL)      --Include Object Details
-    ,('OBD'     ,'OBJECT_DETAILS'      ,NULL)      --Include Object Details
+    ,('OBD'     ,'OBD'                  ,NULL)      --Include Object Details
+    ,('OBD'     ,'OBJECT_DETAILS'       ,NULL)      --Include Object Details
     ,('MS'      ,'MS'                   ,NULL)      --Milliseconds
     ,('MS'      ,'MILLISECONDS'         ,NULL)      --Milliseconds
     ,('ED'      ,'ED'                   ,NULL)      --include execution details
@@ -351,9 +350,9 @@ VALUES
     ,('SP'      ,'SORT_PACKAGES:'       ,14)        --Sort Packages
     ,('FP'      ,'FP'                   ,NULL)      --Filter Pacakges
     ,('FP'      ,'FILTER_PACKAGES'      ,NULL)      --Filter Pacakges
-    ,('EPR'     ,'EPR:'                  ,4)        --Filter Executed Pacakges status
-    ,('EPR'     ,'EXECUTED_PACKAGES_RESULT:',25)      --Filter Executed Pacakges status
-    ,('ESR'     ,'ESR:'                ,4)             --Filter Executable statistics status
+    ,('EPR'     ,'EPR:'                 ,4)         --Filter Executed Pacakges status
+    ,('EPR'     ,'EXECUTED_PACKAGES_RESULT:',25)    --Filter Executed Pacakges status
+    ,('ESR'     ,'ESR:'                 ,4)             --Filter Executable statistics status
     ,('ESR'     ,'EXECUTABLE_STATISTICS_RESULT:',29)    --Filter Executable statistics status
     ,('PES'     ,'PES:'                 ,4)             --Package Execution Status
     ,('PES'     ,'PACKAGE_EXECUTION_STATUS', 24)        --Package Execution Status
@@ -1931,7 +1930,7 @@ RAISERROR(N'  DETAILED_MESSAGE_TRACKING(DMT)         - Enables detailed messages
 RAISERROR(N'  EXECUTION_DATA_STATISTICS(EDS):iiiii   - Include Execution Data Statistics in the details verbose output
                                            iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
                                            iiiii < 0 = All rows are returned.                                    
-  EXECUTION_COMPONENT_PHASES(ECP):iiiii  - Include Execution Componetn Phases in the details verbose output
+  EXECUTION_COMPONENT_PHASES(ECP):iiiii  - Include Execution Component Phases in the details verbose output
                                            iiiii specifies max number of rows. If not provided then default 100 for overview and 1000 for details is used.
                                            iiiii < 0 = All rows are returned.
 
@@ -3457,12 +3456,108 @@ BEGIN
         IF @durationCondition IS NOT NULL
             RAISERROR(N'                            - Duration: %s', 0, 0, @durationMsg) WITH NOWAIT;
     
-        SET @sql = N'
-				SELECT
-					ROW_NUMBER() OVER(ORDER BY start_time)  package_no
-					,package_name
-                    ,execution_path
-                     ' +
+
+        SET @sql = CONVERT(nvarchar(max), N'') + N'
+            WITH PackagesCore AS (
+                SELECT
+                    ROW_NUMBER() OVER(ORDER BY MIN(es.start_time)) AS package_no
+                    ,e.package_name
+                    ,pe.executable_name
+                    ,pe.executable_guid
+                    ,SUBSTRING(es.execution_path, 1,  CHARINDEX(PE.executable_name, es.execution_path) - 1) AS execution_path
+                    ,MIN(es.start_time) AS start_time
+                    ,ISNULL(MAX(CASE 
+                            WHEN e.package_path = ''\Package'' THEN es.end_time
+                            ELSE NULL 
+                        END),
+                        CASE WHEN d.status IN (3, 4, 6, 7, 9) THEN d.end_time ELSE NULL END
+                    )                   AS end_time
+                    ,ISNULL(MAX(CASE 
+                            WHEN e.package_path = ''\Package'' THEN es.end_time
+                            ELSE NULL 
+                        END),
+                        CASE WHEN d.status IN (3, 4, 6, 7, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END
+                    )                   AS end_time_duration
+                    ,ISNULL(
+                        MAX(CASE 
+                            WHEN e.package_path = ''\Package'' THEN es.execution_result
+                            ELSE NULL
+                        END),
+                        CASE d.status
+                            WHEN 3 THEN 3
+                            WHEN 6 THEN 6
+                            WHEN 7 THEN 0
+                            WHEN 4 THEN 1
+                            WHEN 9 THEN 2 
+                            ELSE 99 
+                        END            
+                    )                   AS result_code
+                FROM internal.operations d WITH(NOLOCK)
+                INNER JOIN internal.executions ex WITH(NOLOCK) ON ex.execution_id = d.operation_id
+                INNER JOIN internal.executable_statistics es WITH(NOLOCK) ON es.execution_id = d.operation_id 
+                INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id AND e.project_version_lsn = ex.project_lsn
+                INNER JOIN internal.executables pe WITH(NOLOCK) ON pe.project_version_lsn = ex.project_lsn AND pe.package_name = e.package_name AND pe.package_path = ''\Package'' ' +
+                CASE
+                    WHEN @pkgFilter = 1 AND @filterPkg = 1 THEN ' INNER JOIN #packages pkg ON pkg.package_name = e.package_name'
+                    ELSE ''
+                END +  N'
+                WHERE 
+                    es.execution_id = @id
+                GROUP BY
+                    d.operation_id
+                    ,d.status
+                    ,d.end_time
+                    ,e.package_name
+                    ,pe.executable_name
+                    ,pe.executable_guid
+                    ,SUBSTRING(es.execution_path, 1,  CHARINDEX(PE.executable_name, es.execution_path) - 1)
+            ), Packages AS ('+N'
+                SELECT
+                    p.package_no
+                    ,p.package_name
+                    ,p.executable_name
+                    ,p.executable_guid
+                    ,p.execution_path
+                    ,p.start_time
+                    ,p.end_time
+
+
+                    ,CASE p.result_code
+		                WHEN 0 THEN N''S''  --Success
+		                WHEN 1 THEN N''F''  --Failure
+		                WHEN 2 THEN N''O''  --Completed
+		                WHEN 3 THEN N''C''  --Cancelled
+                        WHEN 6 THEN N''U''  --Unexpected
+                        WHEN 9 THEN N''P''  --Completed
+                        WHEN 99 THEN N''R'' --Running
+		                ELSE N''K''
+	                END                 AS result
+                    ,CASE p.result_code
+		                WHEN 0 THEN N''Success''
+		                WHEN 1 THEN N''Failure''
+		                WHEN 2 THEN N''Completion''
+		                WHEN 3 THEN N''Cancelled''
+                        WHEN 6 THEN N''Unexpected''
+                        WHEN 9 THEN N''Completed''
+                        WHEN 99 THEN N''Running''
+		                ELSE N''Unknown''
+	                END                 AS result_description
+                    ,p.result_code
+                    ,CASE WHEN p.result_code = 99 THEN N''Preliminary'' ELSE N''Final'' END AS status_info
+                    ,DATEADD(MILLISECOND,
+                        DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(HOUR, p.start_time, p.end_time_duration) / 24, p.start_time), p.end_time_duration)
+                        ,DATEADD(DAY, 
+                            DATEDIFF(HOUR, p.start_time, p.end_time_duration) / 24
+                            ,CONVERT(datetime2(7), ''19000101'')
+                        )
+                    ) AS DurationDate
+
+                FROM PackagesCore p
+            )
+            SELECT
+                p.package_no
+                ,p.package_name
+                ,p.execution_path' + 
                     CASE WHEN @localTime = 1 THEN N'
 					,CONVERT(datetime2(7), start_time) AS start_time
 					,CONVERT(datetime2(7), end_time) As end_time
@@ -3470,17 +3565,26 @@ BEGIN
                     ELSE N'
 					,start_time
 					,end_time
-                    ' END + N'
-                    ,RIGHT(''     '' + CONVERT(nvarchar(5), DATEDIFF(DAY, 0, durationDate)) + ''d '', 6) + CONVERT(varchar(12), CONVERT(time, durationDate)) AS duration' + 
+                ' END +                
+                N'
+                    ,RIGHT(''     '' + CONVERT(nvarchar(5), DATEDIFF(DAY, 0, DurationDate)) + ''d '', 6) + CONVERT(varchar(12), CONVERT(time, DurationDate)) AS duration' + 
                     CASE WHEN @duration_ms = 1 THEN N'
-                    ,CONVERT(bigint, DATEDIFF(DAY, CONVERT(datetime2(7), ''19000101''), durationDate)) * 86400000 + DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(DAY, ''19000101'', durationDate), ''19000101''), durationDate) AS duration_ms'
+                    ,CONVERT(bigint, DATEDIFF(DAY, CONVERT(datetime2(7), ''19000101''), DurationDate)) * 86400000 + DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(DAY, ''19000101'', DurationDate), ''19000101''), DurationDate) AS duration_ms'
                     ELSE N'' END + N'
-					,res AS result
-                    ,result AS result_description
-					,result_code
-                    ,status_info' +
+                ,p.result
+                ,p.result_description
+                ,p.result_code
+                ,p.status_info' +
                     CASE 
-                        WHEN @filterPkgStatus = 1 OR (@pkgFilter = 1 AND @filterPkg = 1) THEN  N',additional_info'
+                        WHEN @filterPkgStatus = 1 OR (@pkgFilter = 1 AND @filterPkg = 1) THEN
+                            N', N' + QUOTENAME(STUFF((SELECT
+                                    N', ' + Info 
+                                FROM (
+                                    SELECT CASE WHEN @pkgFilter = 1 AND @filterPkg = 1 THEN N'PKG_FILTER' ELSE NULL END AS Info
+                                    UNION ALL
+                                    SELECT CASE WHEN @filterPkgStatus = 1 THEN 'STATUS_FILTER' ELSE NULL END AS Info
+                                ) fltr
+                                FOR XML PATH('')), 1, 2, N''), '''') + N' AS additional_info'
                         ELSE N''
                     END + 
                     CONVERT(nvarchar(max),CASE WHEN @packageExtendedInfo = 1 THEN 
@@ -3512,114 +3616,26 @@ BEGIN
                 ELSE N''
                 END)
                 + N'
-				FROM (
-				  SELECT
-					 ROW_NUMBER() OVER(PARTITION BY e.package_name ORDER BY CASE WHEN e.package_path = ''\Package'' THEN 0 ELSE 1 END ASC, es.start_time ASC) AS pno
-                     ,d.operation_id
-                     ,e.executable_name
-                     ,e.executable_guid
-                     ,es.execution_path
-                    ,CASE WHEN e.package_path = ''\Package'' OR d.status IN (3, 4, 6, 7, 9) THEN N''Final'' ELSE N''Preliminary'' END AS status_info
-					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status = 3 THEN 3 WHEN d.status = 6 THEN 6 WHEN d.status = 7 THEN 0 WHEN d.status = 4 THEN 1 WHEN d.status = 9 THEN 2 ELSE 99 END)
-						WHEN 0 THEN N''S''  --Success
-						WHEN 1 THEN N''F''  --Failure
-						WHEN 2 THEN N''O''  --Completed
-						WHEN 3 THEN N''C''  --Cancelled
-                        WHEN 6 THEN N''U''  --Unexpected
-                        WHEN 9 THEN N''P''  --Completed
-                        WHEN 99 THEN N''R'' --Running
-						ELSE N''K''
-					END                 AS res
-
-					,es.start_time
-					,ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), CASE WHEN d.status IN (3, 4, 6, 7, 9) THEN d.end_time ELSE NULL END)  end_time
-
-                    ,DATEADD(MILLISECOND, DATEDIFF(MILLISECOND, DATEADD(DAY, DATEDIFF(MINUTE, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status IN (3, 6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1440, es.start_time), ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status IN (3, 6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)), DATEADD(DAY, DATEDIFF(MINUTE, es.start_time, ISNULL(NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.end_time ELSE ''00010101'' END, ''00010101''), 
-						CASE WHEN d.status IN (3, 6, 9) THEN d.end_time ELSE SYSDATETIMEOFFSET() END)) / 1400, CONVERT(datetime2(7), ''19000101''))) durationDate
-					,e.package_name              package_name
-
-					,CASE
-						(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status = 3 THEN 3 WHEN d.status = 6 THEN 6 WHEN d.status = 7 THEN 0 WHEN d.status = 4 THEN 1 WHEN d.status = 9 THEN 2 ELSE 99 END)
-						WHEN 0 THEN N''Success''
-						WHEN 1 THEN N''Failure''
-						WHEN 2 THEN N''Completion''
-						WHEN 3 THEN N''Cancelled''
-                        WHEN 6 THEN N''Unexpected''
-                        WHEN 9 THEN N''Completed''
-                        WHEN 99 THEN N''Running''
-						ELSE N''Unknown''
-					END                 AS result
-
-					,NULLIF(CASE WHEN e.package_path = ''\Package'' THEN es.execution_result WHEN d.status = 3 THEN 3 WHEN d.status = 6 THEN 6 WHEN d.status = 7 THEN 0 WHEN d.status = 4 THEN 1 WHEN d.status = 9 THEN 2 ELSE 99 END, -9999)      result_code
-                     ' +
-
-                    CASE 
-                        WHEN @filterPkgStatus = 1 OR (@pkgFilter = 1 AND @filterPkg = 1) THEN
-                            N', N' + QUOTENAME(STUFF((SELECT
-                                    N', ' + Info 
-                                FROM (
-                                    SELECT CASE WHEN @pkgFilter = 1 AND @filterPkg = 1 THEN N'PKG_FILTER' ELSE NULL END AS Info
-                                    UNION ALL
-                                    SELECT CASE WHEN @filterPkgStatus = 1 THEN 'STATUS_FILTER' ELSE NULL END AS Info
-                                ) fltr
-                                FOR XML PATH('')), 1, 2, N''), '''') + N' AS additional_info'
-                        ELSE N''
-                    END + N'
-                FROM internal.operations d WITH(NOLOCK)
-				INNER JOIN internal.executable_statistics es WITH(NOLOCK) ON es.execution_id = d.operation_id 
-				INNER JOIN internal.executables e WITH(NOLOCK) ON e.executable_id = es.executable_id ' + 
-                CASE
-                    WHEN @pkgFilter = 1 AND @filterPkg = 1 THEN ' INNER JOIN #packages pkg ON pkg.package_name = e.package_name'
-                    ELSE ''
-                END +   
-                CONVERT(nvarchar(max), N'
-				LEFT JOIN  (
-				SELECT
-					 package_name 
-					,ISNULL(MIN(es1.start_time), ''99991231'') AS start_time
-					,ISNULL(MAX(es1.end_time), ''00010101'')  AS end_time
-				FROM internal.executable_statistics es1 WITH(NOLOCK) 
-				INNER JOIN internal.executables e1 WITH(NOLOCK) ON e1.executable_id = es1.executable_id 
-				WHERE 
-					e1.package_path = ''\Package'' AND es1.execution_id = @id
-				GROUP BY e1.package_name
-				) MM ON e.package_name = MM.package_name
-				WHERE 
-					d.operation_id = @id
-					--AND
-					--(
-					--	e.package_path = ''\Package'' 
-						--OR
-						--(
-						--	d.status IN (2, 5, 8)
-						--	AND
-						--	(
-      --                          MM.start_time IS NULL
-						--	)
-						--)
-					--)
-		) EPD
-		WHERE EPD.pno = 1 ') +
-        CASE
-            WHEN @filterPkgStatus = 1 THEN N' AND result_code IN (SELECT id FROM #EPStatuses) '
-            ELSE N''
-        END +                      
-        CASE
-            WHEN @durationCondition IS NOT NULL THEN N' AND ' + @durationCondition
-            ELSE N''
-        END +
-        CASE
-            WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (start_time' END + N' BETWEEN  @fromTZ AND @toTZ)'
-            WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (start_time' END +' > @fromTZ)'
-            ELSE N''
-            END + N'
-		ORDER BY ' +
+            FROM Packages p
+            WHERE
+                (1=1) ' +
+            CASE
+                WHEN @filterPkgStatus = 1 THEN N' AND result_code IN (SELECT id FROM #EPStatuses) '
+                ELSE N''
+            END +                      
+            CASE
+                WHEN @durationCondition IS NOT NULL THEN N' AND ' + @durationCondition
+                ELSE N''
+            END +
+            CASE
+                WHEN @opFromTZ IS NOT NULL AND @opToTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (start_time' END + N' BETWEEN  @fromTZ AND @toTZ)'
+                WHEN @opFromTZ IS NOT NULL THEN CASE WHEN @useEndTime = 1 THEN N' AND (end_time' ELSE N' AND (start_time' END +' > @fromTZ)'
+                ELSE N''
+                END + N'
+    		ORDER BY ' +
         CASE @pkgSort
             WHEN 1 THEN N'package_name'
-            WHEN 2 THEN N'durationDate'
+            WHEN 2 THEN N'DurationDate'
             WHEN 3 THEN N'end_time'
             WHEN 4 THEN N'result'
             WHEN 5 THEN N'result_code'
@@ -4574,4 +4590,23 @@ GO
 --GRANT EXECUTE permission on the stored procedure to [ssis_admin] role
 RAISERROR(N'Granting EXECUTE permission to [ssis_admin]', 0, 0) WITH NOWAIT;
 GRANT EXECUTE ON [dbo].[sp_ssisdb] TO [ssis_admin]
+GO
+
+IF NOT EXISTS(
+    SELECT
+    1
+    FROM sys.indexes i
+    WHERE 
+        i.object_id = OBJECt_ID('[internal].[executables]')
+        AND
+        i.name = 'IX_executable_project_package_name_project_version_lsn_Filtered'
+)
+BEGIN
+    RAISERROR('Creating Index [IX_executables_project_package_name_project_version_lsn_Filtered] to support Executed Packages Extraction', 0, 0) With NOWAIT;
+    CREATE NONCLUSTERED INDEX [IX_executable_project_package_name_project_version_lsn_Filtered]
+    ON [internal].[executables] ([package_name], [project_version_lsn])
+    INCLUDE ([executable_name],[package_path])
+    WHERE
+        package_path = '\Package'
+END;
 GO
