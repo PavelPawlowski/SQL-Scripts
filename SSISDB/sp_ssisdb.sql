@@ -79,7 +79,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_ssisdb] AS PRINT ''Placeholder for [dbo].[sp_ssisdb]''')
 GO
 /* ****************************************************
-sp_ssisdb v 1.00 (2020-06-05)
+sp_ssisdb v 1.01 (2020-06-07)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -237,7 +237,7 @@ DECLARE
     REVERT;
 
 
-RAISERROR(N'sp_ssisdb v1.00 (2020-06-05) (c) 2017 - 2020 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+RAISERROR(N'sp_ssisdb v1.01 (2020-06-07) (c) 2017 - 2020 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 RAISERROR(N'============================================================', 0, 0) WITH NOWAIT;
 RAISERROR(N'sp_ssisdb provides information about operations in ssisdb', 0, 0) WITH NOWAIT;
 RAISERROR(N'https://github.com/PavelPawlowski/SQL-Scripts', 0, 0) WITH NOWAIT;
@@ -3464,7 +3464,7 @@ BEGIN
                     ,e.package_name
                     ,pe.executable_name
                     ,pe.executable_guid
-                    ,SUBSTRING(es.execution_path, 1,  CHARINDEX(PE.executable_name, es.execution_path) - 1) AS execution_path
+                    ,SUBSTRING(es.execution_path, 1,  CHARINDEX(''\'' + PE.executable_name, es.execution_path) - 1) AS execution_path
                     ,MIN(es.start_time) AS start_time
                     ,ISNULL(MAX(CASE 
                             WHEN e.package_path = ''\Package'' THEN es.end_time
@@ -3510,7 +3510,7 @@ BEGIN
                     ,e.package_name
                     ,pe.executable_name
                     ,pe.executable_guid
-                    ,SUBSTRING(es.execution_path, 1,  CHARINDEX(PE.executable_name, es.execution_path) - 1)
+                    ,SUBSTRING(es.execution_path, 1,  CHARINDEX(''\'' + PE.executable_name, es.execution_path) - 1)
             ), Packages AS ('+N'
                 SELECT
                     p.package_no
