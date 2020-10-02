@@ -53,7 +53,7 @@ Parameters:
  Results table Schema:
  --------------------
  CREATE TABLE #SearchResults(
-     [DatabaseName]          nvarchar(128)   NOT NULL   -- Database name of the match. In case of server scoped objects NULL
+     [DatabaseName]          nvarchar(128)   NULL       -- Database name of the match. In case of server scoped objects NULL
     ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whether match was in NAME or in definition
     ,[ObjectType]            nvarchar(66)    NOT NULL   -- Type of object found
     ,[ObjectName]            nvarchar(128)   NULL       -- Object name
@@ -157,7 +157,7 @@ IF OBJECT_ID('tempdb..#Results') IS NOT NULL
 
 --Table variable to hold Search results
 CREATE TABLE #Results (
-     [DatabaseName]          nvarchar(128)  NOT NULL
+     [DatabaseName]          nvarchar(128)  NULL
     ,[MatchIn]               varchar(10)    NOT NULL
     ,[ObjectType]            nvarchar(66)   NOT NULL
     ,[ObjectID]              varchar(36)    NOT NULL
@@ -621,7 +621,7 @@ BEGIN
     RAISERROR(N'Table schema to hold results', 0, 0);
     RAISERROR(N'----------------------------', 0, 0);
     SET @msg = N'CREATE TABLE #SearchResults(
-     [DatabaseName]          nvarchar(128)   NOT NULL   -- Database name of the match. In case of server scoped objects NULL
+     [DatabaseName]          nvarchar(128)   NULL       -- Database name of the match. In case of server scoped objects NULL
     ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whether match was in NAME or in definition
     ,[ObjectType]            nvarchar(66)    NOT NULL   -- Type of object found
     ,[ObjectName]            nvarchar(128)   NULL       -- Object name
