@@ -1,7 +1,7 @@
 /* *****************************************************************************************
 	                                  AZURE SQL DB Notice
 
-   Commet-out the unsupported USE [master] when running in Azure SQL DB/Synapse Analytics
+   Comment-out the unsupported USE [master] when running in Azure SQL DB/Synapse Analytics
    or ignore error caused by unsupported USE statement
 ******************************************************************************************** */
 USE [master]
@@ -12,7 +12,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_find] AS BEGIN PRINT ''Container for sp_find (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_find v 1.0 (2020-05-31)
+sp_find v 1.10 (2020-10-02)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -47,10 +47,12 @@ Parameters:
     ,@databaseName              nvarchar(max)   = NULL          -- Comma separated list of databases to search. NULL means current database. Supports wildcards and ''%%'' means all databases. Supported only for "OnPremise" editions and Azure Managed Instance.
     ,@searchInDefinition        bit             = 1             -- Specifies whether to search in object definitions
     ,@caseSensitive             bit             = 0             -- Specifies whether a Case Sensitive search should be done
+    ,@outputTableName           nvarchar(128)   = NULL          -- name of output table to which the find results should be inserted
+    ,@outputResults             bit             = NULL          -- Specifies whether result should be outputed. Default NULL means output is printed if @outputTableName is not provided.
  
  Results table Schema:
  --------------------
- CREATE TABLE #Results(
+ CREATE TABLE #SearchResults(
      [DatabaseName]          nvarchar(128)   NOT NULL   -- Database name of the match. In case of server scoped objects NULL
     ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whether match was in NAME or in definition
     ,[ObjectType]            nvarchar(66)    NOT NULL   -- Type of object found
@@ -73,6 +75,8 @@ ALTER PROCEDURE [dbo].[sp_find]
     ,@databaseName              nvarchar(max)   = NULL          -- Comma separated list of databases to search. NULL means current database. Supports wildcards and ''%%'' means all databases
     ,@searchInDefinition        bit             = 1             -- Specifies whether to search in object definitions
     ,@caseSensitive             bit             = 0             -- Specifies whether a Case Sensitive search should be done
+    ,@outputTableName           nvarchar(128)   = NULL          -- name of output table to which the find results should be inserted
+    ,@outputResults             bit             = NULL          -- Specifies whether result should be outputed. Default NULL means output is printed if @outputTableName is not provided.
 AS
 BEGIN
 SET NOCOUNT ON;
@@ -116,12 +120,15 @@ DECLARE
 
 --Set and print the procedure output caption
 SET @caption =  STUFF(N'
-sp_find v1.00 (2020-05-31) (C) 2014-2020 Pavel Pawlowski
+sp_find v1.10 (2020-10-02) (C) 2014-2020 Pavel Pawlowski
 ========================================================
 Feedback mail to: pavel.pawlowski@hotmail.cz
 --------------------------------------------------------
 ', 1, 2, '');
 RAISERROR(@caption, 0, 0) WITH NOWAIT;
+
+IF OBJECT_ID('tempdb..#objTypes') IS NOT NULL
+    DROP TABLE #objTypes;
 
 --Temp table to hold list of search types --we need temp table to be available inside dynamic search SQL
 CREATE TABLE #objTypes (
@@ -129,6 +136,9 @@ CREATE TABLE #objTypes (
     ,[Type]         char(2) COLLATE Latin1_General_CI_AS
     ,[ServiceScope] tinyint
 );
+
+IF OBJECT_ID('tempdb..#typesMapping') IS NOT NULL
+    DROP TABLE #typesMapping;
 
 --Temp table to hold mappings between object types and covering parent types
 CREATE TABLE #typesMapping(
@@ -142,6 +152,8 @@ DECLARE @inputTypes TABLE (
     ObjectType nvarchar(128) COLLATE Latin1_General_CI_AS NOT NULL PRIMARY KEY CLUSTERED
 )
 
+IF OBJECT_ID('tempdb..#Results') IS NOT NULL
+    DROP TABLE #Results;
 
 --Table variable to hold Search results
 CREATE TABLE #Results (
@@ -555,7 +567,13 @@ BEGIN
                                                                   Supports wildcards and ''%%'' means all databases
                                                                   Supported only on "OnPremise" editions and Azure Managed Instance.
     ,@searchInDefinition        bit             = 1             - Specifies whether to search in object definitions
-    ,@caseSensitive             bit             = 0             - Specifies whether a Case Sensitive search should be done'
+    ,@caseSensitive             bit             = 0             - Specifies whether a Case Sensitive search should be done
+    ,@outputTableName           nvarchar(128)   = NULL          - Name of output table to which the find results should be inserted. Definition should match the definition below. 
+    ,@outputResults             bit             = NULL          - Specifies whether result should be outputed. 
+                                                                  Default NULL means search results are returned to caller if @outputTableName is not provided. 
+                                                                  In case @outputTableName is provided then results are inserted into output table but not returned to caller.
+                                                                  This can be overriden by providing 1.
+'
     RAISERROR(@msg, 0, 0);
     RAISERROR(N'', 0, 0);
     
@@ -602,7 +620,7 @@ BEGIN
     RAISERROR(N'', 0, 0);
     RAISERROR(N'Table schema to hold results', 0, 0);
     RAISERROR(N'----------------------------', 0, 0);
-    SET @msg = N'CREATE TABLE #Results(
+    SET @msg = N'CREATE TABLE #SearchResults(
      [DatabaseName]          nvarchar(128)   NOT NULL   -- Database name of the match. In case of server scoped objects NULL
     ,[MatchIn]               varchar(10)     NOT NULL   -- Specifies whether match was in NAME or in definition
     ,[ObjectType]            nvarchar(66)    NOT NULL   -- Type of object found
@@ -2981,11 +2999,30 @@ DECLARE scope CURSOR LOCAL FAST_FORWARD FOR
 
 
 
-CLOSE scope;        --Clsoes the SearchScope Cusros
+CLOSE scope;        --Closes the SearchScope Cusros
 DEALLOCATE scope;   --Deallocates the SearchScope Cursor
 
-
---Return results to caller
+if @outputTableName IS NOT NULL
+BEGIN
+    SET @now = CONVERT(nvarchar(24), @searchStart, 121);
+    RAISERROR(N'%s WRITING RESULTS TO OUTPUT TABLE [%s]', 0, 0, @now, @outputTableName) WITH NOWAIT;
+    
+    SET @sql = N'INSERT INTO ' + QUOTENAME(@outputTableName) + N'(
+     [DatabaseName]       
+    ,[MatchIn]            
+    ,[ObjectType]         
+    ,[ObjectName]         
+    ,[ObjectSchema]       
+    ,[ParentObjectName]   
+    ,[ParentObjectSchema] 
+    ,[ObjectID]           
+    ,[ParentObjectType]   
+    ,[ParentObjectID]     
+    ,[ObjectCreationDate] 
+    ,[ObjectModifyDate]   
+    ,[ObjectPath]         
+    ,[ObjectDetails]         
+)
 SELECT
      [DatabaseName]       
     ,[MatchIn]            
@@ -3003,10 +3040,35 @@ SELECT
     ,[ObjectDetails]         
 FROM #Results
 ORDER BY DatabaseName, ObjectType, ParentObjectName, ObjectName;
+'
+    EXEC sp_executesql @sql;
+END
 
+if @outputResults = 1 OR @outputTableName IS NULL
+BEGIN
+    --Return results to caller
+    SELECT
+         [DatabaseName]       
+        ,[MatchIn]            
+        ,[ObjectType]         
+        ,[ObjectName]         
+        ,[ObjectSchema]       
+        ,[ParentObjectName]   
+        ,[ParentObjectSchema] 
+        ,[ObjectID]           
+        ,[ParentObjectType]   
+        ,[ParentObjectID]     
+        ,[ObjectCreationDate] 
+        ,[ObjectModifyDate]   
+        ,[ObjectPath]         
+        ,[ObjectDetails]         
+    FROM #Results
+    ORDER BY DatabaseName, ObjectType, ParentObjectName, ObjectName;
+END
 --DROP temprorary tables
 DROP TABLE #Results;
 DROP TABLE #objTypes;
+DROP TABLE #typesMapping;
 
 END --End of Procedure
 GO
