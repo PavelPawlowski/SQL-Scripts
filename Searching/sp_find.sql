@@ -47,7 +47,7 @@ Parameters:
     ,@databaseName              nvarchar(max)   = NULL          -- Comma separated list of databases to search. NULL means current database. Supports wildcards and ''%%'' means all databases. Supported only for "OnPremise" editions and Azure Managed Instance.
     ,@searchInDefinition        bit             = 1             -- Specifies whether to search in object definitions
     ,@caseSensitive             bit             = 0             -- Specifies whether a Case Sensitive search should be done
-    ,@outputTableName           nvarchar(128)   = NULL          -- name of output table to which the find results should be inserted
+    ,@outputTableName           nvarchar(128)   = NULL          -- Name of output table to which the find results should be inserted
     ,@outputResults             bit             = NULL          -- Specifies whether result should be outputed. Default NULL means output is printed if @outputTableName is not provided.
  
  Results table Schema:
@@ -569,7 +569,7 @@ BEGIN
     ,@searchInDefinition        bit             = 1             - Specifies whether to search in object definitions
     ,@caseSensitive             bit             = 0             - Specifies whether a Case Sensitive search should be done
     ,@outputTableName           nvarchar(128)   = NULL          - Name of output table to which the find results should be inserted. Definition should match the definition below. 
-    ,@outputResults             bit             = NULL          - Specifies whether result should be outputed. 
+    ,@outputResults             bit             = NULL          - Specifies whether result should be returned to caller. 
                                                                   Default NULL means search results are returned to caller if @outputTableName is not provided. 
                                                                   In case @outputTableName is provided then results are inserted into output table but not returned to caller.
                                                                   This can be overriden by providing 1.
