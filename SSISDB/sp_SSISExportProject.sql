@@ -17,7 +17,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISExportProject] AS PRINT ''Placeholder for [dbo].[sp_SSISExportProject]''')
 GO
 /* ****************************************************
-sp_SSISExportProject v 0.10 (2019-10-13)
+sp_SSISExportProject v 0.20 (2020-10-12)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -77,7 +77,7 @@ BEGIN
         ,@help                      bit                     = 0
 
 
-	RAISERROR(N'sp_SSISExportProject v0.10 (2019-10-13) (C) 2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+	RAISERROR(N'sp_SSISExportProject v0.20 (2020-10-12) (C) 2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 	RAISERROR(N'================================================================' , 0, 0) WITH NOWAIT;
     RAISERROR(N'sp_SSISExportProject extracts ssisdb project to .ispac file', 0, 0) WITH NOWAIT;
     RAISERROR(N'https://github.com/PavelPawlowski/SQL-Scripts', 0, 0) WITH NOWAIT;
@@ -117,6 +117,8 @@ Usage:
                                                       Only @version or @version_date can be specified at a time.
                                                       When no @version or @version date is specified then he current active version is exported.
     ,@listVersion       bit                 = 0     - When 1 then list of projects and versions is provided and no export is performed.
+                                                      When versions a relisted a command for exporting concrete version as well as command
+                                                      for eventual restoring of the version in SSISDB catalog is provided.
     ,@create_path       bit                 = 0     - Specifies whether the path portion of the destination file should be automatically created
 
 ', 0, 0) WITH NOWAIT;
@@ -139,6 +141,7 @@ Usage:
             ,ov.[last_restored_time]    AS [last_restored_time]
 	        ,CASE WHEN ov.object_version_lsn = p.object_version_lsn THEN 1 ELSE 0 END AS [is_current_version]
             ,N'sp_SSISExportProject @folder = ''' + f.[name] + N''', @project = ''' + p.[name] + N''', @version = ' + CONVERT(nvarchar(20), ov.object_version_lsn) + N', @destination = ''' + ISNULL(@destination, N'<<path_to.ispac>>') + N'''' AS [export_command]
+            ,N'EXECUTE [catalog].[restore_project] @folder_name = ''' + f.[Name] + N''', @project_name = ''' + p.[name] + N''', @object_version_lsn = ' + CONVERT(nvarchar(20), ov.object_version_lsn) AS [restore_command]
         FROM internal.object_versions ov
         INNER JOIN internal.projects p ON p.project_id = ov.object_id AND ov.object_type = 20
         INNER JOIN internal.folders f ON f.folder_id = p.folder_id
