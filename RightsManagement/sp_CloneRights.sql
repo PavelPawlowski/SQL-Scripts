@@ -317,7 +317,7 @@ BEGIN
         dp.name COLLATE database_default
     FROM sys.database_principals dp
     INNER JOIN #userList u ON dp.name COLLATE database_default LIKE u.UserName COLLATE database_default
-    WHERE LEFT(u.UserName,1) <> ''-''
+    WHERE LEFT(u.UserName,1) <> ''-'' AND dp.name <> ''dbo''
 
     EXCEPT 
 
@@ -358,10 +358,17 @@ BEGIN
         --Script Database Context
         INSERT INTO #output(command)
         SELECT '' UNION ALL
-        SELECT '--===================================================================' UNION ALL
-        SELECT 'PRINT N''Cloning permissions in database' + SPACE(1) + @dbName + N'''' UNION ALL
-        SELECT '--===================================================================' UNION ALL
-        SELECT 'USE' + SPACE(1) + @dbName UNION ALL
+        SELECT '--=====================================================================' UNION ALL
+        SELECT 'PRINT N''Cloning permissions from database' + SPACE(1) + @dbName + N'''' UNION ALL
+        SELECT '--=====================================================================' 
+       
+        --Write the USE statement only on non azure SQLDB
+        IF SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8)
+        BEGIN
+            INSERT INTO #output(command)
+            SELECT 'USE' + SPACE(1) + @dbName
+        END
+        INSERT INTO #output(command)
         SELECT 'SET XACT_ABORT ON'
 
 
