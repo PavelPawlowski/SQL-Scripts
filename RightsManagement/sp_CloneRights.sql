@@ -1,16 +1,24 @@
+/* *****************************************************************************************
+	                                  AZURE SQL DB Notice
+
+   Comment-out the unsupported USE [master] when running in Azure SQL DB/Synapse Analytics
+   or ignore error caused by unsupported USE statement
+******************************************************************************************** */
 USE [master]
 GO
+
+
 IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].[sp_CloneRights]') AND TYPE = 'P')
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_CloneRights] AS BEGIN PRINT ''Container for sp_CloneRights (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_CloneRights v0.40 (2017-11-14)
+sp_CloneRights v0.41 (2020-10-22)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2017 Pavel Pawlowski
+Copyright (c) 2020 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -104,7 +112,7 @@ CREATE TABLE #output (
 
 
 --Set and print the procedure output caption
-RAISERROR(N'PRINT ''sp_CloneRights v0.40 (2017-11-14) (C) 2010-2017 Pavel Pawlowski''', 0, 0) WITH NOWAIT;
+RAISERROR(N'PRINT ''sp_CloneRights v0.41 (2020-10-22) (C) 2010-2020 Pavel Pawlowski''', 0, 0) WITH NOWAIT;
 RAISERROR(N'PRINT ''===============================================================''', 0, 0) WITH NOWAIT;
 
 INSERT INTO @allowedClasses(ClassName, ClassDescription)
@@ -1170,5 +1178,6 @@ END
 GO
 
 --Mark Stored Procedure as system object, so it executes in the context of current database.
-EXECUTE sp_ms_marksystemobject 'dbo.sp_CloneRights'
+IF SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8)
+    EXEC(N'EXECUTE sp_ms_marksystemobject ''dbo.sp_CloneRights''');
 GO
