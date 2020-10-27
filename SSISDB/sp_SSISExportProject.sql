@@ -17,7 +17,7 @@ IF NOT EXISTS(SELECT * FROM sys.procedures WHERE object_id = OBJECT_ID('[dbo].[s
     EXEC (N'CREATE PROCEDURE [dbo].[sp_SSISExportProject] AS PRINT ''Placeholder for [dbo].[sp_SSISExportProject]''')
 GO
 /* ****************************************************
-sp_SSISExportProject v 0.20 (2020-10-12)
+sp_SSISExportProject v 0.50 (2020-10-26)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -49,20 +49,28 @@ Description:
 Parameters:
     @folder             nvarchar(128)   = NULL  -- Folder name of the project to be exported
     ,@project           nvarchar(128)   = NULL  -- Project name to be exported. When not provided, then it forces @listVersion = 1
-    ,@destination       nvarchar(4000)  = NULL  -- Path to destination .ispac file to which the project will be exported. When not provided, then it forces @listVersion = 1
+    ,@destination       nvarchar(1024)  = NULL  -- Path to destination .ispac file to which the project will be exported.
+    ,@fileName          nvarchar(1024)  = NULL  -- name of the file to which export
+    ,@doExport          bit             = 1     -- Identifies whether export should be done. If @destination = NULL then forced to 0
     ,@version           bigint          = NULL  -- Specifies version_lsn number of the project to be exported. When no @version or @version date is specified then he current active version is exported.
-    ,@version_date      datetime2(7)    = NULL  -- Specifies version creation timestamp of the project to be exported. When no @version or @version date is specified then he current active version is exported.
-    ,@listVersion       bit             = 0     -- When 1 then list of projects and versions is provided and no export is performed.
-    ,@create_path       bit             = 0     --Specifies whether the path portion of the destination file should be automatically created
+    ,@versionDate      datetime2(7)    = NULL  -- Specifies version creation timestamp of the project to be exported. When no @version or @version date is specified then he current active version is exported.
+    ,@listAllVersions   bit             = 0     -- When 1 then list of projects and versions is provided and no export is performed.
+    ,@createPath       bit             = 0     -- Specifies whether the path portion of the destination file should be automatically created
+    ,@fileExtension     nvarchar(128)   = '.ispac'  --allows specify extension for file name for example .zip as .ispac is zip in fact
+    ,@folderInFileName  bit             = 0     -- Specifies if folder should be part of file name
 ******************************************************* */
 ALTER PROCEDURE [dbo].[sp_SSISExportProject]
     @folder             nvarchar(128)   = NULL  -- Folder name of the project to be exported
-    ,@project           nvarchar(128)   = NULL  -- Project name to be exported. When not provided, then it forces @listVersion = 1
-    ,@destination       nvarchar(4000)  = NULL  -- Path to destination .ispac file to which the project will be exported. When not provided, then it forces @listVersion = 1
+    ,@project           nvarchar(128)   = '%'  -- Project name to be exported. When not provided, then it forces @listVersion = 1
+    ,@destination       nvarchar(1024)  = NULL  -- Path to destination .ispac file to which the project will be exported.
+    ,@fileName          nvarchar(1024)  = NULL  -- name of the file to which export
+    ,@doExport          bit             = 1     -- Identifies whether export should be done. If @destination = NULL then forced to 0
     ,@version           bigint          = NULL  -- Specifies version_lsn number of the project to be exported. When no @version or @version date is specified then he current active version is exported.
-    ,@version_date      datetime2(7)    = NULL  -- Specifies version creation timestamp of the project to be exported. When no @version or @version date is specified then he current active version is exported.
-    ,@listVersion       bit             = 0     -- When 1 then list of projects and versions is provided and no export is performed.
-    ,@create_path       bit             = 0     --Specifies whether the path portion of the destination file should be automatically created
+    ,@versionDate      datetime2(7)    = NULL  -- Specifies version creation timestamp of the project to be exported. When no @version or @version date is specified then he current active version is exported.
+    ,@listAllVersions   bit             = 0     -- When 1 then list of projects and versions is provided and no export is performed.
+    ,@createPath       bit             = 0     -- Specifies whether the path portion of the destination file should be automatically created
+    ,@fileExtension     nvarchar(128)   = '.ispac'  --allows specify extension for file name for example .zip as .ispac is zip in fact
+    ,@folderInFileName  bit             = 0     -- Specifies if folder should be part of file name
 WITH EXECUTE AS 'AllSchemaOwner'
 AS
 BEGIN
@@ -75,27 +83,59 @@ BEGIN
         ,@is_current                bit
         ,@dateStr                   nvarchar(50)
         ,@help                      bit                     = 0
+        ,@xml                       xml
+        ,@multiFolder               bit                     = 0
 
 
-	RAISERROR(N'sp_SSISExportProject v0.20 (2020-10-12) (C) 2019 Pavel Pawlowski', 0, 0) WITH NOWAIT;
+    DECLARE @folders TABLE (
+        folder_id       bigint          PRIMARY KEY CLUSTERED
+        ,folder_name    nvarchar(128)
+    )
+
+
+    DECLARE @projects TABLE (
+        project_id          bigint          PRIMARY KEY CLUSTERED
+        ,folder_id          bigint
+        ,object_version_lsn bigint
+        ,project_name       nvarchar(128)
+    )
+
+    DECLARE @versions TABLE (
+	    [folder_name]           nvarchar(128),
+	    [project_name]          nvarchar(128),
+	    [project_id]            bigint,
+	    [version]               bigint,
+	    [version_date]          datetimeoffset(7),
+	    [version_valid_to]      datetimeoffset(7),
+	    [created_by]            nvarchar(128),
+	    [description]           nvarchar(1024),
+	    [restored_by]           nvarchar(128),
+	    [last_restored_time]    datetimeoffset(7),
+	    [is_current_version]    int,
+	    [destination_path]      nvarchar(1154),
+	    [destination_file]      nvarchar(1024)
+    ) 
+
+
+
+	RAISERROR(N'sp_SSISExportProject v0.50 (2020-10-26) (C) 2020 Pavel Pawlowski', 0, 0) WITH NOWAIT;
 	RAISERROR(N'================================================================' , 0, 0) WITH NOWAIT;
     RAISERROR(N'sp_SSISExportProject extracts ssisdb project to .ispac file', 0, 0) WITH NOWAIT;
     RAISERROR(N'https://github.com/PavelPawlowski/SQL-Scripts', 0, 0) WITH NOWAIT;
     RAISERROR(N'', 0, 0) WITH NOWAIT;
     
 
-    IF @folder IS NOT NULL AND @version IS NOT NULL AND @version_date IS NOT NULL
+    IF @folder IS NOT NULL AND @version IS NOT NULL AND @versionDate IS NOT NULL
     BEGIN
-        RAISERROR(N'Only @version or @version_date can be provided at a time', 15, 0);
+        RAISERROR(N'Only @version or @versionDate can be provided at a time', 15, 0);
         SET @help = 1
     END
     
-    IF @project IS NULL OR @destination IS NULL
-        SET @listVersion = 1
 
     --help
     IF @folder IS NULL OR @help = 1
     BEGIN
+
         RAISERROR(N'Exports project binary data to an .ispac file quickly and effectively.
 Can export any version of project stored in MSDB without explicitly activating that version as current one.
 
@@ -105,100 +145,237 @@ Usage:
 ', 0, 0) WITH NOWAIT;
 
         RAISERROR(N'Parameters:
-    @folder             nvarchar(128)       = NULL  - Folder name of the project to be exported
-    ,@project           nvarchar(128)       = NULL  - Project name to be exported
-                                                      When not provided, then it forces @listVersion = 1
-    ,@destination       nvarchar(4000)      = NULL  - Path to destination .ispac file to which the project will be exported.
-                                                      When not provided, then it forces @listVersion = 1              
-    ,@version           bigint              = NULL  - Specifies version_lsn number of the project to be exported.
-                                                      Only @version or @version_date can be specified at a time.
-                                                      When no @version or @version date is specified then he current active version is exported.
-    ,@version_date      datetimeoffset(7)   = NULL  - Specifies version creation timestamp of the project to be exported.
-                                                      Only @version or @version_date can be specified at a time.
-                                                      When no @version or @version date is specified then he current active version is exported.
-    ,@listVersion       bit                 = 0     - When 1 then list of projects and versions is provided and no export is performed.
-                                                      When versions a relisted a command for exporting concrete version as well as command
-                                                      for eventual restoring of the version in SSISDB catalog is provided.
-    ,@create_path       bit                 = 0     - Specifies whether the path portion of the destination file should be automatically created
-
+    @folder             nvarchar(MAX)       = NULL      - Folder Name
+                                                          Comma Separated list of folders including wildcards can be provided to export multiple folders/projects.
+                                                          When multiple folders provided, @destination point to root extraction folder.
+    ,@project           nvarchar(MAX)       = ''%%''       - Project name to be exported
+                                                          Comma separated list of proceject names including wildcards can be provided to export multiple folders/projects
+                                                          When not provided, then it forces @doExport = 0 and all projects are listed
+    ,@destination       nvarchar(4000)      = NULL      - Path to destination .ispac file to which the project will be exported.
+                                                          If multiple folders are extracted, then @destination represents root extraction folder unless @folderInFileName = 1.
+                                                          .ispac files are then named by projects and stored in subfolders
+                                                          When not provided, then it forces @doExport = 0
+    ,@fileName          nvarchar(1024)      = NULL      - Name of the file without extension to which the project should be exported.
+                                                          If multiple objects are exported then forced to NULL
+                                                          When NULL then project_namec is used.
+                                                          IF @listAllversions = 1 then is ignored and file is named project_name_version', 0, 0) WITH NOWAIT;
+RAISERROR(N'    ,@doExport          bit                 = 1         - Specifies whether actual export should be done. When 0 then only list of versions is provided.
+    ,@version           bigint              = NULL      - Specifies version_lsn number of the project to be exported.
+                                                          When list of folders/projects is provided this is forced to NULL.
+                                                          Only @version or @versionDate can be specified at a time.
+                                                          When no @version or @version date is specified then he current active version is exported.
+    ,@versionDate      datetimeoffset(7)   = NULL       - Specifies timestamp of a version. Extract version valid at the timestamp.
+                                                          Only @version or @versionDate can be specified at a time.
+                                                          When no @version or @version date is specified then he current active version is exported.
+    ,@listAllVersions   bit                 = 0         - When 1 then list of all project versions is provided.
+    ,@createPath       bit                 = 0          - Specifies whether the path portion of the destination file should be automatically created
+                                                          Forced to 1 if multiple folders are extracted
+    ,@fileExtension     nvarchar(128)       = ''.ispac''  - Allows specify extension for file name for example .zip as .ispac is zip in fact
+    ,@folderInFileName  bit                 = 0         - Specifies if folder should be part of file name in case of multiple folders extraction.
+                                                          When 1 then the filename is prefixed by folder_name_
 ', 0, 0) WITH NOWAIT;
 
         RETURN;
     END
 
-
-    IF @listVersion = 1
+    IF NULLIF(@project, N'') IS NULL
     BEGIN
-        SELECT
-	        f.[name]                    AS [folder_name]
-	        ,p.[name]                   AS [project_name]
-	        ,p.project_id               AS [project_id]
-	        ,ov.object_version_lsn      AS [version]
-	        ,ov.created_time            AS [version_date]
-            ,ov.created_by              AS [created_by]
-            ,ov.[description]           AS [description]  
-            ,ov.[restored_by]           AS [restored_by]
-            ,ov.[last_restored_time]    AS [last_restored_time]
-	        ,CASE WHEN ov.object_version_lsn = p.object_version_lsn THEN 1 ELSE 0 END AS [is_current_version]
-            ,N'sp_SSISExportProject @folder = ''' + f.[name] + N''', @project = ''' + p.[name] + N''', @version = ' + CONVERT(nvarchar(20), ov.object_version_lsn) + N', @destination = ''' + ISNULL(@destination, N'<<path_to.ispac>>') + N'''' AS [export_command]
-            ,N'EXECUTE [catalog].[restore_project] @folder_name = ''' + f.[Name] + N''', @project_name = ''' + p.[name] + N''', @object_version_lsn = ' + CONVERT(nvarchar(20), ov.object_version_lsn) AS [restore_command]
-        FROM internal.object_versions ov
-        INNER JOIN internal.projects p ON p.project_id = ov.object_id AND ov.object_type = 20
-        INNER JOIN internal.folders f ON f.folder_id = p.folder_id
-        WHERE
-	        f.name = @folder
-            AND
-            (p.name = @project OR @project IS NULL)
+        SET @doExport = 0
+        SET @project = '%'
+    END
 
+    --Get list of folders
+    SET @xml = N'<i>' + REPLACE(@folder, ',', '</i><i>') + N'</i>';
+
+    WITH FolderNames AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(F.value('.', 'nvarchar(128)'))) AS FolderName
+        FROM @xml.nodes(N'/i') T(F)
+    )
+    INSERT INTO @folders (folder_id, folder_name)
+    SELECT DISTINCT
+        folder_id
+        ,name
+    FROM internal.folders F
+    INNER JOIN FolderNames  FN ON F.name LIKE FN.FolderName AND LEFT(FN.FolderName, 1) <> '-'
+    EXCEPT
+    SELECT
+        folder_id
+        ,name
+    FROM internal.folders F
+    INNER JOIN FolderNames  FN ON F.name LIKE RIGHT(FN.FolderName, LEN(FN.FolderName) - 1) AND LEFT(FN.FolderName, 1) = '-'
+
+
+    --Get projects
+    SET @xml = N'<i>' + REPLACE(@project, ',', '</i><i>') + N'</i>';
+    WITH ProjectNames AS (
+        SELECT DISTINCT
+            LTRIM(RTRIM(F.value('.', 'nvarchar(128)'))) AS ProjectName
+        FROM @xml.nodes(N'/i') T(F)
+    )
+    INSERT INTO @projects (project_id, folder_id, object_version_lsn, project_name)
+    SELECT DISTINCT
+        p.project_id
+        ,p.folder_id
+        ,p.object_version_lsn
+        ,p.name
+    FROM internal.projects p
+    INNER JOIN @folders f ON f.folder_id = p.folder_id
+    INNER JOIN ProjectNames PN ON p.[name] LIKE PN.ProjectName AND LEFT(PN.ProjectName, 1) <> '-'
+    EXCEPT
+    SELECT
+        p.project_id
+        ,p.folder_id
+        ,p.object_version_lsn
+        ,p.name
+    FROM internal.projects p
+    INNER JOIN @folders f ON f.folder_id = p.folder_id
+    INNER JOIN ProjectNames PN ON p.[name] LIKE RIGHT(PN.ProjectName, LEN(PN.ProjectName) - 1) AND LEFT(PN.ProjectName, 1) = '-'
+
+    --If multiple prolder
+    IF (SELECT COUNT(1) FROM @folders) > 1
+    BEGIN
+        SET @multiFolder = 1
+        SET @createPath = 1
+        SET @fileName = NULL
+    END
+
+    --If there are more projects, force @version to NULL
+    IF (SELECT COUNT(1) FROM @projects) > 1 
+    BEGIN
+        SET @version = NULL;
+        SET @fileName = NULL;
+    END
+
+    --if No destination, disable export
+    IF NULLIF(@destination, N'') IS NULL
+        SET @doExport = 0;
+
+    WITH ProjectVersions AS (
+    SELECT
+	    f.folder_name               AS [folder_name]
+	    ,p.project_name             AS [project_name]
+	    ,p.project_id               AS [project_id]
+	    ,ov.object_version_lsn      AS [version]
+	    ,ov.created_time            AS [version_date]
+        ,LEAD(ov.created_time, 1, '2999-12-31') OVER(PARTITION BY ov.object_id, ov.object_type ORDER BY ov.created_time) AS [version_valid_to]
+        ,ov.created_by              AS [created_by]
+        ,ov.[description]           AS [description]  
+        ,ov.[restored_by]           AS [restored_by]
+        ,ov.[last_restored_time]    AS [last_restored_time]
+	    ,CASE WHEN ov.object_version_lsn = p.object_version_lsn THEN 1 ELSE 0 END AS [is_current_version]
+        ,@destination + ISNULL(NULLIF(N'\', RIGHT(@destination, 1)), N'') + CASE WHEN @multiFolder = 1 AND @folderInFileName = 0 THEN f.folder_name + N'\' ELSE N'' END  [destination_path] 
+        ,CASE WHEN @multiFolder = 1 AND @folderInFileName = 1 THEN f.folder_name + N'_' ELSE N'' END +        
+         CASE 
+            WHEN @listAllVersions = 1 THEN p.project_name + N'_' + CONVERT(nvarchar(30), ov.object_version_lsn)
+            WHEN @fileName IS NULL THEN p.project_name
+            ELSE @fileName
+         END                         AS [destination_file]
+    FROM internal.object_versions ov
+    INNER JOIN @projects p ON p.project_id = ov.object_id and ov.object_type = 20
+    INNER JOIN @folders f ON f.folder_id = p.folder_id
+    )
+    INSERT INTO @versions (
+        [folder_name]       
+        ,[project_name]      
+        ,[project_id]        
+        ,[version]           
+        ,[version_date]      
+        ,[version_valid_to]  
+        ,[created_by]        
+        ,[description]       
+        ,[restored_by]       
+        ,[last_restored_time]
+        ,[is_current_version]
+        ,[destination_path]  
+        ,[destination_file]  
+    )
+    SELECT
+        [folder_name]       
+        ,[project_name]      
+        ,[project_id]        
+        ,[version]           
+        ,[version_date]      
+        ,[version_valid_to]  
+        ,[created_by]        
+        ,[description]       
+        ,[restored_by]       
+        ,[last_restored_time]
+        ,[is_current_version]
+        ,[destination_path]  
+        ,[destination_file]  
+    FROM ProjectVersions pv
+    WHERE
+        @listAllVersions = 1 
+        OR
+        (@versionDate IS NULL AND @version IS NULL AND [is_current_version] = 1)
+        OR
+        (@versionDate IS NOT NULL AND @version IS NULL AND @versionDate >= [version_date] AND  @versionDate < [version_valid_to] )
+        OR
+        (@version IS NOT NULL AND @versionDate IS NULL AND [version] = @version)
+
+    IF @doExport = 0
+    BEGIN
+        SELECT 
+            [folder_name]       
+            ,[project_name]      
+            ,[project_id]        
+            ,[version]           
+            ,[version_date]      
+            ,[version_valid_to]  
+            ,[created_by]        
+            ,[description]       
+            ,[restored_by]       
+            ,[last_restored_time]
+            ,[is_current_version]
+            --,[destination_path]  
+            --,[destination_file]  
+            ,N'sp_SSISExportProject @folder = ''' + [folder_name] + N''', @project = ''' + [project_name] + N''', @doExport = 1, @version = ' + CONVERT(nvarchar(20), [version]) + N', @destination = ''' + ISNULL([destination_path], N'<<path_to_file>>') + N'''' +
+                N', @fileName = ''' + [destination_file] + N''', @fileExtension = ''' +  @fileExtension + N''', @createPath = ' + CONVERT(nvarchar(10), @createPath)                       
+                AS [export_command]
+            ,N'EXECUTE [catalog].[restore_project] @folder_name = ''' + [folder_name] + N''', @project_name = ''' + [project_name] + N''', @object_version_lsn = ' + CONVERT(nvarchar(20), [version]) AS [restore_command]
+        FROM @versions
         ORDER BY
-        f.name, p.name, ov.created_time DESC
+            folder_name, project_name, [version_date] DESC
     END
     ELSE
     BEGIN
+        DECLARE
+             @export_folder nvarchar(128)
+            ,@export_project nvarchar(128)
+            ,@export_project_id bigint
+            ,@export_version bigint
+            ,@destination_file_name nvarchar(4000)
+
+        DECLARE cr CURSOR FAST_FORWARD FOR
         SELECT
-	        @project_id                 = p.project_id
-	        ,@version_lsn               = ov.object_version_lsn
-	        ,@version_date_internal     = ov.created_time
-	        ,@is_current                = CASE WHEN ov.object_version_lsn = p.object_version_lsn THEN 1 ELSE 0 END
-        FROM internal.object_versions ov
-        INNER JOIN internal.projects p ON p.project_id = ov.object_id AND ov.object_type = 20
-        INNER JOIN internal.folders f ON f.folder_id = p.folder_id
-        WHERE
-	        f.name = @folder
-            AND
-            (p.name = @project )
-            AND
-            (
-                (@version_date IS NULL AND @version IS NULL AND p.object_version_lsn = ov.object_version_lsn)
-                OR
-                (@version_date IS NOT NULL AND ov.created_time = @version_date AND @version IS NULL)
-                OR
-                (@version IS NOT NULL AND ov.object_version_lsn = @version AND @version_date IS NULL)
-            )
+            [folder_name]
+            ,[project_name]
+            ,[project_id]
+            ,[version]
+            ,[destination_path] + [destination_file] + @fileExtension AS [destination_file_name]
+        FROM @versions
 
-        IF @project_id IS NULL
-        BEGIN
-            SET @dateStr = CONVERT(nvarchar(50), @version_date);
+        OPEN cr;
 
-            IF (@version_date IS NOT NULL)
-                RAISERROR(N'Could not find project [%s]\[%s] with version_date: %s', 15, 10, @folder, @project, @dateStr) WITH NOWAIT;
-            ELSE IF (@version IS NOT NULL)
-                RAISERROR(N'Could not find project [%s]\[%s] with version: %I64d', 15, 10, @folder, @project, @version) WITH NOWAIT;
-            ELSE
-                RAISERROR(N'Could not find project [%s]\[%s]', 15, 10, @folder, @project) WITH NOWAIT;
-                
-            RETURN;
-        END
+        FETCH NEXT FROM cr INTO @export_folder, @export_project, @export_project_id, @export_version, @destination_file_name
 
         RAISERROR(N'-----------------', 0, 0) WITH NOWAIT;
-        RAISERROR(N'Exporting project [%s]\[%s] to file: %s', 0, 0, @folder, @project, @destination) WITH NOWAIT;
 
-        EXECUTE [dbo].[usp_ExportProjectClr]
-            @project_name			= @project
-	        ,@project_id			= @project_id
-	        ,@project_version		= @version_lsn
-	        ,@destination_file		= @destination
-            ,@create_path           = @create_path            
+        WHILE @@FETCH_STATUS = 0
+        BEGIN
+            RAISERROR(N'Exporting project [%s]\[%s](id: %I64d, v: %I64d) to file: %s', 0, 0, @export_folder, @export_project, @export_project_id, @export_version, @destination_file_name) WITH NOWAIT;
+
+            EXECUTE [dbo].[usp_ExportProjectClr]
+                @project_name           = @export_project
+                ,@project_id            = @export_project_id
+                ,@project_version       = @export_version
+                ,@destination_file      = @destination_file_name
+                ,@create_path           = @createPath            
+
+            FETCH NEXT FROM cr INTO @export_folder, @export_project, @export_project_id, @export_version, @destination_file_name
+        END
+
     END
 END
 GO
