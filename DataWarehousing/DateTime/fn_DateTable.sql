@@ -218,15 +218,165 @@ Usage:
 ------
 
 SELECT
-    *
+     [DateKey]                         
+    ,[Date]                            
+    ,[DateSequenceNumber]              
+    ,[DateName]                        
+    ,[DayOfWeek]                       
+    ,[DayOfWeekName]                   
+    ,[CalendarYear]                    
+    ,[CalendarYearName]                
+    ,[StartOfCalendarYear]             
+    ,[EndOfCalendarYear]               
+    ,[DayOfYear]                       
+    ,[FiscalYear]                      
+    ,[FiscalYearName]                  
+    ,[DayOfFiscalYear]                 
+    ,[StartOfFiscalYear]               
+    ,[EndOfFiscalYear]                 
+    ,[Month]                           
+    ,[MonthName]                       
+    ,[MonthOfYear]                     
+    ,[MonthOfYearName]                 
+    ,[StartOfMonth]                    
+    ,[EndOfMonth]                      
+    ,[MonthSequenceNumber]             
+    ,[MonthOfQuarter]                  
+    ,[MonthOfTrimester]                
+    ,[MonthOfSemester]                 
+    ,[DayOfMonth]                      
+    ,[DayOfMonthName]                  
+    ,[MonthDay]                        
+    ,[CalendarQuarter]                 
+    ,[CalendarQuarterName]             
+    ,[StartOfCalendarQuarter]          
+    ,[EndOfCalendarQuarter]            
+    ,[CalendarquarterSequenceNumber]   
+    ,[QuarterOfCalendarYear]           
+    ,[QuarterOfCalendarYearName]       
+    ,[CalendarTrimester]               
+    ,[CalendarTrimesterName]           
+    ,[CalendarTrimesterSequenceNumber] 
+    ,[TrimesterOfCalendarYear]         
+    ,[TrimesterOfCalendarYearName]     
+    ,[CalendarSemester]                
+    ,[CalendarSemesterName]            
+    ,[StartOfCalendarSemester]         
+    ,[EndOfCalendarSemester]           
+    ,[CalendarSemesterSequenceNumber]  
+    ,[SemesterOfCalendarYear]          
+    ,[SemesterOfCalendarYearName]      
+    ,[CalendarWeek]                    
+    ,[CalendarWeekName]                
+    ,[StartOfWeek]                     
+    ,[EndOfWeek]                       
+    ,[CalendarWeekSequenceNumber]      
+    ,[WeekOfCalendarYear]              
+    ,[WeekOfCalendarYearName]          
+    ,[ISOWeek]                         
+    ,[ISOWeekName]                     
+    ,[ISOWeekOfCalendarYear]           
+    ,[ISOWeekOfCalendarYearName]       
+    ,[YearOfISOWeek]                   
+    ,[StartOfYearOfISOWeek]            
+    ,[EndOfYearOfISOWeek]              
+    ,[FiscalWeek]                      
+    ,[FiscalWeekName]                  
+    ,[StartOfFiscalWeek]               
+    ,[EndOfFiscalWeek]                 
+    ,[WeekOfFiscalYear]                
+    ,[WeekOfFiscalYearName]            
+    ,[WeekOfFiscalSemester]            
+    ,[WeekOfFiscalQuarter]             
+    ,[FiscalMonth]                     
+    ,[FiscalMonthName]                 
+    ,[StartOfFiscalMonth]              
+    ,[EndOfFiscalMonth]                
+    ,[MonthOfFiscalYear]               
+    ,[MonthOfFiscalYearName]           
+    ,[MonthOfFiscalSemester]           
+    ,[MonthOfFiscalQuarter]            
+    ,[FiscalQuarter]                   
+    ,[FiscalQuarterName]               
+    ,[StartOfFiscalQuarter]            
+    ,[EndOfFiscalQuarter]              
+    ,[QuarterOfFiscalYear]             
+    ,[QuarterOfFiscalYearName]         
+    ,[QuarterOfFiscalSemester]         
+    ,[FiscalSemester]                  
+    ,[FiscalSemesterName]              
+    ,[StartOfFiscalSemester]           
+    ,[EndOfFiscalSemester]             
+    ,[SemesterOfFiscalYear]            
+    ,[SemesterOfFiscalYearName]        
+    ,[IsWeekDay]                       
+    ,[IsWeekend]                       
+    ,[IsHoliday]                       
+    ,[IsWorkingDay]                    
+    ,[DayTypeName]                     
+    ,[HolidayDayTypeName]              
+    ,[DaysInCalendarYear]              
+    ,[WeeksInCalendarYear]             
+    ,[ISOWeeksInCalendarYear]          
+    ,[DaysInMonth]                     
+    ,[DaysInCalendarQuarter]           
+    ,[DaysInCalendarTrimester]         
+    ,[DaysInCalendarSemester]          
+    ,[DaysInFiscalYear]                
+    ,[WeeksInFiscalYear]               
+    ,[DaysInFiscalMonth]               
+    ,[WeeksInFiscalMonth]              
+    ,[DaysInFiscalQuarter]             
+    ,[WeeksInFiscalQuarter]            
+    ,[DaysInFiscalSemester]            
+    ,[WeeksInFiscalSemester]           
 FROM dbo.fn_DateTable(
-      '20120101'
-     ,'20151231'
-     ,'en-US'   --US English
-    ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT
-    ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT
-    ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT
-    ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT) EN
+     /*                           @startDate*/ '20120101'
+    ,/*                             @endDate*/ '20151231'
+    ,/*                             @culture*/ 'en-US'
+    ,/*                      @firstDayOfWeek*/ DEFAULT
+    ,/*               @fiscalQuarterWeekType*/ DEFAULT
+    ,/*                 @lastDayOfFiscalYear*/ DEFAULT
+    ,/*             @lastDayOfFiscalYearType*/ DEFAULT
+    ,/*                @fiscalYearStartMonth*/ DEFAULT
+    ,/*                @dateNameFormatString*/ DEFAULT
+    ,/*                @yearNameFormatString*/ DEFAULT
+    ,/*          @fiscalYearNameFormatString*/ DEFAULT
+    ,/*               @monthNameFormatString*/ DEFAULT
+    ,/*         @monthOfYearNameFormatString*/ DEFAULT
+    ,/*            @monthDayNameFormatString*/ DEFAULT
+    ,/*          @weekNamePrefixFormatString*/ DEFAULT
+    ,/*                @weekNameFormatString*/ DEFAULT
+    ,/*          @weekNameSuffixFormatString*/ DEFAULT
+    ,/*       @quarterNamePrefixFormatString*/ DEFAULT
+    ,/*             @quarterNameFormatString*/ DEFAULT
+    ,/*       @quarterNameSuffixFormatString*/ DEFAULT
+    ,/*      @semesterNamePrefixFormatString*/ DEFAULT
+    ,/*            @semesterNameFormatString*/ DEFAULT
+    ,/*      @semesterNameSuffixFormatString*/ DEFAULT
+    ,/*     @trimesterNamePrefixFormatString*/ DEFAULT
+    ,/*           @trimesterNameFormatString*/ DEFAULT
+    ,/*     @trimesterNameSuffixFormatString*/ DEFAULT
+    ,/*    @fiscalWeekNamePrefixFormatString*/ DEFAULT
+    ,/*          @fiscalWeekNameFormatString*/ DEFAULT
+    ,/*    @fiscalWeekNameSuffixFormatString*/ DEFAULT
+    ,/*   @fiscalMonthNamePrefixFormatString*/ DEFAULT
+    ,/*         @fiscalMonthNameFormatString*/ DEFAULT
+    ,/*   @fiscalMonthNameSuffixFormatString*/ DEFAULT
+    ,/* @fiscalQuarterNamePrefixFormatString*/ DEFAULT
+    ,/*       @fiscalQuarterNameFormatString*/ DEFAULT
+    ,/* @fiscalQuarterNameSuffixFormatString*/ DEFAULT
+    ,/*@fiscalSemesterNamePrefixFormatString*/ DEFAULT
+    ,/*      @fiscalSemesterNameFormatString*/ DEFAULT
+    ,/*@fiscalSemesterNameSuffixFormatString*/ DEFAULT
+    ,/*            @dayOfWeeknameFormatSring*/ DEFAULT
+    ,/*                         @workingDays*/ DEFAULT
+    ,/*                            @holidays*/ DEFAULT
+    ,/*                  @workingDayTypeName*/ DEFAULT
+    ,/*               @nonWorkingDayTypeName*/ DEFAULT
+    ,/*                  @holidayDayTypeName*/ DEFAULT
+)
+
 
 
 To provide multiple translations of the names, you can INNER JOIN two calls with different cultures as in example below.
