@@ -109,7 +109,7 @@ FROM dbo.fn_DateTable(
     ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT) EN
 
 
-    To provide multiple translations of the names, you can INNER JOIN two calls with different cultures as in example below.
+To provide multiple translations of the names, you can INNER JOIN two calls with different cultures as in example below.
 
 SELECT
      EN.DateKey
@@ -128,7 +128,7 @@ FROM dbo.fn_DateTable(
 INNER JOIN dbo.fn_DateTable(
       '20120101'
      ,'20151231'
-     ,'zh-cn'   --Chinese (Simplified PRC)
+     ,'es-ES'   --Spanish (Spain)
   ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT
   ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT
   ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT
