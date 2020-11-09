@@ -218,118 +218,118 @@ Usage:
 ------
 
 SELECT
-     [DateKey]                         
-    ,[Date]                            
-    ,[DateSequenceNumber]              
-    ,[DateName]                        
-    ,[DayOfWeek]                       
-    ,[DayOfWeekName]                   
-    ,[CalendarYear]                    
-    ,[CalendarYearName]                
-    ,[StartOfCalendarYear]             
-    ,[EndOfCalendarYear]               
-    ,[DayOfYear]                       
-    ,[FiscalYear]                      
-    ,[FiscalYearName]                  
-    ,[DayOfFiscalYear]                 
-    ,[StartOfFiscalYear]               
-    ,[EndOfFiscalYear]                 
-    ,[Month]                           
-    ,[MonthName]                       
-    ,[MonthOfYear]                     
-    ,[MonthOfYearName]                 
-    ,[StartOfMonth]                    
-    ,[EndOfMonth]                      
-    ,[MonthSequenceNumber]             
-    ,[MonthOfQuarter]                  
-    ,[MonthOfTrimester]                
-    ,[MonthOfSemester]                 
-    ,[DayOfMonth]                      
-    ,[DayOfMonthName]                  
-    ,[MonthDay]                        
-    ,[CalendarQuarter]                 
-    ,[CalendarQuarterName]             
-    ,[StartOfCalendarQuarter]          
-    ,[EndOfCalendarQuarter]            
-    ,[CalendarquarterSequenceNumber]   
-    ,[QuarterOfCalendarYear]           
-    ,[QuarterOfCalendarYearName]       
-    ,[CalendarTrimester]               
-    ,[CalendarTrimesterName]           
-    ,[CalendarTrimesterSequenceNumber] 
-    ,[TrimesterOfCalendarYear]         
-    ,[TrimesterOfCalendarYearName]     
-    ,[CalendarSemester]                
-    ,[CalendarSemesterName]            
-    ,[StartOfCalendarSemester]         
-    ,[EndOfCalendarSemester]           
-    ,[CalendarSemesterSequenceNumber]  
-    ,[SemesterOfCalendarYear]          
-    ,[SemesterOfCalendarYearName]      
-    ,[CalendarWeek]                    
-    ,[CalendarWeekName]                
-    ,[StartOfWeek]                     
-    ,[EndOfWeek]                       
-    ,[CalendarWeekSequenceNumber]      
-    ,[WeekOfCalendarYear]              
-    ,[WeekOfCalendarYearName]          
-    ,[ISOWeek]                         
-    ,[ISOWeekName]                     
-    ,[ISOWeekOfCalendarYear]           
-    ,[ISOWeekOfCalendarYearName]       
-    ,[YearOfISOWeek]                   
-    ,[StartOfYearOfISOWeek]            
-    ,[EndOfYearOfISOWeek]              
-    ,[FiscalWeek]                      
-    ,[FiscalWeekName]                  
-    ,[StartOfFiscalWeek]               
-    ,[EndOfFiscalWeek]                 
-    ,[WeekOfFiscalYear]                
-    ,[WeekOfFiscalYearName]            
-    ,[WeekOfFiscalSemester]            
-    ,[WeekOfFiscalQuarter]             
-    ,[FiscalMonth]                     
-    ,[FiscalMonthName]                 
-    ,[StartOfFiscalMonth]              
-    ,[EndOfFiscalMonth]                
-    ,[MonthOfFiscalYear]               
-    ,[MonthOfFiscalYearName]           
-    ,[MonthOfFiscalSemester]           
-    ,[MonthOfFiscalQuarter]            
-    ,[FiscalQuarter]                   
-    ,[FiscalQuarterName]               
-    ,[StartOfFiscalQuarter]            
-    ,[EndOfFiscalQuarter]              
-    ,[QuarterOfFiscalYear]             
-    ,[QuarterOfFiscalYearName]         
-    ,[QuarterOfFiscalSemester]         
-    ,[FiscalSemester]                  
-    ,[FiscalSemesterName]              
-    ,[StartOfFiscalSemester]           
-    ,[EndOfFiscalSemester]             
-    ,[SemesterOfFiscalYear]            
-    ,[SemesterOfFiscalYearName]        
-    ,[IsWeekDay]                       
-    ,[IsWeekend]                       
-    ,[IsHoliday]                       
-    ,[IsWorkingDay]                    
-    ,[DayTypeName]                     
-    ,[HolidayDayTypeName]              
-    ,[DaysInCalendarYear]              
-    ,[WeeksInCalendarYear]             
-    ,[ISOWeeksInCalendarYear]          
-    ,[DaysInMonth]                     
-    ,[DaysInCalendarQuarter]           
-    ,[DaysInCalendarTrimester]         
-    ,[DaysInCalendarSemester]          
-    ,[DaysInFiscalYear]                
-    ,[WeeksInFiscalYear]               
-    ,[DaysInFiscalMonth]               
-    ,[WeeksInFiscalMonth]              
-    ,[DaysInFiscalQuarter]             
-    ,[WeeksInFiscalQuarter]            
-    ,[DaysInFiscalSemester]            
-    ,[WeeksInFiscalSemester]           
+     [DateKey]                          -- Unique date key in format yyyyMMdd                      
+    ,[Date]                             -- Date
+    ,[DateSequenceNumber]               -- Number of days since 1900-01-01
+    ,[DateName]                         -- Date as string
+    ,[DayOfWeek]                        -- Week day number
+    ,[DayOfWeekName]                    -- Name of the week day
+    ,[CalendarYear]                     -- Calendar year
+    ,[CalendarYearName]                 -- Calendar year as string
+    ,[StartOfCalendarYear]              -- Date representing start of calendar year
+    ,[EndOfCalendarYear]                -- Date representing end of calendary year
+    ,[DayOfYear]                        -- Day number in year
+    ,[FiscalYear]                       -- Fiscal year
+    ,[FiscalYearName]                   -- Fiscal year as string
+    ,[DayOfFiscalYear]                  -- Day number in fiscal year
+    ,[StartOfFiscalYear]                -- Date representing start of fiscal year
+    ,[EndOfFiscalYear]                  -- Date representing end of fiscal year
+    ,[Month]                            -- Unique identification of year in format yyyyMM
+    ,[MonthName]                        -- Unique month name
+    ,[MonthOfYear]                      -- Month number within year
+    ,[MonthOfYearName]                  -- Month name
+    ,[StartOfMonth]                     -- Date representing start of month
+    ,[EndOfMonth]                       -- Date representing end of month
+    ,[MonthSequenceNumber]              -- Number of months since 1900-01-01
+    ,[MonthOfQuarter]                   -- Month number within quarter
+    ,[MonthOfTrimester]                 -- Month number within trimestar
+    ,[MonthOfSemester]                  -- Month number within semester
+    ,[DayOfMonth]                       -- Day of month
+    ,[DayOfMonthName]                   -- Name of the day of month
+    ,[MonthDay]                         -- Unique identification of day within calendar months in format MMdd.
+    ,[CalendarQuarter]                  -- Unique identification of calendar quarter in format yyyyQ
+    ,[CalendarQuarterName]              -- Calendar quarter as unique string
+    ,[StartOfCalendarQuarter]           -- Date representing start of calendar quarter
+    ,[EndOfCalendarQuarter]             -- Date representing end of calendar quarter
+    ,[CalendarquarterSequenceNumber]    -- Number of calendar quarters since 1900-01-01
+    ,[QuarterOfCalendarYear]            -- Quarter number within calendar year
+    ,[QuarterOfCalendarYearName]        -- Quarter withing calendar year as string
+    ,[CalendarTrimester]                -- Unique identification of calendar trimester in format yyyyT
+    ,[CalendarTrimesterName]            -- Calendar trimester as unique string
+    ,[CalendarTrimesterSequenceNumber]  -- Number of calendar trimesters since 1900-01-01 
+    ,[TrimesterOfCalendarYear]          -- Trimester number within calendar year
+    ,[TrimesterOfCalendarYearName]      -- Trimestar withing calendar year as string
+    ,[CalendarSemester]                 -- Unique identification of calendar semester in format yyyyS
+    ,[CalendarSemesterName]             -- Calendar Semester as unique string
+    ,[StartOfCalendarSemester]          -- Date representing start of calendar semester
+    ,[EndOfCalendarSemester]            -- Date representing end of calendar semester
+    ,[CalendarSemesterSequenceNumber]   -- Number of calendar semesters since 1900-01-01
+    ,[SemesterOfCalendarYear]           -- Number of semester within calendar year
+    ,[SemesterOfCalendarYearName]       -- Semester within calendar year as string
+    ,[CalendarWeek]                     -- Unique identifrication of calendar week in format yyyyww
+    ,[CalendarWeekName]                 -- Calendar week as unique string
+    ,[StartOfWeek]                      -- Start of calendar week
+    ,[EndOfWeek]                        -- End of calendar week
+    ,[CalendarWeekSequenceNumber]       -- Number of weeks since 1900-01-01
+    ,[WeekOfCalendarYear]               -- Week number within calendar year
+    ,[WeekOfCalendarYearName]           -- Week within calendar year as string
+    ,[ISOWeek]                          -- Unique identification of ISO Week
+    ,[ISOWeekName]                      -- ISO Week as unique string
+    ,[ISOWeekOfCalendarYear]            -- Number of ISO week within calendar year
+    ,[ISOWeekOfCalendarYearName]        -- ISO week within calendar year as string
+    ,[YearOfISOWeek]                    -- Year of ISO Week (For first week it can be previous year and for last week it can be next year)
+    ,[StartOfYearOfISOWeek]             -- Date representing start of ISO year (First day of first ISO Week)
+    ,[EndOfYearOfISOWeek]               -- Date representing end of ISO year (Last day of last ISO Week)
+    ,[FiscalWeek]                       -- Unique idntification of fiscal week in format yyyyww
+    ,[FiscalWeekName]                   -- Week of Fiscal year as unique string
+    ,[StartOfFiscalWeek]                -- Date representing start of fiscal week
+    ,[EndOfFiscalWeek]                  -- Date representing end of fiscal week
+    ,[WeekOfFiscalYear]                 -- Number of week within fiscal year
+    ,[WeekOfFiscalYearName]             -- Week within fiscal year as string
+    ,[WeekOfFiscalSemester]             -- Week number within fiscal semester
+    ,[WeekOfFiscalQuarter]              -- Week number within within fiscal quarter
+    ,[FiscalMonth]                      -- Unique identification of fiscal month in format yyyyMM
+    ,[FiscalMonthName]                  -- Fiscal month as unique string
+    ,[StartOfFiscalMonth]               -- Date representing start of fiscal month
+    ,[EndOfFiscalMonth]                 -- Date representing end of fiscal month
+    ,[MonthOfFiscalYear]                -- Month number within fiscal year
+    ,[MonthOfFiscalYearName]            -- Month within fiscal year as string
+    ,[MonthOfFiscalSemester]            -- Month number withinfiscal semester
+    ,[MonthOfFiscalQuarter]             -- Month number within fiscal quarter
+    ,[FiscalQuarter]                    -- Unique identification of fiscal quarter in format yyyyQ
+    ,[FiscalQuarterName]                -- Fiscal quarter as unique string
+    ,[StartOfFiscalQuarter]             -- Date representing start of fiscal quarter
+    ,[EndOfFiscalQuarter]               -- Date representing end of fiscal quarter
+    ,[QuarterOfFiscalYear]              -- Quarter number within fiscal year
+    ,[QuarterOfFiscalYearName]          -- Quarter within fiscal year as string
+    ,[QuarterOfFiscalSemester]          -- Quarter number within fiscal semester
+    ,[FiscalSemester]                   -- Unique identification of fiscal semester in format yyyyS
+    ,[FiscalSemesterName]               -- Fiscal semester as unique string
+    ,[StartOfFiscalSemester]            -- Date representing start of fiscal semester
+    ,[EndOfFiscalSemester]              -- Date representing end of fiscal semester
+    ,[SemesterOfFiscalYear]             -- Semester number within fiscal year
+    ,[SemesterOfFiscalYearName]         -- Semester within fiscal year as string
+    ,[IsWeekDay]                        -- Identifies whether the day is a week day
+    ,[IsWeekend]                        -- Identifies whether the day is weekend
+    ,[IsHoliday]                        -- Identifies whether the day is holiday
+    ,[IsWorkingDay]                     -- Identifies whether the day is Working day = IsWeekDay and is not Holiday
+    ,[DayTypeName]                      -- Working/Non Working day as string
+    ,[HolidayDayTypeName]               -- Working/Non Working/Holiday as string
+    ,[DaysInCalendarYear]               -- Number of days in calendar year
+    ,[WeeksInCalendarYear]              -- Number of weeks in calendar year
+    ,[ISOWeeksInCalendarYear]           -- Number of ISO weeks in calendar year
+    ,[DaysInMonth]                      -- Number of days in month
+    ,[DaysInCalendarQuarter]            -- Number of days in calendar quarter
+    ,[DaysInCalendarTrimester]          -- Number of days in calendar trimester
+    ,[DaysInCalendarSemester]           -- Number of days in calendar semester
+    ,[DaysInFiscalYear]                 -- Number of days in fiscal year
+    ,[WeeksInFiscalYear]                -- Number of weeks in fiscal year
+    ,[DaysInFiscalMonth]                -- Number of days in fiscal month
+    ,[WeeksInFiscalMonth]               -- Number of weeks in fiscal month
+    ,[DaysInFiscalQuarter]              -- Number of days in fiscal quarter
+    ,[WeeksInFiscalQuarter]             -- Number of week sin fiscal quarter
+    ,[DaysInFiscalSemester]             -- Number of days in fiscal semester
+    ,[WeeksInFiscalSemester]            -- Number of weeks in fiscal semester
 FROM dbo.fn_DateTable(
      /*                           @startDate*/ '20120101'
     ,/*                             @endDate*/ '20151231'
