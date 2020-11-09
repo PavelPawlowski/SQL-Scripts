@@ -2,13 +2,13 @@ IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID('[dbo].[fn_
     EXECUTE ('CREATE FUNCTION [dbo].[fn_DateTable]() RETURNS TABLE AS RETURN(SELECT ''Container for fn_DateTable() (C) Pavel Pawlowski'' AS DateTable)');
 GO
 /* ****************************************************
-fn_DateTable v 1.0 (C) 2018 Pavel Pawlowski
+fn_DateTable v 1.01 (C) 2018 - 2020 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2018 Pavel Pawlowski
+Copyright (c) 2018 - 2020 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -32,14 +32,14 @@ Description:
 
 Parameters:
      @startDate                                 date                                    -- Start date of the sequence to Generate
-	,@endDate                                   date                                    -- End date of the sequence to Generate
+    ,@endDate                                   date                                    -- End date of the sequence to Generate
 
     ,@culture                                   nvarchar(10)    = N'en-US'              -- Culture to be used for names generation
 
     ,@dateNameFormatString                      nvarchar(30)    = N'd'                  -- Format String for date name generation
     
-    ,@yearNameFormatString                      varchar(30)     = N'yyyy'               -- Format String for the Year 
-    ,@fiscalYearNameFormatString                varchar(30)     = N'\F\Y yyyy'          -- Format String for the Year 
+    ,@yearNameFormatString                      varchar(30)     = N'yyyy'               -- Format String for the name of year 
+    ,@fiscalYearNameFormatString                varchar(30)     = N'\F\Y yyyy'          -- Format String for the name of fiscal zyar 
 
 
     ,@monthNameFormatString                     nvarchar(30)    = N'Y'                  -- Format string for month name generation
@@ -81,7 +81,7 @@ Parameters:
     ,@dayOfWeeknameFormatSring                  nvarchar(30)    = N'dddd'               -- Format string for the Day of Week name
 
     ,@firstDayOfWeek                            tinyint         = 1                     -- First Day Of Week. 1 = Monday - 7 = Sunday
-    ,@FiscalQuarterWeekType                     smallint        = 445                   -- Type of Fiscal Quarter Week Types. Supported 445, 454, 544 (Specifies how the 13 weeks quarters are distributed among weeks)
+    ,@fiscalQuarterWeekType                     smallint        = 445                   -- Type of Fiscal Quarter Week Types. Supported 445, 454, 544 (Specifies how the 13 weeks quarters are distributed among weeks)
     ,@lastDayOfFiscalYear                       tinyint         = 7                     -- Last Day of Fiscal Year. 1 = Monday - 7 = Sunday
     ,@lastDayOfFiscalYearType                   tinyint         = 1                     -- Specifies how the last day of fiscal yer is determined. 1 = Last @lastDayOfFiscalYear in the fiscal year end month. 2 = @lastDayOfFiscalYear closes to the fiscal year end month
     ,@fiscalYearStartMonth                      tinyint         = 9                     -- Specifies the Month at which the Fiscal year Starts
@@ -96,7 +96,7 @@ For details on Format Strings, review MSDN - FORMAT(Transact-SQL): https://msdn.
 For details on cultures see MDSDN - National Language Support (NLS) API Reference: https://msdn.microsoft.com/en-us/goglobal/bb896001.aspx
 
 Usage:
-    To provide multiple translations of the names, you can INNER JOIN twoc alls with different culture as in example below.
+    To provide multiple translations of the names, you can INNER JOIN two calls with different cultures as in example below.
 
 SELECT
      EN.DateKey
@@ -173,7 +173,7 @@ ALTER FUNCTION [dbo].[fn_DateTable] (
     ,@dayOfWeeknameFormatSring                  nvarchar(30)    = N'dddd'               -- Format string for the Day of Week name
 
     ,@firstDayOfWeek                            tinyint         = 1                     -- First Day Of Week. 1 = Monday - 7 = Sunday
-    ,@FiscalQuarterWeekType                     smallint        = 445                   -- Type of Fiscal Quarter Week Types. Supported 445, 454, 544 (Specifies how the 13 weeks quarters are distributed among weeks)
+    ,@fiscalQuarterWeekType                     smallint        = 445                   -- Type of Fiscal Quarter Week Types. Supported 445, 454, 544 (Specifies how the 13 weeks quarters are distributed among weeks)
     ,@lastDayOfFiscalYear                       tinyint         = 7                     -- Last Day of Fiscal Year. 1 = Monday - 7 = Sunday
     ,@lastDayOfFiscalYearType                   tinyint         = 1                     -- Specifies how the last day of fiscal yer is determined. 1 = Last @lastDayOfFiscalYear in the fiscal year end month. 2 = @lastDayOfFiscalYear closes to the fiscal year end month
     ,@fiscalYearStartMonth                      tinyint         = 9                     -- Specifies the Month at which the Fiscal year Starts
@@ -310,7 +310,7 @@ RETURN (
 
             ,ISNULL(HT.IsHoliday, 0)                                                                                AS [IsHoliday]
 
-            ,CASE WHEN @FiscalQuarterWeekType IN (445,454,544) THEN @FiscalQuarterWeekType ELSE 1/0 END             AS [FiscalQuarterWeekType]
+            ,CASE WHEN @fiscalQuarterWeekType IN (445,454,544) THEN @fiscalQuarterWeekType ELSE 1/0 END             AS [FiscalQuarterWeekType]
         FROM [Dates] D
         INNER JOIN [FiscalYears] FY ON D.[Date] BETWEEN FY.[StartOfFiscalYear] AND FY.[EndOfFiscalYear]
         LEFT JOIN HolidaysTable HT ON D.[Date] = HT.[HolidayDate]
