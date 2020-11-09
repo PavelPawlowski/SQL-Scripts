@@ -39,7 +39,7 @@ Parameters:
     ,@dateNameFormatString                      nvarchar(30)    = N'd'                  -- Format String for date name generation
     
     ,@yearNameFormatString                      varchar(30)     = N'yyyy'               -- Format String for the name of year 
-    ,@fiscalYearNameFormatString                varchar(30)     = N'\F\Y yyyy'          -- Format String for the name of fiscal zyar 
+    ,@fiscalYearNameFormatString                varchar(30)     = N'\F\Y yyyy'          -- Format String for the name of fiscal year 
 
 
     ,@monthNameFormatString                     nvarchar(30)    = N'Y'                  -- Format string for month name generation
@@ -96,6 +96,19 @@ For details on Format Strings, review MSDN - FORMAT(Transact-SQL): https://msdn.
 For details on cultures see MDSDN - National Language Support (NLS) API Reference: https://msdn.microsoft.com/en-us/goglobal/bb896001.aspx
 
 Usage:
+
+SELECT
+    *
+FROM dbo.fn_DateTable(
+      '20120101'
+     ,'20151231'
+     ,'en-US'   --US English
+    ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT
+    ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT
+    ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT
+    ,DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT, DEFAULT) EN
+
+
     To provide multiple translations of the names, you can INNER JOIN two calls with different cultures as in example below.
 
 SELECT
