@@ -2,7 +2,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID('[dbo].[fn_
     EXECUTE ('CREATE FUNCTION [dbo].[fn_DateTable]() RETURNS TABLE AS RETURN(SELECT ''Container for fn_DateTable() (C) Pavel Pawlowski'' AS DateTable)');
 GO
 /* ****************************************************
-fn_DateTable v 1.01 (C) 2018 - 2020 Pavel Pawlowski
+fn_DateTable v 1.1 (C) 2018 - 2020 Pavel Pawlowski
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
@@ -35,6 +35,12 @@ Parameters:
     ,@endDate                                   date                                    -- End date of the sequence to Generate
 
     ,@culture                                   nvarchar(10)    = N'en-US'              -- Culture to be used for names generation
+
+    ,@firstDayOfWeek                            tinyint         = 1                     -- First Day Of Week. 1 = Monday - 7 = Sunday
+    ,@fiscalQuarterWeekType                     smallint        = 445                   -- Type of Fiscal Quarter Week Types. Supported 445, 454, 544 (Specifies how the 13 weeks quarters are distributed among weeks)
+    ,@lastDayOfFiscalYear                       tinyint         = 7                     -- Last Day of Fiscal Year. 1 = Monday - 7 = Sunday
+    ,@lastDayOfFiscalYearType                   tinyint         = 1                     -- Specifies how the last day of fiscal yer is determined. 1 = Last @lastDayOfFiscalYear in the fiscal year end month. 2 = @lastDayOfFiscalYear closes to the fiscal year end month
+    ,@fiscalYearStartMonth                      tinyint         = 9                     -- Specifies the Month at which the Fiscal year Starts
 
     ,@dateNameFormatString                      nvarchar(30)    = N'd'                  -- Format String for date name generation
     
@@ -80,12 +86,6 @@ Parameters:
 
     ,@dayOfWeeknameFormatSring                  nvarchar(30)    = N'dddd'               -- Format string for the Day of Week name
 
-    ,@firstDayOfWeek                            tinyint         = 1                     -- First Day Of Week. 1 = Monday - 7 = Sunday
-    ,@fiscalQuarterWeekType                     smallint        = 445                   -- Type of Fiscal Quarter Week Types. Supported 445, 454, 544 (Specifies how the 13 weeks quarters are distributed among weeks)
-    ,@lastDayOfFiscalYear                       tinyint         = 7                     -- Last Day of Fiscal Year. 1 = Monday - 7 = Sunday
-    ,@lastDayOfFiscalYearType                   tinyint         = 1                     -- Specifies how the last day of fiscal yer is determined. 1 = Last @lastDayOfFiscalYear in the fiscal year end month. 2 = @lastDayOfFiscalYear closes to the fiscal year end month
-    ,@fiscalYearStartMonth                      tinyint         = 9                     -- Specifies the Month at which the Fiscal year Starts
-
     ,@workingDays                               char(7)         = '1111100'             -- "Bitmask of working days where left most is Monday and RightMost is Sunday: MTWTFSS. Working Days are considered Week Days, Non Working days are considered Weekend
     ,@holidays                                  varchar(max)    = ''                    -- Comma Separated list of holidays. Holidays can be specified in the MMdd or yyyyMMdd.
     ,@workingDayTypeName                        nvarchar(30)    = 'Working day'         -- Name for the working days
@@ -94,8 +94,128 @@ Parameters:
 
 For details on Format Strings, review MSDN - FORMAT(Transact-SQL): https://msdn.microsoft.com/en-us/library/hh213505.aspx
 For details on cultures see MDSDN - National Language Support (NLS) API Reference: https://msdn.microsoft.com/en-us/goglobal/bb896001.aspx
+For details on ISO weeks look at: https://en.wikipedia.org/wiki/ISO_week_date
+
+Output Columns as @dateTable table variable
+-------------------------------------------
+DECLARE @dateTable TABLE (
+     [DateKey]                          int             -- Unique date key in format yyyyMMdd
+    ,[Date]                             date            -- Date
+    ,[DateSequenceNumber]               int             -- Number of days since 1900-01-01
+    ,[DateName]                         nvarchar(30)    -- Date as string
+    ,[DayOfWeek]                        tinyint         -- Week day number
+    ,[DayOfWeekName]                    nvarchar(30)    -- Name of the week day
+    ,[CalendarYear]                     int             -- Calendar year
+    ,[CalendarYearName]                 nvarchar(30)    -- Calendar year as string
+    ,[StartOfCalendarYear]              date            -- Date representing start of calendar year
+    ,[EndOfCalendarYear]                date            -- Date representing end of calendary year
+    ,[DayOfYear]                        smallint        -- Day number in year
+    ,[FiscalYear]                       int             -- Fiscal year
+    ,[FiscalYearName]                   nvarchar(30)    -- Fiscal year as string
+    ,[DayOfFiscalYear]                  smallint        -- Day number in fiscal year
+    ,[StartOfFiscalYear]                date            -- Date representing start of fiscal year
+    ,[EndOfFiscalYear]                  date            -- Date representing end of fiscal year
+    ,[Month]                            int             -- Unique identification of year in format yyyyMM
+    ,[MonthName]                        nvarchar(30)    -- Unique month name
+    ,[MonthOfYear]                      tinyint         -- Month number within year
+    ,[MonthOfYearName]                  nvarchar(30)    -- Month name
+    ,[StartOfMonth]                     date            -- Date representing start of month
+    ,[EndOfMonth]                       date            -- Date representing end of month
+    ,[MonthSequenceNumber]              int             -- Number of months since 1900-01-01
+    ,[MonthOfQuarter]                   tinyint         -- Month number within quarter
+    ,[MonthOfTrimester]                 tinyint         -- Month number within trimestar
+    ,[MonthOfSemester]                  tinyint         -- Month number within semester
+    ,[DayOfMonth]                       tinyint         -- Day of month
+    ,[DayOfMonthName]                   nvarchar(30)    -- Name of the day of month
+    ,[MonthDay]                         smallint        -- Unique identification of day within calendar months in format MMdd.
+    ,[CalendarQuarter]                  int             -- Unique identification of calendar quarter in format yyyyQ
+    ,[CalendarQuarterName]              nvarchar(30)    -- Calendar quarter as unique string
+    ,[StartOfCalendarQuarter]           date            -- Date representing start of calendar quarter
+    ,[EndOfCalendarQuarter]             date            -- Date representing end of calendar quarter
+    ,[CalendarquarterSequenceNumber]    int             -- Number of calendar quarters since 1900-01-01
+    ,[QuarterOfCalendarYear]            tinyint         -- Quarter number within calendar year
+    ,[QuarterOfCalendarYearName]        nvarchar(30)    -- Quarter withing calendar year as string
+    ,[CalendarTrimester]                int             -- Unique identification of calendar trimester in format yyyyT
+    ,[CalendarTrimesterName]            nvarchar(30)    -- Calendar trimester as unique string
+    ,[CalendarTrimesterSequenceNumber]  int             -- Number of calendar trimesters since 1900-01-01
+    ,[TrimesterOfCalendarYear]          tinyint         -- Trimester number within calendar year
+    ,[TrimesterOfCalendarYearName]      nvarchar(30)    -- Trimestar withing calendar year as string
+    ,[CalendarSemester]                 int             -- Unique identification of calendar semester in format yyyyS
+    ,[CalendarSemesterName]             nvarchar(30)    -- Calendar Semester as unique string
+    ,[StartOfCalendarSemester]          date            -- Date representing start of calendar semester
+    ,[EndOfCalendarSemester]            date            -- Date representing end of calendar semester
+    ,[CalendarSemesterSequenceNumber]   int             -- Number of calendar semesters since 1900-01-01
+    ,[SemesterOfCalendarYear]           tinyint         -- Number of semester within calendar year
+    ,[SemesterOfCalendarYearName]       nvarchar(30)    -- Semester within calendar year as string
+    ,[CalendarWeek]                     int             -- Unique identifrication of calendar week in format yyyyww
+    ,[CalendarWeekName]                 nvarchar(30)    -- Calendar week as unique string
+    ,[StartOfWeek]                      date            -- Start of calendar week
+    ,[EndOfWeek]                        date            -- End of calendar week
+    ,[CalendarWeekSequenceNumber]       int             -- Number of weeks since 1900-01-01
+    ,[WeekOfCalendarYear]               tinyint         -- Week number within calendar year
+    ,[WeekOfCalendarYearName]           nvarchar(30)    -- Week within calendar year as string
+    ,[ISOWeek]                          int             -- Unique identification of ISO Week
+    ,[ISOWeekName]                      nvarchar(30)    -- ISO Week as unique string
+    ,[ISOWeekOfCalendarYear]            tinyint         -- Number of ISO week within calendar year
+    ,[ISOWeekOfCalendarYearName]        nvarchar(30)    -- ISO week within calendar year as string
+    ,[YearOfISOWeek]                    int             -- Year of ISO Week (For first week it can be previous year and for last week it can be next year)
+    ,[StartOfYearOfISOWeek]             date            -- Date representing start of ISO year (First day of first ISO Week)
+    ,[EndOfYearOfISOWeek]               date            -- Date representing end of ISO year (Last day of last ISO Week)
+    ,[FiscalWeek]                       int             -- Unique idntification of fiscal week in format yyyyww
+    ,[FiscalWeekName]                   nvarchar(30)    -- Week of Fiscal year as unique string
+    ,[StartOfFiscalWeek]                date            -- Date representing start of fiscal week
+    ,[EndOfFiscalWeek]                  date            -- Date representing end of fiscal week
+    ,[WeekOfFiscalYear]                 int             -- Number of week within fiscal year
+    ,[WeekOfFiscalYearName]             nvarchar(30)    -- Week within fiscal year as string
+    ,[WeekOfFiscalSemester]             tinyint         -- Week number within fiscal semester
+    ,[WeekOfFiscalQuarter]              tinyint         -- Week number within within fiscal quarter
+    ,[FiscalMonth]                      int             -- Unique identification of fiscal month in format yyyyMM
+    ,[FiscalMonthName]                  nvarchar(30)    -- Fiscal month as unique string
+    ,[StartOfFiscalMonth]               date            -- Date representing start of fiscal month
+    ,[EndOfFiscalMonth]                 date            -- Date representing end of fiscal month
+    ,[MonthOfFiscalYear]                tinyint         -- Month number within fiscal year
+    ,[MonthOfFiscalYearName]            nvarchar(30)    -- Month within fiscal year as string
+    ,[MonthOfFiscalSemester]            tinyint         -- Month number withinfiscal semester
+    ,[MonthOfFiscalQuarter]             tinyint         -- Month number within fiscal quarter
+    ,[FiscalQuarter]                    int             -- Unique identification of fiscal quarter in format yyyyQ
+    ,[FiscalQuarterName]                nvarchar(30)    -- Fiscal quarter as unique string
+    ,[StartOfFiscalQuarter]             date            -- Date representing start of fiscal quarter
+    ,[EndOfFiscalQuarter]               date            -- Date representing end of fiscal quarter
+    ,[QuarterOfFiscalYear]              tinyint         -- Quarter number within fiscal year
+    ,[QuarterOfFiscalYearName]          nvarchar(30)    -- Quarter within fiscal year as string
+    ,[QuarterOfFiscalSemester]          tinyint         -- Quarter number within fiscal semester
+    ,[FiscalSemester]                   int             -- Unique identification of fiscal semester in format yyyyS
+    ,[FiscalSemesterName]               nvarchar(30)    -- Fiscal semester as unique string
+    ,[StartOfFiscalSemester]            date            -- Date representing start of fiscal semester
+    ,[EndOfFiscalSemester]              date            -- Date representing end of fiscal semester
+    ,[SemesterOfFiscalYear]             tinyint         -- Semester number within fiscal year
+    ,[SemesterOfFiscalYearName]         nvarchar(30)    -- Semester within fiscal year as string
+    ,[IsWeekDay]                        bit             -- Identifies whether the day is a week day
+    ,[IsWeekend]                        bit             -- Identifies whether the day is weekend
+    ,[IsHoliday]                        bit             -- Identifies whether the day is holiday
+    ,[IsWorkingDay]                     bit             -- Identifies whether the day is Working day = IsWeekDay and is not Holiday
+    ,[DayTypeName]                      nvarchar(30)    -- Working/Non Working day as string
+    ,[HolidayDayTypeName]               nvarchar(30)    -- Working/Non Working/Holiday as string
+    ,[DaysInCalendarYear]               smallint        -- Number of days in calendar year
+    ,[WeeksInCalendarYear]              tinyint         -- Number of weeks in calendar year
+    ,[ISOWeeksInCalendarYear]           tinyint         -- Number of ISO weeks in calendar year
+    ,[DaysInMonth]                      tinyint         -- Number of days in month
+    ,[DaysInCalendarQuarter]            tinyint         -- Number of days in calendar quarter
+    ,[DaysInCalendarTrimester]          tinyint         -- Number of days in calendar trimester
+    ,[DaysInCalendarSemester]           tinyint         -- Number of days in calendar semester
+    ,[DaysInFiscalYear]                 smallint        -- Number of days in fiscal year
+    ,[WeeksInFiscalYear]                tinyint         -- Number of weeks in fiscal year
+    ,[DaysInFiscalMonth]                tinyint         -- Number of days in fiscal month
+    ,[WeeksInFiscalMonth]               tinyint         -- Number of weeks in fiscal month
+    ,[DaysInFiscalQuarter]              tinyint         -- Number of days in fiscal quarter
+    ,[WeeksInFiscalQuarter]             tinyint         -- Number of week sin fiscal quarter
+    ,[DaysInFiscalSemester]             tinyint         -- Number of days in fiscal semester
+    ,[WeeksInFiscalSemester]            tinyint         -- Number of weeks in fiscal semester
+    ,PRIMARY KEY CLUSTERED ([DateKey])
+)
 
 Usage:
+------
 
 SELECT
     *
@@ -141,6 +261,13 @@ ALTER FUNCTION [dbo].[fn_DateTable] (
 
     ,@culture                                   nvarchar(10)    = N'en-US'              -- Culture to be used for names generation
 
+    ,@firstDayOfWeek                            tinyint         = 1                     -- First Day Of Week. 1 = Monday - 7 = Sunday
+    ,@fiscalQuarterWeekType                     smallint        = 445                   -- Type of Fiscal Quarter Week Types. Supported 445, 454, 544 (Specifies how the 13 weeks quarters are distributed among weeks)
+    ,@lastDayOfFiscalYear                       tinyint         = 7                     -- Last Day of Fiscal Year. 1 = Monday - 7 = Sunday
+    ,@lastDayOfFiscalYearType                   tinyint         = 1                     -- Specifies how the last day of fiscal yer is determined. 1 = Last @lastDayOfFiscalYear in the fiscal year end month. 2 = @lastDayOfFiscalYear closes to the fiscal year end month
+    ,@fiscalYearStartMonth                      tinyint         = 9                     -- Specifies the Month at which the Fiscal year Starts
+
+
     ,@dateNameFormatString                      nvarchar(30)    = N'd'                  -- Format String for date name generation
     
     ,@yearNameFormatString                      varchar(30)     = N'yyyy'               -- Format String for the Year 
@@ -185,12 +312,6 @@ ALTER FUNCTION [dbo].[fn_DateTable] (
 
     ,@dayOfWeeknameFormatSring                  nvarchar(30)    = N'dddd'               -- Format string for the Day of Week name
 
-    ,@firstDayOfWeek                            tinyint         = 1                     -- First Day Of Week. 1 = Monday - 7 = Sunday
-    ,@fiscalQuarterWeekType                     smallint        = 445                   -- Type of Fiscal Quarter Week Types. Supported 445, 454, 544 (Specifies how the 13 weeks quarters are distributed among weeks)
-    ,@lastDayOfFiscalYear                       tinyint         = 7                     -- Last Day of Fiscal Year. 1 = Monday - 7 = Sunday
-    ,@lastDayOfFiscalYearType                   tinyint         = 1                     -- Specifies how the last day of fiscal yer is determined. 1 = Last @lastDayOfFiscalYear in the fiscal year end month. 2 = @lastDayOfFiscalYear closes to the fiscal year end month
-    ,@fiscalYearStartMonth                      tinyint         = 9                     -- Specifies the Month at which the Fiscal year Starts
-
     ,@workingDays                               char(7)         = '1111100'             -- "Bitmask of working days where left most is Monday and RightMost is Sunday: MTWTFSS. Working Days are considered Week Days, Non Working days are considered Weekend
     ,@holidays                                  varchar(max)    = ''                    -- Comma Separated list of holidays. Holidays can be specified in the MMdd or yyyyMMdd.
     ,@workingDayTypeName                        nvarchar(30)    = 'Working day'         -- Name for the working days
@@ -216,6 +337,7 @@ RETURN (
             NumTable N10
            ,NumTable N100
            ,NumTable N1000
+           ,NumTable N10000
     )
     , HolidaysTable AS (
         SELECT
@@ -247,13 +369,14 @@ RETURN (
     ),
     FiscalYearsBase AS (
     SELECT TOP(YEAR(@endDate) + 1 - (YEAR(@startDate) - 1))
-        YEAR(@startDate) +  ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) - 1 AS FiscalYear
+        YEAR(@startDate) +  CONVERT(int, ROW_NUMBER() OVER(ORDER BY (SELECT NULL))) - 1 AS FiscalYear
         ,DATEADD(DAY, @lastDayOfFiscalYear - 1, DATEADD(WEEK, DATEDIFF(WEEK, 0, DATEADD(MONTH, @fiscalYearStartMonth - 1, DATEADD(YEAR, DATEDIFF(YEAR, 0, @startDate) + ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) - 1 , 0))) - 1, 0)) FiscalYearEndCore
         ,DATEADD(DAY, @lastDayOfFiscalYear - 1, DATEADD(WEEK, DATEDIFF(WEEK, 0, DATEADD(MONTH, @fiscalYearStartMonth - 1, DATEADD(YEAR, DATEDIFF(YEAR, 0, @startDate) + ROW_NUMBER() OVER(ORDER BY (SELECT NULL)) - 2 , 0))) - 1, 0)) PrevFiscalYearEndCore
     FROM 
         NumTable N10
        ,NumTable N100
        ,NumTable N1000
+       ,NumTable N10000
     ),
     FiscalYears AS (
         SELECT
@@ -331,9 +454,9 @@ RETURN (
     CalendarDateTableBase2 AS (
         SELECT
             D.*
-            ,(D.[MonthOfYear] - 1) % 3 + 1                                                                                              AS [MonthOfQuarter]
-            ,(D.[MonthOfYear] - 1) % 4 + 1                                                                                              AS [MonthOfTrimester]
-            ,(D.[MonthOfYear]- 1) % 6 + 1                                                                                               AS [MonthOfSemester]
+            ,CONVERT(tinyint, (D.[MonthOfYear] - 1) % 3 + 1)                                                                            AS [MonthOfQuarter]
+            ,CONVERT(tinyint, (D.[MonthOfYear] - 1) % 4 + 1)                                                                            AS [MonthOfTrimester]
+            ,CONVERT(tinyint, (D.[MonthOfYear]- 1) % 6 + 1)                                                                             AS [MonthOfSemester]
             ,DATEADD(MONTH, ([QuarterOfCalendarYear] - 1) * 3, D.[StartOfCalendarYear])                                                 AS [StartOfCalendarQuarter]
             ,DATEADD(DAY, -1, DATEADD(MONTH, ([QuarterOfCalendarYear]) * 3, D.[StartOfCalendarYear]))                                   AS [EndOfCalendarQuarter]
             ,DATEADD(MONTH, ([TrimesterOfCalendarYear] - 1) * 4, D.[StartOfCalendarYear])                                               AS [StartOfCalendarTrimester]
@@ -349,10 +472,13 @@ RETURN (
         SELECT
             D.*
             ,DATEDIFF(DAY, [StartOfCalendarYear], [EndOfCalendarYear]) + 1                                                              AS [DaysInCalendarYear]
-            ,DATEDIFF(DAY, D.StartOfMonth, D.EndOfMonth) + 1                                                                            AS [DaysInMonth]
-            ,DATEDIFF(DAY, D.StartOfCalendarQuarter, D.EndOfCalendarQuarter) + 1                                                        AS [DaysInCalendarQuarter]
-            ,DATEDIFF(DAY, D.StartOfCalendarTrimester, D.EndOfCalendarTrimester) + 1                                                    AS [DaysInCalendarTrimester]
-            ,DATEDIFF(DAY, D.StartOfCalendarSemester, D.EndOfCalendarSemester)  + 1                                                     AS [DaysInCalendarSemester]
+            ,CONVERT(tinyint, DATEDIFF(DAY, D.StartOfMonth, D.EndOfMonth) + 1)                                                          AS [DaysInMonth]
+            ,CONVERT(tinyint, DATEDIFF(DAY, D.StartOfCalendarQuarter, D.EndOfCalendarQuarter) + 1)                                      AS [DaysInCalendarQuarter]
+            ,CONVERT(tinyint, DATEDIFF(DAY, D.StartOfCalendarTrimester, D.EndOfCalendarTrimester) + 1)                                  AS [DaysInCalendarTrimester]
+            ,CONVERT(tinyint, DATEDIFF(DAY, D.StartOfCalendarSemester, D.EndOfCalendarSemester)  + 1)                                   AS [DaysInCalendarSemester]
+            ,CONVERT(tinyint, DATEPART(WEEK, [EndOfCalendarYear]))                                                                      AS [WeeksInCalendarYear]
+            ,CONVERT(tinyint, DATEPART(ISO_WEEK, DATEADD(DAY, -3, [EndOfCalendarYear]))) /*December 28 is always in last ISO week*/     AS [ISOWeeksInCalendarYear]
+        
         FROM [CalendarDateTableBase2] D
     ),
     [FiscalBase1] AS (
@@ -371,7 +497,8 @@ RETURN (
         SELECT
             D.*
             ,CONVERT(bit, SUBSTRING(@workingDays, [DayOfWeekFixedMonday], 1))                                                           AS [IsWeekDay]
-            ,CASE WHEN D.[WeekOfFiscalYear] > 52 THEN 4 ELSE  D.[WeekOfFiscalYear] / 13 + SIGN(D.[WeekOfFiscalYear] % 13) END           AS [QuarterOfFiscalYear]
+            ,CONVERT(tinyint, 
+                CASE WHEN D.[WeekOfFiscalYear] > 52 THEN 4 ELSE  D.[WeekOfFiscalYear] / 13 + SIGN(D.[WeekOfFiscalYear] % 13) END)       AS [QuarterOfFiscalYear]
 
         FROM [FiscalBase1] D
     ),
@@ -379,8 +506,9 @@ RETURN (
         SELECT
             D.*
             ,CONVERT(bit, D.[IsWeekDay] ^ 1)                                                                                            AS [IsWeekend]
-            ,CASE WHEN D.[WeekOfFiscalYear] > 52 THEN 14 ELSE D.[WeekOfFiscalYear] - 13 * (D.[QuarterOfFiscalYear]  - 1) END            AS [WeekOfFiscalQuarter]
-            ,(D.[QuarterOfFiscalYear] - 1) / 2 + 1                                                                                      AS [SemesterOfFiscalYear]
+            ,CONVERT(tinyint, 
+                CASE WHEN D.[WeekOfFiscalYear] > 52 THEN 14 ELSE D.[WeekOfFiscalYear] - 13 * (D.[QuarterOfFiscalYear]  - 1) END)        AS [WeekOfFiscalQuarter]
+            ,CONVERT(tinyint, (D.[QuarterOfFiscalYear] - 1) / 2 + 1)                                                                    AS [SemesterOfFiscalYear]
         FROM [FiscalBase2] D
     ),
     [FiscalCalendarBase2] AS (
@@ -404,7 +532,7 @@ RETURN (
                 ELSE DATEADD(DAY, -1, DATEADD(WEEK, ([QuarterOfFiscalYear]) * 13, [StartOfFiscalYear])) 
              END                                                                                                                        AS [EndOfFiscalQuarter]
             ,D.[FiscalYear] * 10 + D.[QuarterOfFiscalYear]                                                                              AS [FiscalQuarter]
-            ,([QuarterOfFiscalYear] - 1) % 2 + 1                                                                                        AS [QuarterOfFiscalSemester]
+            ,CONVERT(tinyint, ([QuarterOfFiscalYear] - 1) % 2 + 1)                                                                      AS [QuarterOfFiscalSemester]
 
             ,DATEADD(WEEK, ([SemesterOfFiscalYear] - 1) * 26, [StartOfFiscalYear])                                                      AS [StartOfFiscalSemester]
             ,CASE
@@ -412,7 +540,8 @@ RETURN (
                 ELSE DATEADD(DAY, -1, DATEADD(WEEK, ([SemesterOfFiscalYear]) * 26, [StartOfFiscalYear])) 
              END                                                                                                                        AS [EndOfFiscalSemester]
             ,D.[FiscalYear] * 10 + D.[SemesterOfFiscalYear]                                                                             AS [FiscalSemester]
-            ,CASE WHEN D.[WeekOfFiscalYear] > 52 THEN 27 ELSE D.[WeekOfFiscalYear] - 26 * (D.[SemesterOfFiscalYear]  - 1) END           AS [WeekOfFiscalSemester]
+            ,CONVERT(tinyint, 
+                CASE WHEN D.[WeekOfFiscalYear] > 52 THEN 27 ELSE D.[WeekOfFiscalYear] - 26 * (D.[SemesterOfFiscalYear]  - 1) END)       AS [WeekOfFiscalSemester]
 
         FROM [FiscalCalendarBase1] D
     ),
@@ -436,8 +565,8 @@ RETURN (
                         ELSE [WeeksInMonth1] + [WeeksInMonth2] + [WeeksInMonth3]
                     END, [StartOfFiscalYear]))
              END                                                                                                                        AS [EndOfFiscalMonth]
-            ,(D.[MonthOfFiscalYear] - 1) % 6 + 1                                                                                        AS [MonthOfFiscalSemester]
-            ,(D.[MonthOfFiscalYear] - 1) % 3 + 1                                                                                        AS [MonthOfFiscalQuarter]
+            ,CONVERT(tinyint, (D.[MonthOfFiscalYear] - 1) % 6 + 1)                                                                      AS [MonthOfFiscalSemester]
+            ,CONVERT(tinyint, (D.[MonthOfFiscalYear] - 1) % 3 + 1)                                                                      AS [MonthOfFiscalQuarter]
 
         FROM [FiscalCalendarBase2] D
     ),
@@ -553,7 +682,7 @@ RETURN (
             DAY
             ,-DATEDIFF(DAY, @firstDayOfWeek - 1, DATEADD(YEAR, 1, D.[YearOfISOWeekDate])) % 7- 1
             , DATEADD(YEAR, 1, D.[YearOfISOWeekDate])
-         )                                                                                                                              AS [EndtOfYearOfISOWeek]
+         )                                                                                                                              AS [EndOfYearOfISOWeek]
 
         ,D.[FiscalWeek]                                                                                                                 AS [FiscalWeek]
         ,LTRIM(RTRIM(CONVERT(nvarchar(30), 
@@ -614,10 +743,11 @@ RETURN (
 
         ,[DaysInCalendarYear]                                                                                                           AS [DaysInCalendarYear]
         ,[DaysInMonth]                                                                                                                  AS [DaysInMonth]
+        ,[WeeksInCalendarYear]                                                                                                          AS [WeeksInCalendarYear]
+        ,[ISOWeeksInCalendarYear]                                                                                                       AS [ISOWeeksInCalendarYear]
         ,[DaysInCalendarQuarter]                                                                                                        AS [DaysInCalendarQuarter]
         ,[DaysInCalendarTrimester]                                                                                                      AS [DaysInCalendarTrimester]
         ,[DaysInCalendarSemester]                                                                                                       AS [DaysInCalendarSemester]
-
         ,[DaysInFiscalYear]                                                                                                             AS [DaysInFiscalYear]
         ,[WeeksInFiscalYear]                                                                                                            AS [WeeksInFiscalYear]
         ,[DaysInFiscalMonth]                                                                                                            AS [DaysInFiscalMonth]
