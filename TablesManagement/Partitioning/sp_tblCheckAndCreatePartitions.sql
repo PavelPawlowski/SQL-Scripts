@@ -1,7 +1,14 @@
+/* *****************************************************************************************
+                                      AZURE SQL DB Notice
+
+   Comment-out the unsupported USE [master] when running in Azure SQL DB/Synapse Analytics
+   or ignore error caused by unsupported USE statement
+******************************************************************************************** */
+
 USE [master]
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].[sp_tblCheckAndCreatePartitions]') AND TYPE = 'P')
-	EXECUTE ('CREATE PROCEDURE [dbo].[sp_tblCheckAndCreatePartitions] AS BEGIN PRINT ''Container procedure for sp_tblCheckAndCreatePartitions'' END')
+    EXECUTE ('CREATE PROCEDURE [dbo].[sp_tblCheckAndCreatePartitions] AS BEGIN PRINT ''Container procedure for sp_tblCheckAndCreatePartitions'' END')
 GO
 /* ****************************************************
 sp_tblCheckAndCreatePartitions v 0.5 (2018-03-14)
@@ -38,17 +45,17 @@ Description:
     It ensures that only one partition scheme is mapped to one partition function.
 
 Parameters:
-     @pValue                sql_variant	    = NULL      --value to check
+     @pValue                sql_variant        = NULL      --value to check
     ,@psName                nvarchar(130)   = NULL      --Partition Scheme Name
     ,@tableName             nvarchar(261)   = NULL      --Table Name. It is possible to specify table name instead of Partition Scheme Name
     ,@incrementType         nvarchar(10)    = 'MONTH'   --Range Increment Type eg. YAER, MONTH, WEEK, DAY
     ,@increment             int             = 1         --Default increment size
     ,@destinationFileGroups nvarchar(max)   = NULL      --Comma Separated List of Destination File Groups. If NULL the last from the Partition Scheme will be used
-    ,@printScriptOnly       bit             = 0         --Specifies whether the scrip should be printed instead of executed
+    ,@printScriptOnly       bit             = 0         --Specifies whether the scritp should be printed instead of executed
 
 * ***************************************************** */ 
 ALTER PROCEDURE [dbo].[sp_tblCheckAndCreatePartitions]
-     @pValue                sql_variant	    = NULL      --value to check
+     @pValue                sql_variant        = NULL      --value to check
     ,@psName                nvarchar(130)   = NULL      --Partition Scheme Name
     ,@tableName             nvarchar(261)   = NULL      --Table Name. It is possible to specify table name instead of Partition Scheme Name
     ,@incrementType         nvarchar(10)    = 'MONTH'   --Range Increment Type eg. YAER, MONTH, WEEK, DAY
@@ -57,9 +64,9 @@ ALTER PROCEDURE [dbo].[sp_tblCheckAndCreatePartitions]
     ,@printScriptOnly       bit             = 0         --Specifieswhether the scrip should be printed instead of executed
 AS
 BEGIN
-	SET NOCOUNT ON;
+    SET NOCOUNT ON;
 
-	DECLARE
+    DECLARE
          @pfName                sysname             --Partition Funciton Name
         ,@dataType              sysname             --Data Type of the Partition Function
         ,@partValue             sql_variant         --Conveerted @pValue input parameter to a range based on the @incrementType
@@ -80,7 +87,7 @@ BEGIN
         ,@msg                   nvarchar(max)
         ,@msg1                  nvarchar(max)
         ,@printHelp             bit             = 0 --Specifies whether to print help
-        ,@xml                   xml								
+        ,@xml                   xml                                
 
     DECLARE @fileGroups TABLE (
         FGID int IDENTITY(1,1) PRIMARY KEY CLUSTERED,
@@ -121,7 +128,7 @@ BEGIN
             RAISERROR ('Table "%s" does not exists in current context or is not partitioned table', 15, 1, @tableName);
             SET @printHelp = 1;
         END
-    END	
+    END    
 
 
     --Check if partition scheme exists
@@ -153,9 +160,9 @@ BEGIN
     --Get Partition Function Name, data type and range value of the last partition
     SELECT TOP (1)
          @pfName                = pf.name
-        ,@dataType              = t.name	
+        ,@dataType              = t.name    
         ,@maxPartValue          = prv.value
-        ,@maxPartID             = prv.boundary_id + 1	--We have maximum boundary_id + 1 partitions
+        ,@maxPartID             = prv.boundary_id + 1    --We have maximum boundary_id + 1 partitions
         ,@boundaryValueOnRight  = pf.boundary_value_on_right
     FROM sys.partition_schemes ps
     INNER JOIN sys.partition_functions pf ON ps.function_id = pf.function_id
@@ -190,11 +197,11 @@ BEGIN
     BEGIN
         RAISERROR(N'Usage:', 0, 0);
         RAISERROR(N'[sp_tblCheckAndCreatePartitions] 
-	@pValue = value_to_check', 0, 0);
+    @pValue = value_to_check', 0, 0);
 
         RAISERROR(N'', 0, 0);
         RAISERROR(N'Parameters:', 0, 0);
-        RAISERROR(N'     @pValue                sql_variant	    = NULL      --value to check
+        RAISERROR(N'     @pValue                sql_variant        = NULL      --value to check
     ,@psName                nvarchar(130)   = NULL      --Partition Scheme Name
     ,@tableName             nvarchar(261)   = NULL      --Table Name. It is possible to specify table name instead of Partition Scheme Name
     ,@incrementType         nvarchar(10)    = ''MONTH''   --Range Increment Type eg. YAER, MONTH, WEEK, DAY
@@ -203,7 +210,7 @@ BEGIN
     ,@printScriptOnly       bit             = 0         --Specifieswhether the scrip should be printed instead of executed', 0, 0);
 
         RETURN
-	END
+    END
 
     SET @msg = CONVERT(nvarchar(max), @pValue);
     RAISERROR(N'Checking value [%s] against partition scheme [%s]', 0, 0, @msg, @psName) WITH NOWAIT;
@@ -215,7 +222,7 @@ BEGIN
     SET @tsql = N'DECLARE @partVal ' + @dataType + N'; SET @partVal = CONVERT(' + @dataType + N', @val); INSERT INTO #valPartition(PartID) SELECT $PARTITION.' + QUOTENAME(@pfName) + N'(@partVal)';
     SET @params = N'@val sql_variant'
     EXECUTE sp_executesql @tsql, @params, @val = @pValue
-	
+    
     SELECT 
         @valuePartID = PartID 
     FROM #valPartition
@@ -254,7 +261,7 @@ BEGIN
                                                                         < DATEPART(ISO_WEEK, DATEADD(WEEK, @maxPartPart -1 , DATEADD(WEEK, DATEDIFF(WEEK, 0, @maxPartYear), 0)))
                                                                     THEN DATEADD(WEEK, @maxPartPart, DATEADD(WEEK, DATEDIFF(WEEK, 0, @maxPartYear), 0))
                                                                 ELSE
-                                                                    DATEADD(WEEK, @maxPartPart -1, DATEADD(WEEK, DATEDIFF(WEEK, 0, @maxPartYear), 0))															
+                                                                    DATEADD(WEEK, @maxPartPart -1, DATEADD(WEEK, DATEDIFF(WEEK, 0, @maxPartYear), 0))                                                            
                                                                 END
                                 END
         END
@@ -267,7 +274,7 @@ BEGIN
     BEGIN
         --if partition function param no in int or bigint or @incrementType specified is not INT or BIGINT then process the value as date
         IF @datatype NOT IN (N'int', N'bigint') OR @incrementType NOT IN (N'INT', N'BIGINT')
-        BEGIN			
+        BEGIN            
             SET @maxPartDate = 
                 CASE @incrementType
                     WHEN N'YEAR'        THEN DATEADD(YEAR, @increment , @maxPartDate)
@@ -299,7 +306,7 @@ BEGIN
                                     ELSE 0
                                 END   
                                 ) * 100 
-								+ DATEPART(ISO_WEEK, @maxPartDate))
+                                + DATEPART(ISO_WEEK, @maxPartDate))
                     END
         END --IF @incrementType NOT IN (N'INT', N'BIGINT')
         ELSE
@@ -345,5 +352,8 @@ BEGIN
     END --WHILE @maxPartDate < @partValue
 END
 GO
-EXECUTE sp_ms_marksystemobject N'dbo.sp_tblCheckAndCreatePartitions'
+
+--Mark Stored Procedure as system object, so it executes in the context of current database.
+IF SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8)
+    EXEC(N'EXECUTE sp_ms_marksystemobject ''dbo.sp_tblCheckAndCreatePartitions''');
 GO

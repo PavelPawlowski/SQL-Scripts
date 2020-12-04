@@ -1,7 +1,14 @@
+/* *****************************************************************************************
+                                      AZURE SQL DB Notice
+
+   Comment-out the unsupported USE [master] when running in Azure SQL DB/Synapse Analytics
+   or ignore error caused by unsupported USE statement
+******************************************************************************************** */
+
 USE [master]
 GO
 IF NOT EXISTS(SELECT 1 FROM sys.objects WHERE object_id = OBJECT_ID('[dbo].[sp_tblCreatePartitionFunction]') AND type = 'P')
-	EXEC (N'CREATE PROCEDURE [dbo].[sp_tblCreatePartitionFunction] AS PRINT ''Container''')
+    EXEC (N'CREATE PROCEDURE [dbo].[sp_tblCreatePartitionFunction] AS PRINT ''Container''')
 GO
 /* ****************************************************
 sp_tblCreatePartitionFunction v 0.34 (2019-08-01)
@@ -80,33 +87,33 @@ ALTER PROCEDURE [dbo].[sp_tblCreatePartitionFunction]
     ,@printScriptOnly   bit             = 1         --Specifies whether script should be printed or the function should be automatically created. Default is print script
 AS
 BEGIN
-	DECLARE
-		@tsql                   nvarchar(max) = N'CREATE PARTITION FUNCTION '
+    DECLARE
+        @tsql                   nvarchar(max) = N'CREATE PARTITION FUNCTION '
         ,@currentDate           datetime        = '19000101'                    --current date range value
         ,@maxDate               datetime        = '99991231'                    --max date range value
         ,@currentValue          bigint          = 0                             --current numeric range value
         ,@maxValue              bigint          = 1                             --max value for numeric range
-		,@currentPartitionValue nvarchar(24)                                    --variable for storing current partition value for script building purposes
-		,@dataType              nvarchar(15)    
-		,@loopNumber            int             = 0
-		,@caption               nvarchar(max)                                   --Procedure caption
-		,@msg                   nvarchar(max)                                   --message
-		,@printHelp             bit             = 0		                        --Specifies whether to print help
+        ,@currentPartitionValue nvarchar(24)                                    --variable for storing current partition value for script building purposes
+        ,@dataType              nvarchar(15)    
+        ,@loopNumber            int             = 0
+        ,@caption               nvarchar(max)                                   --Procedure caption
+        ,@msg                   nvarchar(max)                                   --message
+        ,@printHelp             bit             = 0                                --Specifies whether to print help
         ,@isDateRange           bit             = 0                             --indicates whether we are operating with date ranges
         ,@rangeBaseType         nvarchar(10)                                    --stores the data type fo the input @rangeStart
         ,@typeConvert           char(1)                                         --Type of conversion in input Range in case string is passed
         ,@strRangeStart         nvarchar(50)
         ,@strRangeEnd           nvarchar(50)
 
-	SET @caption = N'--sp_tblCreatePartitionFunction v 0.34 (2019-08-01) (C) 2014 - 2019 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
-				   N'--=================================================================================' + NCHAR(13) + NCHAR(10);
-	RAISERROR(@caption, 0, 0) WITH NOWAIT;
+    SET @caption = N'--sp_tblCreatePartitionFunction v 0.34 (2019-08-01) (C) 2014 - 2019 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+                   N'--=================================================================================' + NCHAR(13) + NCHAR(10);
+    RAISERROR(@caption, 0, 0) WITH NOWAIT;
 
 
-	IF ISNULL(@pfName, '') = '' OR @rangeStart IS NULL OR @rangeEnd IS NULL
-	BEGIN
-		SET @printHelp = 1;
-	END
+    IF ISNULL(@pfName, '') = '' OR @rangeStart IS NULL OR @rangeEnd IS NULL
+    BEGIN
+        SET @printHelp = 1;
+    END
 
     --get the @rangeStart data type
     SET @rangeBaseType = CONVERT(nvarchar(10), SQL_VARIANT_PROPERTY(@rangeStart, 'BaseType'));
@@ -174,37 +181,37 @@ BEGIN
         @rangeBaseType NOT IN (N'smallint', N'int', N'bigint', N'date', N'datetime', N'datetime2')
     )
     BEGIN
-		RAISERROR(N'@rangeStart and rangeEnd has to be one of following data types: smallint, int, bigint, date, datetime, datetime2(x)', 16, 1);
-		SET @printHelp = 1;
+        RAISERROR(N'@rangeStart and rangeEnd has to be one of following data types: smallint, int, bigint, date, datetime, datetime2(x)', 16, 1);
+        SET @printHelp = 1;
     END
 
     IF SQL_VARIANT_PROPERTY(@rangeStart, 'BaseType') <> SQL_VARIANT_PROPERTY(@rangeEnd, 'BaseType')
     BEGIN
-		RAISERROR(N'@rangeStart and rangeStart has to be of the same data type', 16, 2);
-		SET @printHelp = 1;
+        RAISERROR(N'@rangeStart and rangeStart has to be of the same data type', 16, 2);
+        SET @printHelp = 1;
     END
 
-	IF @boundaryType NOT IN (N'RIGHT', N'LEFT')
-	BEGIN
-		RAISERROR(N'@boundaryType has to be RIGHT or LEFT only', 16,3);
-		SET @printHelp = 1;
-	END
+    IF @boundaryType NOT IN (N'RIGHT', N'LEFT')
+    BEGIN
+        RAISERROR(N'@boundaryType has to be RIGHT or LEFT only', 16,3);
+        SET @printHelp = 1;
+    END
 
-	IF @incrementUnit NOT IN (N'YEAR', N'QUARTER', N'MONTH', N'DAY', N'WEEK', N'ISO_WEEK')
-	BEGIN
-		RAISERROR(N'@incrementUnit has to be one of following: YEAR, QUARTER, MONTH, DATE, WEEK, ISO_WEEK', 16, 5);
-		SET @printHelp = 1;
-	END
-	IF @integerFormatType NOT IN (1,2)
-	BEGIN
-		RAISERROR(N'@integerFormatType has to be either 1 or 2 where 1 = (yyyyxx(x)) where xx(x) represents month, week or day) and 2 = date format in yyyymmdd', 16, 6);
-		SET @printHelp = 1;
-	END
+    IF @incrementUnit NOT IN (N'YEAR', N'QUARTER', N'MONTH', N'DAY', N'WEEK', N'ISO_WEEK')
+    BEGIN
+        RAISERROR(N'@incrementUnit has to be one of following: YEAR, QUARTER, MONTH, DATE, WEEK, ISO_WEEK', 16, 5);
+        SET @printHelp = 1;
+    END
+    IF @integerFormatType NOT IN (1,2)
+    BEGIN
+        RAISERROR(N'@integerFormatType has to be either 1 or 2 where 1 = (yyyyxx(x)) where xx(x) represents month, week or day) and 2 = date format in yyyymmdd', 16, 6);
+        SET @printHelp = 1;
+    END
 
 
     IF @printHelp = 1
     BEGIN
-	    RAISERROR(N'Generates Partition function for specified range of dates in specified format', 0, 0) WITH NOWAIT;
+        RAISERROR(N'Generates Partition function for specified range of dates in specified format', 0, 0) WITH NOWAIT;
         RAISERROR(N'
 Usage:
     sp_tblCreatePartitionFunction [parameters]
@@ -251,13 +258,13 @@ In addition a Format specifier can be used as first character of the string:
     BEGIN
         SET @isDateRange    =   1
         SET @currentDate    =   CASE @incrementUnit                                 
-									WHEN 'YEAR' THEN DATEADD(YEAR, DATEDIFF(YEAR, 0, CONVERT(datetime, @rangeStart)), 0)
-									WHEN N'QUARTER' THEN DATEADD(QUARTER, DATEDIFF(QUARTER, 0, CONVERT(datetime, @rangeStart)), 0)
-									WHEN N'MONTH' THEN DATEADD(MONTH, DATEDIFF(MONTH, 0, CONVERT(datetime, @rangeStart)), 0)
-									WHEN N'DAY' THEN DATEADD(DAY, DATEDIFF(DAY, 0, CONVERT(datetime, @rangeStart)), 0)
-									WHEN N'WEEK' THEN DATEADD(WEEK, DATEDIFF(WEEK, 0, CONVERT(datetime, @rangeStart)), 0)
-									WHEN N'ISO_WEEK' THEN DATEADD(WEEK, DATEDIFF(WEEK, 0, CONVERT(datetime, @rangeStart)), 0)
-							    END;
+                                    WHEN 'YEAR' THEN DATEADD(YEAR, DATEDIFF(YEAR, 0, CONVERT(datetime, @rangeStart)), 0)
+                                    WHEN N'QUARTER' THEN DATEADD(QUARTER, DATEDIFF(QUARTER, 0, CONVERT(datetime, @rangeStart)), 0)
+                                    WHEN N'MONTH' THEN DATEADD(MONTH, DATEDIFF(MONTH, 0, CONVERT(datetime, @rangeStart)), 0)
+                                    WHEN N'DAY' THEN DATEADD(DAY, DATEDIFF(DAY, 0, CONVERT(datetime, @rangeStart)), 0)
+                                    WHEN N'WEEK' THEN DATEADD(WEEK, DATEDIFF(WEEK, 0, CONVERT(datetime, @rangeStart)), 0)
+                                    WHEN N'ISO_WEEK' THEN DATEADD(WEEK, DATEDIFF(WEEK, 0, CONVERT(datetime, @rangeStart)), 0)
+                                END;
         SET @maxDate        = CONVERT(datetime, @rangeEnd);
     END
     ELSE
@@ -268,89 +275,91 @@ In addition a Format specifier can be used as first character of the string:
     END
 
     --Get the data type to be used for the partition function
-	SET @dataType = CASE 
+    SET @dataType = CASE 
                         WHEN @isDateRange = 1 AND @useIntegerDates = 1 THEN 'int'
                         WHEN @rangeBaseType = 'datetime2' THEN 'datetime2(' + CONVERT(nvarchar(10), SQL_VARIANT_PROPERTY(@rangeStart, 'Scale')) + N')'
                         ELSE @rangeBaseType
                     END;
 
-	SET @tsql += QUOTENAME(@pfName) + N'(' + @dataType + N') AS RANGE ' + @boundaryType + N' FOR VALUES (';
+    SET @tsql += QUOTENAME(@pfName) + N'(' + @dataType + N') AS RANGE ' + @boundaryType + N' FOR VALUES (';
 
-	IF @printScriptOnly = 1
+    IF @printScriptOnly = 1
     BEGIN
-    	RAISERROR(N'', 0, 0) WITH NOWAIT;
-		RAISERROR(@tsql, 0, 0) WITH NOWAIT;
+        RAISERROR(N'', 0, 0) WITH NOWAIT;
+        RAISERROR(@tsql, 0, 0) WITH NOWAIT;
     END
 
-	SET @tsql += NCHAR(13) + NCHAR(10);
+    SET @tsql += NCHAR(13) + NCHAR(10);
 
-	WHILE (@isDateRange = 1 AND @currentDate <= @maxDate) OR (@isDateRange = 0 AND @currentValue <= @maxValue)
-	BEGIN
-		IF @isDateRange = 0  --If we are operating on numeric ranges do not use any special formatting
+    WHILE (@isDateRange = 1 AND @currentDate <= @maxDate) OR (@isDateRange = 0 AND @currentValue <= @maxValue)
+    BEGIN
+        IF @isDateRange = 0  --If we are operating on numeric ranges do not use any special formatting
             SET @currentPartitionValue = CONVERT(nvarchar(20), @currentValue)
         ELSE IF @useIntegerDates = 0 OR @integerFormatType = 1 --If using date as ranges, script the dates in the 112 format = yyymmdd
-			SET @currentPartitionValue = CONVERT(nvarchar(8), @currentDate, 112);
-		ELSE    --In case of integer dates format
+            SET @currentPartitionValue = CONVERT(nvarchar(8), @currentDate, 112);
+        ELSE    --In case of integer dates format
         BEGIN
-			SET @currentPartitionValue = CASE @incrementUnit
-											WHEN N'YEAR' THEN CONVERT(nvarchar(20), YEAR(@currentDate))
-											WHEN N'QUARTER' THEN CONVERT(nvarchar(20), @currentDate, 112)
-											WHEN N'MONTH' THEN CONVERT(nvarchar(20), @currentDate, 112)
-											WHEN N'DAY' THEN CONVERT(nvarchar(20), YEAR(@currentDate) * 1000 + DATEPART(DAYOFYEAR, @currentDate))
-											WHEN N'WEEK' THEN CONVERT(nvarchar(20), YEAR(@currentDate) * 100 + DATEPART(WEEK, @currentDate))
-											WHEN N'ISO_WEEK' THEN CONVERT(nvarchar(20), (YEAR(@currentDate) + 
-																							CASE 
-																								WHEN MONTH(@currentDate) = 12 AND DATEPART(ISO_WEEK, @currentDate) = 1 THEN 1
-																								WHEN MONTH(@currentDate) = 1 AND DATEPART(ISO_WEEK, @currentDate) > 50 THEN -1
-																								ELSE 0
-																							END   
-																						) * 100 
+            SET @currentPartitionValue = CASE @incrementUnit
+                                            WHEN N'YEAR' THEN CONVERT(nvarchar(20), YEAR(@currentDate))
+                                            WHEN N'QUARTER' THEN CONVERT(nvarchar(20), @currentDate, 112)
+                                            WHEN N'MONTH' THEN CONVERT(nvarchar(20), @currentDate, 112)
+                                            WHEN N'DAY' THEN CONVERT(nvarchar(20), YEAR(@currentDate) * 1000 + DATEPART(DAYOFYEAR, @currentDate))
+                                            WHEN N'WEEK' THEN CONVERT(nvarchar(20), YEAR(@currentDate) * 100 + DATEPART(WEEK, @currentDate))
+                                            WHEN N'ISO_WEEK' THEN CONVERT(nvarchar(20), (YEAR(@currentDate) + 
+                                                                                            CASE 
+                                                                                                WHEN MONTH(@currentDate) = 12 AND DATEPART(ISO_WEEK, @currentDate) = 1 THEN 1
+                                                                                                WHEN MONTH(@currentDate) = 1 AND DATEPART(ISO_WEEK, @currentDate) > 50 THEN -1
+                                                                                                ELSE 0
+                                                                                            END   
+                                                                                        ) * 100 
 
-											+ DATEPART(ISO_WEEK, @currentDate))
-										END;
+                                            + DATEPART(ISO_WEEK, @currentDate))
+                                        END;
         END
-	
-		IF @isDateRange = 1 AND @useIntegerDates = 0
-			SET @currentPartitionValue = QUOTENAME(@currentPartitionValue, N'''');
+    
+        IF @isDateRange = 1 AND @useIntegerDates = 0
+            SET @currentPartitionValue = QUOTENAME(@currentPartitionValue, N'''');
 
-		if @loopNumber > 0 
-			SET @currentPartitionValue = '   ,' + @currentPartitionValue;
-		ELSE 
-			SET @currentPartitionValue = '    ' + @currentPartitionValue;
+        if @loopNumber > 0 
+            SET @currentPartitionValue = '   ,' + @currentPartitionValue;
+        ELSE 
+            SET @currentPartitionValue = '    ' + @currentPartitionValue;
 
 
-		SET @tsql += @currentPartitionValue + NCHAR(13) + NCHAR(10);
+        SET @tsql += @currentPartitionValue + NCHAR(13) + NCHAR(10);
 
-		IF @printScriptOnly = 1
-			PRINT @currentPartitionvalue;
+        IF @printScriptOnly = 1
+            PRINT @currentPartitionvalue;
 
         IF @isDateRange = 1
         BEGIN
-		    SET @currentDate =  CASE @incrementUnit
-									WHEN N'YEAR' THEN DATEADD(YEAR, @incrementValue, CONVERT(datetime, @currentDate))
-									WHEN N'QUARTER' THEN DATEADD(QUARTER, @incrementValue, CONVERT(datetime, @currentDate))
-									WHEN N'MONTH' THEN DATEADD(MONTH, @incrementValue, CONVERT(datetime, @currentDate))
-									WHEN N'DAY' THEN DATEADD(DAY, @incrementValue, CONVERT(datetime, @currentDate))
-									WHEN N'WEEK' THEN DATEADD(WEEK, @incrementValue, CONVERT(datetime, @currentDate))
-									WHEN N'ISO_WEEK' THEN DATEADD(WEEK, @incrementValue, CONVERT(datetime, @currentDate))
-								END;
+            SET @currentDate =  CASE @incrementUnit
+                                    WHEN N'YEAR' THEN DATEADD(YEAR, @incrementValue, CONVERT(datetime, @currentDate))
+                                    WHEN N'QUARTER' THEN DATEADD(QUARTER, @incrementValue, CONVERT(datetime, @currentDate))
+                                    WHEN N'MONTH' THEN DATEADD(MONTH, @incrementValue, CONVERT(datetime, @currentDate))
+                                    WHEN N'DAY' THEN DATEADD(DAY, @incrementValue, CONVERT(datetime, @currentDate))
+                                    WHEN N'WEEK' THEN DATEADD(WEEK, @incrementValue, CONVERT(datetime, @currentDate))
+                                    WHEN N'ISO_WEEK' THEN DATEADD(WEEK, @incrementValue, CONVERT(datetime, @currentDate))
+                                END;
         END
         ELSE
         BEGIN
             SET @currentValue = @currentValue + @incrementValue;
         END
-		SET @loopNumber += 1;
-	END
+        SET @loopNumber += 1;
+    END
 
-	SET @tsql += N')'
+    SET @tsql += N')'
 
 
-	IF @printScriptOnly = 1
-		RAISERROR(N')', 0, 0)
-	ELSE
-		EXECUTE (@tsql);
+    IF @printScriptOnly = 1
+        RAISERROR(N')', 0, 0)
+    ELSE
+        EXECUTE (@tsql);
 END
 GO
 
-EXECUTE sp_ms_marksystemobject 'dbo.sp_tblCreatePartitionFunction';
+--Mark Stored Procedure as system object, so it executes in the context of current database.
+IF SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8)
+    EXEC(N'EXECUTE sp_ms_marksystemobject ''dbo.sp_tblCreatePartitionFunction''');
 GO

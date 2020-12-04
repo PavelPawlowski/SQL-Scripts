@@ -1,7 +1,14 @@
+/* *****************************************************************************************
+                                      AZURE SQL DB Notice
+
+   Comment-out the unsupported USE [master] when running in Azure SQL DB/Synapse Analytics
+   or ignore error caused by unsupported USE statement
+******************************************************************************************** */
 USE [master]
 GO
+
 IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].[sp_HelpPartitionScheme]') AND TYPE = 'P')
-	EXECUTE ('CREATE PROCEDURE [dbo].[sp_HelpPartitionScheme] AS BEGIN PRINT ''Container for [dbo].[sp_HelpPartitionScheme] (C) Pavel Pawlowski'' END')
+    EXECUTE ('CREATE PROCEDURE [dbo].[sp_HelpPartitionScheme] AS BEGIN PRINT ''Container for [dbo].[sp_HelpPartitionScheme] (C) Pavel Pawlowski'' END')
 GO
 /* *******************************************************
 sp_HelpPartitionScheme v 0.54 (2019-02-19)
@@ -36,7 +43,7 @@ Description:
 
 
 Parameters:
-     @psName            nvarchar(128)   = NULL  --Name of the partition scheme or partitioned table
+     @psName            nvarchar(261)   = NULL  --Name of the partition scheme or partitioned table
     ,@listDependencies  bit             = 0     --Specifies whether list dependencies of the partition scheme
     ,@noInfoMsg         bit             = 0     --Disbles printing of header and informationals messages
 
@@ -61,15 +68,15 @@ CREATE TABLE #Results(
 );
 */
 ALTER PROCEDURE [dbo].[sp_HelpPartitionScheme]
-     @psName            nvarchar(128)   = NULL  --Name of the partition scheme or partitioned table
+     @psName            nvarchar(261)   = NULL  --Name of the partition scheme or partitioned table
     ,@listDependencies  bit             = 0     --Specifies whether list dependencies of the partition scheme
     ,@noInfoMsg         bit             = 0     --Disbles printing of header and informationals messages
 AS
 BEGIN
     SET NOCOUNT ON;
     DECLARE
-        @caption            nvarchar(max)	    --Procedure caption
-        ,@msg               nvarchar(max)		--message
+        @caption            nvarchar(max)        --Procedure caption
+        ,@msg               nvarchar(max)        --message
         ,@psID              int                 --ID of partition Scheme
         ,@partitionsCount   int                 --count of boundary values
         ,@tableObjectID     int                 --ID of the Table Specified
@@ -78,29 +85,29 @@ BEGIN
 
     IF @noInfoMsg = 0
     BEGIN
-        SET @caption = N'sp_HelpPartitionScheme v 0.54 (2019-02-19) (C) 2014 - 2019 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
-				       N'==========================================================================';
-    	RAISERROR(@caption, 0, 0) WITH NOWAIT;
+        SET @caption = N'sp_HelpPartitionScheme v 0.55 (2020-12-03) (C) 2014 - 2020 Pavel Pawlowski' + NCHAR(13) + NCHAR(10) + 
+                       N'==========================================================================';
+        RAISERROR(@caption, 0, 0) WITH NOWAIT;
     END
 
-	--if partition function name is not provided, print Help
-	IF @psName IS NULL
-	BEGIN
-    	RAISERROR(N'', 0, 0) WITH NOWAIT;
-    	RAISERROR(N'Provides detailed information about the partition scheme including partitions and their boundary values defined by related partition function..', 0, 0) WITH NOWAIT;
+    --if partition function name is not provided, print Help
+    IF @psName IS NULL
+    BEGIN
+        RAISERROR(N'', 0, 0) WITH NOWAIT;
+        RAISERROR(N'Provides detailed information about the partition scheme including partitions and their boundary values defined by related partition function..', 0, 0) WITH NOWAIT;
         RAISERROR(N'Provides information about depended objects like tables/indexed views/indexes utilizing the partition scheme', 0, 0) WITH NOWAIT;
-		RAISERROR(N'', 0, 0);
-		RAISERROR(N'Usage:', 0, 0);
-		RAISERROR(N'[sp_HelpPartitionScheme] {@psName = ''partition_scheme_name|partitioned_table_name''} [,@listDependencies]', 0, 0);
-		RAISERROR(N'', 0, 0);
-		SET @msg = N'Parameters:
-     @psName            nvarchar(128)   = NULL - name of the partition scheme or patitioned table for which the information should be returned
+        RAISERROR(N'', 0, 0);
+        RAISERROR(N'Usage:', 0, 0);
+        RAISERROR(N'[sp_HelpPartitionScheme] {@psName = ''partition_scheme_name | partitioned_table_name''} [,@listDependencies]', 0, 0);
+        RAISERROR(N'', 0, 0);
+        SET @msg = N'Parameters:
+     @psName            nvarchar(261)   = NULL - name of the partition scheme or patitioned table for which the information should be returned
     ,@listDependencies  bit             = 1    - Specifies whether list dependencies of the partition scheme';
         RAISERROR(N'', 0, 0);
         RAISERROR(N'When partitioned_table_name is provided, then also information about partition columns is returned for the table as firt recordset', 0, 0);
-		RAISERROR(@msg, 0, 0);
+        RAISERROR(@msg, 0, 0);
 
-	SET @msg = N'
+    SET @msg = N'
 Table schema to hold results for partition scheme information
 -------------------------------------------------------------
 CREATE TABLE #Results(
@@ -121,17 +128,19 @@ CREATE TABLE #Results(
     ,[RightBoundary]         sql_variant     NULL       --Right boundary value
     ,[PartitionRange]        nvarchar(4000)  NULL       --Partition range in human readable form [NEXT_USED] for next file group used during partition function split
 );';
-		RAISERROR(@msg, 0, 0);
+        RAISERROR(@msg, 0, 0);
 
-		RETURN
-	END
+        RETURN
+    END
 
+    --Try to get ID of the table (in case table name was provided  in the @psName)
     SELECT
         @tableObjectID = object_id
         ,@tableName = QUOTENAME(SCHEMA_NAME(t.schema_id)) + N'.' + QUOTENAME(t.name)
     FROM sys.tables t
     WHERE t.object_id = OBJECT_ID(@psName)
 
+    --Table name was provided in the @psName
     IF @tableObjectID IS NOT NULL
     BEGIN
         --Get table data Space Information (Partition scheme)
@@ -201,20 +210,20 @@ CREATE TABLE #Results(
             ,prv.[value]                                    AS LeftBoundary
             ,LEAD(prv.[value]) OVER(ORDER BY dds.destination_id) AS RightBoundary
             ,ISNULL (
-		        CASE ppt.[name] --Format the value for displaying
-			        WHEN N'date' THEN LEFT(CONVERT(varchar(30), CONVERT(date, prv.[value] ), 120), 10)
-			        WHEN N'datetime' THEN CONVERT(varchar(30), CONVERT(datetime, prv.[value] ), 121)
-			        WHEN N'datetime2' THEN CONVERT(varchar(30), CONVERT(datetime2, prv.[value] ), 121)
-			        ELSE CONVERT(varchar(30), prv.[value] )
-		        END
+                CASE ppt.[name] --Format the value for displaying
+                    WHEN N'date' THEN LEFT(CONVERT(varchar(30), CONVERT(date, prv.[value] ), 120), 10)
+                    WHEN N'datetime' THEN CONVERT(varchar(30), CONVERT(datetime, prv.[value] ), 121)
+                    WHEN N'datetime2' THEN CONVERT(varchar(30), CONVERT(datetime2, prv.[value] ), 121)
+                    ELSE CONVERT(varchar(30), prv.[value] )
+                END
                 , N''
             )                                               AS LeftBoundaryStr
-		    ,ISNULL (
+            ,ISNULL (
                 CASE ppt.[name] --Format the value for displaying
-			        WHEN N'date' THEN CONVERT(varchar(30), LEFT(CONVERT(date, LEAD(prv.[value]) OVER(ORDER BY dds.destination_id)), 121), 10)
-			        WHEN N'datetime' THEN CONVERT(varchar(30), CONVERT(datetime, LEAD(prv.[value]) OVER(ORDER BY dds.destination_id)), 121)
-			        WHEN N'datetime2' THEN CONVERT(varchar(30), CONVERT(datetime2, LEAD(prv.[value]) OVER(ORDER BY dds.destination_id)), 121)
-			        ELSE CONVERT(varchar(30), LEAD(prv.[value]) OVER(ORDER BY dds.destination_id))
+                    WHEN N'date' THEN CONVERT(varchar(30), LEFT(CONVERT(date, LEAD(prv.[value]) OVER(ORDER BY dds.destination_id)), 121), 10)
+                    WHEN N'datetime' THEN CONVERT(varchar(30), CONVERT(datetime, LEAD(prv.[value]) OVER(ORDER BY dds.destination_id)), 121)
+                    WHEN N'datetime2' THEN CONVERT(varchar(30), CONVERT(datetime2, LEAD(prv.[value]) OVER(ORDER BY dds.destination_id)), 121)
+                    ELSE CONVERT(varchar(30), LEAD(prv.[value]) OVER(ORDER BY dds.destination_id))
                 END
                 , N''
             )                                               AS RightBoundaryStr            
@@ -225,7 +234,7 @@ CREATE TABLE #Results(
         INNER JOIN sys.partition_parameters pp ON pp.function_id = pf.function_id AND pp.parameter_id = 1   --information about partition function parameter
         INNER JOIN sys.types ppt ON ppt.system_type_id = pp.system_type_id  --information about the parameter data type
         INNER JOIN sys.destination_data_spaces dds ON dds.partition_scheme_id = ps.data_space_id --get destination data spaces to get partitions and destination file groups
-		INNER JOIN sys.filegroups fg on dds.data_space_id = fg.data_space_id	--FileGroups to get file group name for the destination data space
+        INNER JOIN sys.filegroups fg on dds.data_space_id = fg.data_space_id    --FileGroups to get file group name for the destination data space
         LEFT JOIN sys.partition_range_values prv ON prv.function_id = pf.function_id AND prv.boundary_id = dds.destination_id - 1 AND prv.parameter_id = 1
         WHERE
             ps.data_space_id = @psID
@@ -242,16 +251,16 @@ CREATE TABLE #Results(
         ,pbd.BoundaryType                                           AS BoundaryType
         ,pbd.PartitionID                                            AS PartitionID
         ,pbd.FileGroupName                                          AS DestinationFileGroup
-		,CASE 
-			WHEN LeftBoundary IS NULL THEN NULL
-			WHEN BoundaryType = 'RIGHT' THEN 'Y'
-			ELSE 'N'
-		END                                                         AS LeftBoundaryIncluded
-		,CASE 
-			WHEN RightBoundary IS NULL THEN NULL
-			WHEN BoundaryType = 'RIGHT' THEN N'N'
-			ELSE N'Y'
-		END                                                         AS RightBoundaryIncluded
+        ,CASE 
+            WHEN LeftBoundary IS NULL THEN NULL
+            WHEN BoundaryType = 'RIGHT' THEN 'Y'
+            ELSE 'N'
+        END                                                         AS LeftBoundaryIncluded
+        ,CASE 
+            WHEN RightBoundary IS NULL THEN NULL
+            WHEN BoundaryType = 'RIGHT' THEN N'N'
+            ELSE N'Y'
+        END                                                         AS RightBoundaryIncluded
         ,pbd.LeftBoundary                                           AS LeftBoundary
         ,pbd.RightBoundary                                          AS RightBoundary
 
@@ -262,20 +271,20 @@ CREATE TABLE #Results(
                     + LeftBoundaryStr, MAX(LEN(LeftBoundaryStr)) OVER()
                  )
                 +
-		        CASE 
-			        WHEN LeftBoundary IS NULL THEN N'    '
-			        WHEN BoundaryType = 'RIGHT' THEN N' <= '
-			        ELSE N' <  '
-		        END 
+                CASE 
+                    WHEN LeftBoundary IS NULL THEN N'    '
+                    WHEN BoundaryType = 'RIGHT' THEN N' <= '
+                    ELSE N' <  '
+                END 
                 + N' [x] '
-		        +
-		        CASE 
-			        WHEN RightBoundary IS NULL THEN N'    '
-			        WHEN BoundaryType = 'RIGHT' THEN N' <  '
-			        ELSE N' <= '
-		        END 
-		        +
-		        ISNULL(RightBoundaryStr, N'')
+                +
+                CASE 
+                    WHEN RightBoundary IS NULL THEN N'    '
+                    WHEN BoundaryType = 'RIGHT' THEN N' <  '
+                    ELSE N' <= '
+                END 
+                +
+                ISNULL(RightBoundaryStr, N'')
         END                                                         AS PartitionRange
     FROM PartitionBaseData pbd
     ORDER BY pbd.PartitionID
@@ -287,7 +296,7 @@ CREATE TABLE #Results(
         SELECT
             ps.name                     AS PartitionSchemeName
             ,SCHEMA_NAME(o.schema_id)   AS SchemaName
-	        ,o.[name]                   AS ObjectName
+            ,o.[name]                   AS ObjectName
             ,o.object_id                AS ObjectID
             ,o.[type]                   AS ObjectType
             ,o.[type_desc]              AS ObjectTypeName
@@ -309,7 +318,7 @@ CREATE TABLE #Results(
         SELECT
              ps.[name]                  AS PartitionSchemeName
             ,SCHEMA_NAME(o.schema_id)   AS SchemaName
-	        ,o.[name]                   AS ObjectName
+            ,o.[name]                   AS ObjectName
             ,i.[name]                   AS IndexName
             ,o.object_id                AS ObjectID
             ,i.index_id                 AS IndexID
@@ -334,5 +343,8 @@ CREATE TABLE #Results(
     RAISERROR(N'', 0, 0) WITH NOWAIT;
 END
 GO
-EXECUTE sp_ms_marksystemobject 'dbo.sp_HelpPartitionScheme'
+
+--Mark Stored Procedure as system object, so it executes in the context of current database.
+IF SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8)
+    EXEC(N'EXECUTE sp_ms_marksystemobject ''dbo.sp_HelpPartitionScheme''');
 GO
