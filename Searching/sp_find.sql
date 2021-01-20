@@ -12,13 +12,13 @@ IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].
     EXECUTE ('CREATE PROCEDURE [dbo].[sp_find] AS BEGIN PRINT ''Container for sp_find (C) Pavel Pawlowski'' END');
 GO
 /* ****************************************************
-sp_find v 1.10 (2020-10-02)
+sp_find v 1.20 (2021-01-20)
 
 Feedback: mailto:pavel.pawlowski@hotmail.cz
 
 MIT License
 
-Copyright (c) 2014-2020 Pavel Pawlowski
+Copyright (c) 2014-2021 Pavel Pawlowski
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -120,7 +120,7 @@ DECLARE
 
 --Set and print the procedure output caption
 SET @caption =  STUFF(N'
-sp_find v1.10 (2020-10-02) (C) 2014-2020 Pavel Pawlowski
+sp_find v1.20 (2021-01-20) (C) 2014-2021 Pavel Pawlowski
 ========================================================
 Feedback mail to: pavel.pawlowski@hotmail.cz
 --------------------------------------------------------
@@ -456,7 +456,7 @@ BEGIN
     SET @wrongTypes =   ISNULL(
                             STUFF((
                                     SELECT
-                                        N',' + t.ObjectTYpe
+                                        N',' + t.ObjectType
                                     FROM @inputTypes t
                                     LEFT JOIN @allowedTypes at ON at.ObjectType = t.ObjectType
                                     WHERE at.ObjectType IS NULL
@@ -715,7 +715,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'USER_TABLE')
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'User Tables', @noPoFieldsSql +
 N'
-        ,@basePath +N''\Tables\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+        ,@basePath +N''\Tables\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT 
                 [object].*
@@ -757,7 +757,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'VIEW')
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Views', @noPoFieldsSql +
 N'
-        ,@basePath + N''\Views\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+        ,@basePath + N''\Views\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -801,7 +801,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'CHECK_CONSTRAINT
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Check Constraints', @fieldsSql +
 N'
-        ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Constraints'' AS [ObjectPath]
+        ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Constraints'' COLLATE database_default AS [ObjectPath]
         ,(
                     SELECT
                         [object].*
@@ -834,7 +834,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'DEFAULT_CONSTRAI
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Default Constraints', @fieldsSql +
 N'
-        ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Constraints'' AS [ObjectPath]
+        ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Constraints'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -867,7 +867,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'FOREIGN_KEY_CONS
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Foreign Key Constraints', @fieldsSql +
 N'
-        ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Keys'' AS [ObjectPath]
+        ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Keys'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -908,7 +908,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (N'SQL_INLINE_TAB
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'SQL Inline And Table Valued Functions', @noPoFieldsSql +
 N'
-        ,@basePath + N''\Programmability\Functions\Table-valued Functions\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+        ,@basePath + N''\Programmability\Functions\Table-valued Functions\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -951,7 +951,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType IN (N'SQL_SCALAR_FUN
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'SQL Scalar Functions', @noPoFieldsSql +
 N'
-        ,@basePath + N''\Programmability\Functions\Scalar-valued Functions\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+        ,@basePath + N''\Programmability\Functions\Scalar-valued Functions\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -995,7 +995,7 @@ VALUES (0, 'CLR Scalar and Aggregate Functions', @noPoFieldsSql +
 N'
         ,@basePath
             + N''\Programmability\Functions\'' + CASE WHEN o.[type] = N''AF'' THEN N''Aggregate Functions\'' ELSE N''Scalar-valued Functions\'' END
-            + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+            + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -1033,7 +1033,7 @@ VALUES (0, 'CLR Table Valued Functions', @noPoFieldsSql +
 N'
         ,@basePath
             + N''\Programmability\Functions\Table-valued Functions\'' 
-            + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+            + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -1072,7 +1072,7 @@ VALUES (0, 'CLR Stored Procedures', @noPoFieldsSql +
 N'
         ,@basePath
             + N''\Programmability\Stored Procedures\'' + CASE WHEN o.is_ms_shipped = 1 THEN N''\System Stored Procedures\'' ELSE N'''' END
-            + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+            + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -1117,7 +1117,7 @@ N'
                 WHEN po.type = ''V'' AND o.is_ms_shipped = 1 THEN N''\Views\System Views\'' 
                 WHEN po.type = ''V'' THEN N''\Views\'' 
                END + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) +  N''\Triggers''         
-            AS [ObjectPath]
+            COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -1157,7 +1157,7 @@ VALUES (0, 'SQL Stored Procedures', @noPoFieldsSql +
 N'
     ,@basePath
         + N''\Programmability\Stored Procedures\'' + CASE WHEN o.is_ms_shipped = 1 THEN N''\System Stored Procedures\'' ELSE N'''' END
-        + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+        + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
     ,(
             SELECT
                 [object].*
@@ -1213,7 +1213,7 @@ N'SELECT --Schema Bound Objects
         ,po.name COLLATE database_default                                   AS [ParentObjectName]
         ,o.create_date                                                      AS [ObjectCreationDate]
         ,o.modify_date                                                      AS [ObjectModifyDate]
-        ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Keys'' AS [ObjectPath]
+        ,@basePath + N''\Tables\'' + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) + N''\Keys'' COLLATE database_default AS [ObjectPath]
         ,(
             SELECT
                 [object].*
@@ -1248,7 +1248,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'RULE')
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Rules', @noPoFieldsSql +
 N'
-    ,@basePath + N''\Programmability\Rules\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+    ,@basePath + N''\Programmability\Rules\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
     ,(
             SELECT
                 [object].*
@@ -1268,7 +1268,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'SYNONYM')
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Synonyms', @noPoFieldsSql +
 N'
-    ,@basePath + N''\Synonyms\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+    ,@basePath + N''\Synonyms\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
     ,(
             SELECT
                 [object].*
@@ -1302,7 +1302,7 @@ N'SELECT --Table Type
     ,SCHEMA_NAME(t.schema_id)                               AS [ParentObjectName]
     ,NULL                                                   AS [ObjectCreationDate]
     ,NULL                                                   AS [ObjectModifyDate]	
-    ,@basePath + N''\Programmability\Types\User-Defined Table Types\'' + QUOTENAME(SCHEMA_NAME(t.schema_id))  AS [ObjectPath]
+    ,@basePath + N''\Programmability\Types\User-Defined Table Types\'' + QUOTENAME(SCHEMA_NAME(t.schema_id)) COLLATE database_default AS [ObjectPath]
         ,(
             SELECT 
                  [type].*
@@ -1348,7 +1348,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'EXTENDED_STORED_
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Extended Stored Procedures', @noPoFieldsSql +
 N'
-    ,@basePath + N''\Programmability\Stored Procedures\System Stored Procedures\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+    ,@basePath + N''\Programmability\Stored Procedures\System Stored Procedures\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
     ,(
             SELECT
                 [object].*
@@ -1370,7 +1370,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'SERVICE_QUEUE')
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Service Queues', @noPoFieldsSql +
 N'
-    ,@basePath + N''\Service Broker\Queues'' + CASE WHEN o.is_ms_shipped = 1 THEN N''\System Queues'' ELSE N'''' END AS [ObjectPath]
+    ,@basePath + N''\Service Broker\Queues'' + CASE WHEN o.is_ms_shipped = 1 THEN N''\System Queues'' ELSE N'''' END COLLATE database_default AS [ObjectPath]
     ,(
             SELECT
                 [object].*
@@ -1392,7 +1392,7 @@ IF @versionNumber >= 11000000000000000 AND EXISTS(SELECT ObjectType FROM #objTyp
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Sequences', @noPoFieldsSql +
 N'
-    ,@basePath + N''\Programmability\Sequences\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+    ,@basePath + N''\Programmability\Sequences\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
     ,(
             SELECT
                 [object].*
@@ -1415,7 +1415,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'INTERNAL_TABLE')
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'Internal Tables', @fieldsSql +
 N'
-        ,N''''                                                              AS [ObjectPath]
+        ,N''''                                                              COLLATE database_default AS [ObjectPath]
         ,(
             SELECT 
                 [object].*
@@ -1455,7 +1455,7 @@ IF EXISTS(SELECT ObjectType FROM #objTypes WHERE ObjectType = N'SYSTEM_TABLE')
 INSERT INTO @searches(SearchScope, SearchDescription, SearchSQL)
 VALUES (0, 'System Tables', @noPoFieldsSql +
 N'
-    ,@basePath + N''\Tables\System Tables\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' AS [ObjectPath]
+    ,@basePath + N''\Tables\System Tables\'' + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' COLLATE database_default AS [ObjectPath]
     ,(
             SELECT 
                 [object].*
@@ -1509,7 +1509,7 @@ N'SELECT --Schema Bound Objects
             WHEN po.type = ''V'' AND o.is_ms_shipped = 1 THEN N''\Views\System Views\'' 
             WHEN po.type = ''V'' THEN N''\Views\'' 
            END + QUOTENAME(SCHEMA_NAME(po.schema_id)) + N''.'' + QUOTENAME(po.name) +  N''\Triggers''         
-        AS [ObjectPath]
+        COLLATE database_default AS [ObjectPath]
     ,(
             SELECT
                 [object].*
@@ -1573,7 +1573,7 @@ N'SELECT --Columns
             WHEN o.type = ''V'' THEN N''\Views\'' 
             WHEN o.type IN (''IF'', ''TF'', ''FT'') THEN N''\Programmability\Functions\Table-valued Functions\''
            END + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' + QUOTENAME(o.name) +  N''\Columns''         
-        AS [ObjectPath]
+        COLLATE database_default AS [ObjectPath]
     ,(SELECT 
         [column].* 
         ,CONVERT(xml, STUFF(
@@ -1644,7 +1644,7 @@ N'SELECT --Indexes
     ,o.name COLLATE database_default                    AS [ParentObjectName]
     ,NULL                                               AS [ObjectCreationDate]
     ,NULL                                               AS [ObjectModifyDate]
-    ,@basePath + CASE WHEN o.type = ''V'' THEN N''\Views\'' ELSE N''\Tables\'' END + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' + QUOTENAME(o.name) +  N''\Indexes'' AS [ObjectPath]
+    ,@basePath + CASE WHEN o.type = ''V'' THEN N''\Views\'' ELSE N''\Tables\'' END + QUOTENAME(SCHEMA_NAME(o.schema_id)) + N''.'' + QUOTENAME(o.name) +  N''\Indexes'' COLLATE database_default AS [ObjectPath]
     ,(
         SELECT
             [index].*
@@ -1699,7 +1699,7 @@ N'SELECT --Schemas
     ,DB_NAME() COLLATE database_default AS [ParentObjectName]
     ,NULL                               AS [ObjectCreationDate]
     ,NULL                               AS [ObjectModifyDate]
-    ,@basePath + N''\Security\Schemas'' AS [ObjectPath]
+    ,@basePath + N''\Security\Schemas'' COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.schemas [schema] WHERE schema_id = s.schema_id FOR XML AUTO, TYPE)
                                         AS [ObjectDetails]
 FROM sys.schemas s
@@ -1724,7 +1724,7 @@ N'SELECT --database_principals
     ,DB_NAME() COLLATE database_default AS [ParentObjectName]
     ,dp.create_date                     AS [ObjectCreationDate]
     ,dp.modify_date                     AS [ObjectModifyDate]
-    ,@basePath + N''\Security\'' + CASE dp.type WHEN ''R'' THEN N''Roles\Database Roles'' WHEN ''A'' THEN N''Roles\Application Roles'' ELSE N''Users'' END AS [ObjectPath]
+    ,@basePath + N''\Security\'' + CASE dp.type WHEN ''R'' THEN N''Roles\Database Roles'' WHEN ''A'' THEN N''Roles\Application Roles'' ELSE N''Users'' END COLLATE database_default AS [ObjectPath]
     ,
         (SELECT 
             [databasePrincipal].* 
@@ -1765,7 +1765,7 @@ N'SELECT --Types
     ,CASE WHEN st.user_type_id IS NULL THEN SCHEMA_NAME(t.schema_id) ELSE st.name END                         AS [ParentObjectName]
     ,NULL                                               AS [ObjectCreationDate]
     ,NULL                                               AS [ObjectModifyDate]	
-    ,@basePath + N''\Programmability\Types\'' + CASE WHEN t.is_assembly_type = 1 THEN N''User-Defined Types\'' ELSE N''User-Defined Data Types\'' END + QUOTENAME(SCHEMA_NAME(t.schema_id)) AS [ObjectPath]
+    ,@basePath + N''\Programmability\Types\'' + CASE WHEN t.is_assembly_type = 1 THEN N''User-Defined Types\'' ELSE N''User-Defined Data Types\'' END + QUOTENAME(SCHEMA_NAME(t.schema_id)) COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.types [type] WHERE user_type_id = t.user_type_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                         AS [ObjectDetails]
 FROM sys.types t
@@ -1795,7 +1795,7 @@ N'SELECT --Assemblies
     ,DB_NAME() COLLATE database_default             AS [ParentObjectName]
     ,a.create_date                                  AS [ObjectCreationDate]
     ,a.modify_date                                  AS [ObjectModifyDate]
-    ,@basePath + N''\Programmability\Assemblies''   AS [ObjectPath]
+    ,@basePath + N''\Programmability\Assemblies'' COLLATE database_default AS [ObjectPath]
     ,(
     SELECT
         [assembly].*
@@ -1857,7 +1857,7 @@ N'SELECT --sys.xml_schema_collections
     ,SCHEMA_NAME(x.schema_id) COLLATE database_default              AS [ParentObjectName]
     ,x.create_date                                                  AS [ObjectCreationDate]
     ,x.modify_date                                                  AS [ObjectModifyDate]
-    ,@basePath + N''\Programmability\Types\XML Schema Collections'' AS [ObjectPath]
+    ,@basePath + N''\Programmability\Types\XML Schema Collections'' COLLATE database_default AS [ObjectPath]
     ,(
     SELECT
         [xmlSchemaCollection].*
@@ -1889,7 +1889,7 @@ N'SELECT --sys.service_message_types
     ,NULL                               AS [ObjectCreationDate]
     ,NULL                               AS [ObjectModifyDate]
     ,@basePath + N''\Service Broker\Message Types'' 
-        + CASE WHEN sm.message_type_id  <= 65535 THEN N''\System Message Types'' ELSE N'''' END AS [ObjectPath]
+        + CASE WHEN sm.message_type_id  <= 65535 THEN N''\System Message Types'' ELSE N'''' END COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.service_message_types [serviceMessageType] WHERE [serviceMessageType].message_type_id = sm.message_type_id FOR XML AUTO, BINARY BASE64, TYPE)
                                         AS [ObjectDetails]
 FROM sys.service_message_types sm
@@ -1915,7 +1915,7 @@ N'SELECT --sys.service_contracts
     ,NULL                               AS [ObjectCreationDate]
     ,NULL                               AS [ObjectModifyDate]
     ,@basePath + N''\Service Broker\Contracts'' 
-        + CASE WHEN sc.service_contract_id <= 65535 THEN N''\System Contracts'' ELSE '''' END AS [ObjectPath]
+        + CASE WHEN sc.service_contract_id <= 65535 THEN N''\System Contracts'' ELSE '''' END COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.service_contracts [serviceContract] WHERE [serviceContract].service_contract_id = sc.service_contract_id FOR XML AUTO, BINARY BASE64, TYPE)
                                         AS [ObjectDetails]
 FROM sys.service_contracts sc
@@ -1941,7 +1941,7 @@ N'SELECT --sys.services
     ,NULL                               AS [ObjectCreationDate]
     ,NULL                               AS [ObjectModifyDate]
     ,@basePath + N''\Service Broker\Services'' 
-        + CASE WHEN s.service_id <= 65535 THEN N''\System Services'' ELSE '''' END AS [ObjectPath]
+        + CASE WHEN s.service_id <= 65535 THEN N''\System Services'' ELSE '''' END COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.services [service] WHERE [service].service_id = s.service_id FOR XML AUTO, BINARY BASE64, TYPE)
                                         AS [ObjectDetails]
 FROM sys.services s
@@ -1966,7 +1966,7 @@ N'SELECT --sys.remote_service_bindings
     ,DB_NAME() COLLATE database_default AS [ParentObjectName]
     ,NULL                               AS [ObjectCreationDate]
     ,NULL                               AS [ObjectModifyDate]
-    ,@basePath + N''\Service Broker\Remote Service Binding'' AS [ObjectPath]
+    ,@basePath + N''\Service Broker\Remote Service Binding'' COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.remote_service_bindings [remoteServiceBinding] WHERE [remoteServiceBinding].remote_service_binding_id = rsb.remote_service_binding_id FOR XML AUTO, BINARY BASE64, TYPE)
                                         AS [ObjectDetails]
 FROM sys.remote_service_bindings rsb
@@ -1991,7 +1991,7 @@ N'SELECT --sys.routes
     ,DB_NAME() COLLATE database_default         AS [ParentObjectName]
     ,NULL                                       AS [ObjectCreationDate]
     ,NULL                                       AS [ObjectModifyDate]
-    ,@basePath + N''\Service Broker\Routes''    AS [ObjectPath]
+    ,@basePath + N''\Service Broker\Routes'' COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.routes [route] WHERE [route].route_id = r.route_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                 AS [ObjectDetails]
 FROM sys.routes r
@@ -2016,7 +2016,7 @@ N'SELECT --sys.fulltext_catalogs
     ,DB_NAME() COLLATE database_default             AS [ParentObjectName]
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
-    ,@basePath + N''\Storage\Full Text Catalogs''   AS [ObjectPath]
+    ,@basePath + N''\Storage\Full Text Catalogs'' COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.fulltext_catalogs [fulltextCatalog] WHERE [fulltextCatalog].fulltext_catalog_id = fc.fulltext_catalog_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                     AS [ObjectDetails]
 FROM sys.fulltext_catalogs fc
@@ -2041,7 +2041,7 @@ N'SELECT --sys.symmetric_keys
     ,DB_NAME() COLLATE database_default         AS [ParentObjectName]
     ,sc.create_date                             AS [ObjectCreationDate]
     ,sc.modify_date                             AS [ObjectModifyDate]
-    ,@basePath + N''\Security\Symmetric Keys''  AS [ObjectPath]
+    ,@basePath + N''\Security\Symmetric Keys'' COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.symmetric_keys [symmetricKey] WHERE [symmetricKey].symmetric_key_id = sc.symmetric_key_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                 AS [ObjectDetails]
 FROM sys.symmetric_keys sc
@@ -2066,7 +2066,7 @@ N'SELECT --sys.asymmetric_keys
     ,DB_NAME() COLLATE database_default         AS [ParentObjectName]
     ,NULL                                       AS [ObjectCreationDate]
     ,NULL                                       AS [ObjectModifyDate]
-    ,@basePath + N''\Security\Asymmetric Keys'' AS [ObjectPath]
+    ,@basePath + N''\Security\Asymmetric Keys'' COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.asymmetric_keys [asymmetricKey] WHERE [asymmetricKey].asymmetric_key_id = ac.asymmetric_key_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                 AS [ObjectDetails]
 FROM sys.asymmetric_keys ac
@@ -2091,7 +2091,7 @@ N'SELECT --sys.certificates
     ,DB_NAME() COLLATE database_default         AS [ParentObjectName]
     ,NULL                                       AS [ObjectCreationDate]
     ,NULL                                       AS [ObjectModifyDate]
-    ,@basePath + N''\Security\Certificates''    AS [ObjectPath]
+    ,@basePath + N''\Security\Certificates'' COLLATE database_default AS [ObjectPath]
     ,(SELECT * FROM sys.certificates [certificate] WHERE [certificate].certificate_id = c.certificate_id FOR XML AUTO, BINARY BASE64, TYPE)
                                                 AS [ObjectDetails]
 FROM sys.certificates c
@@ -2116,7 +2116,7 @@ N'SELECT --sys.partition_schemes
     ,DB_NAME() COLLATE database_default             AS [ParentObjectName]
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
-    ,@basePath + N''\Storage\Partition Schemes''    AS [ObjectPath]
+    ,@basePath + N''\Storage\Partition Schemes'' COLLATE database_default AS [ObjectPath]
     ,(SELECT
         [partitionScheme].*
         ,(
@@ -2154,7 +2154,7 @@ N'SELECT --sys.partition_functions
     ,DB_NAME() COLLATE database_default             AS [ParentObjectName]
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
-    ,@basePath + N''\Storage\Partition Functions''  AS [ObjectPath]
+    ,@basePath + N''\Storage\Partition Functions'' COLLATE database_default AS [ObjectPath]
     ,
         (SELECT
 	       [partitionFunction].*
@@ -2206,7 +2206,7 @@ N'SELECT --sys.triggers
     ,DB_NAME() COLLATE database_default                     AS [ParentObjectName]
     ,NULL                                                   AS [ObjectCreationDate]
     ,NULL                                                   AS [ObjectModifyDate]
-    ,@basePath + N''\Programmability\Database Triggers''    AS [ObjectPath]
+    ,@basePath + N''\Programmability\Database Triggers'' COLLATE database_default AS [ObjectPath]
     ,
         (SELECT
             [trigger].*
@@ -2269,7 +2269,7 @@ N'SELECT --sys.server_triggers
     ,@@SERVERNAME COLLATE database_default  AS [ParentObjectName]
     ,NULL                                   AS [ObjectCreationDate]
     ,NULL                                   AS [ObjectModifyDate]
-    ,N''Server Objects\Triggers''           AS [ObjectPath]
+    ,N''Server Objects\Triggers'' COLLATE database_default AS [ObjectPath]
     ,
         (SELECT
             [trigger].*
@@ -2331,7 +2331,7 @@ N'SELECT --server_principals
     ,@@SERVERNAME COLLATE database_default  AS [ParentObjectName]
     ,sp.create_date                         AS [ObjectCreationDate]
     ,sp.modify_date                         AS [ObjectModifyDate]
-    ,N''Security\'' + CASE WHEN sp.type_desc = N''SERVER_ROLE'' THEN N''Server Roles'' ELSE N''Logins'' END  AS [ObjectPath]
+    ,N''Security\'' + CASE WHEN sp.type_desc = N''SERVER_ROLE'' THEN N''Server Roles'' ELSE N''Logins'' END COLLATE database_default AS [ObjectPath]
     ,
         (SELECT 
             [serverPrincipal].* 
@@ -2378,7 +2378,7 @@ N'SELECT --sys.credentials
     ,@@SERVERNAME COLLATE database_default  AS [ParentObjectName]
     ,cr.create_date                         AS [ObjectCreationDate]
     ,cr.modify_date                         AS [ObjectModifyDate]
-    ,N''Security\Credentials''              AS [ObjectPath]
+    ,N''Security\Credentials'' COLLATE database_default AS [ObjectPath]
     ,
         (SELECT 
         [credential].* 
@@ -2417,7 +2417,7 @@ N'SELECT --sys.servers
     ,@@SERVERNAME COLLATE database_default  AS [ParentObjectName]
     ,NULL                                   AS [ObjectCreationDate]
     ,s.modify_date                          AS [ObjectModifyDate]
-    ,N''ServerObjects\Linked Servers''      AS [ObjectPath]
+    ,N''ServerObjects\Linked Servers'' COLLATE database_default AS [ObjectPath]
     ,
         (SELECT 
             [server].* 
@@ -2471,7 +2471,7 @@ N'SELECT
     ,f.name COLLATE database_default                            AS [ParentObjectName]
     ,e.created_time                                             AS [ObjectCreationDate]
     ,NULL                                                       AS [ObjectModifyDate]
-    ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Environments''    AS [ObjectPath]
+    ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Environments'' COLLATE database_default AS [ObjectPath]
     ,
         (SELECT 
             [environment].* 
@@ -2505,7 +2505,7 @@ N'SELECT
     ,N''SSISDB'' COLLATE database_default           AS [ParentObjectName]
     ,f.created_time                                 AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
-    ,N''[SSISDB]''                                  AS [ObjectPath]
+    ,N''[SSISDB]'' COLLATE database_default         AS [ObjectPath]
     ,
         (SELECT 
             folder.* 
@@ -2536,7 +2536,7 @@ N'SELECT
     ,e.environment_name COLLATE database_default    AS [ParentObjectName]
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
-    ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Environments\'' + QUOTENAME(e.environment_name)        AS [ObjectPath]
+    ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Environments\'' + QUOTENAME(e.environment_name) COLLATE database_default AS [ObjectPath]
     ,
         (SELECT 
             variable.*
@@ -2583,7 +2583,7 @@ N'SELECT
     ,f.name COLLATE database_default                AS [ParentObjectName]
     ,p.created_time                                 AS [ObjectCreationDate]
     ,p.last_deployed_time                           AS [ObjectModifyDate]
-    ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Projects''             AS [ObjectPath]
+    ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Projects'' COLLATE database_default AS [ObjectPath]
     ,
         (SELECT 
             project.*
@@ -2625,7 +2625,7 @@ N'SELECT
     ,pr.name COLLATE database_default               AS [ParentObjectName]
     ,NULL                                           AS [ObjectCreationDate]
     ,NULL                                           AS [ObjectModifyDate]
-    ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Projects\'' + QUOTENAME(pr.name) + N''\Packages''  AS [ObjectPath]
+    ,N''[SSISDB]\'' + QUOTENAME(F.name) + N''\Projects\'' + QUOTENAME(pr.name) + N''\Packages'' COLLATE database_default AS [ObjectPath]
     ,
         (SELECT 
              package.*
@@ -3073,5 +3073,5 @@ DROP TABLE #typesMapping;
 END --End of Procedure
 GO
 IF SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8)
-    EXEC(N'EXECUTE sp_ms_marksystemobject N''dbo.sp_find''');
+    EXEC(N'EXECUTE sp_MS_marksystemobject N''dbo.sp_find''');
 GO
