@@ -38,14 +38,13 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-    written consent.
 
 Description: 
     Checks Partition Scheme and Partition function whether it covers input @pValue. If not additional partitions are crated to cover the input date
     It ensures that only one partition scheme is mapped to one partition function.
 
 Parameters:
-     @pValue                sql_variant        = NULL      --value to check
+     @pValue                sql_variant     = NULL      --value to check
     ,@psName                nvarchar(130)   = NULL      --Partition Scheme Name
     ,@tableName             nvarchar(261)   = NULL      --Table Name. It is possible to specify table name instead of Partition Scheme Name
     ,@incrementType         nvarchar(10)    = 'MONTH'   --Range Increment Type eg. YAER, MONTH, WEEK, DAY
@@ -55,7 +54,7 @@ Parameters:
 
 * ***************************************************** */ 
 ALTER PROCEDURE [dbo].[sp_tblCheckAndCreatePartitions]
-     @pValue                sql_variant        = NULL      --value to check
+     @pValue                sql_variant     = NULL      --value to check
     ,@psName                nvarchar(130)   = NULL      --Partition Scheme Name
     ,@tableName             nvarchar(261)   = NULL      --Table Name. It is possible to specify table name instead of Partition Scheme Name
     ,@incrementType         nvarchar(10)    = 'MONTH'   --Range Increment Type eg. YAER, MONTH, WEEK, DAY

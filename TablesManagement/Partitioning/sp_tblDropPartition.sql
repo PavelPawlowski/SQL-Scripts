@@ -4,8 +4,8 @@
    Comment-out the unsupported USE [master] when running in Azure SQL DB/Synapse Analytics
    or ignore error caused by unsupported USE statement
 ******************************************************************************************** */
-USE [master]
-GO
+--USE [master]
+--GO
 
 --Detection of correct sp_tblSwitchPartition
 DECLARE
@@ -20,8 +20,8 @@ DECLARE
 
 SELECT
     @definition = m.definition
-FROM master.sys.procedures p
-INNER JOIN master.sys.sql_modules m ON m.object_id = p.object_id
+FROM sys.procedures p
+INNER JOIN .sys.sql_modules m ON m.object_id = p.object_id
 WHERE name = 'sp_tblSwitchPartition'
 
 SELECT 
@@ -213,8 +213,8 @@ BEGIN
 
         RAISERROR(N'!!! WARNING !!!    !!! WARNING !!!    !!! WARNING !!!    !!! WARNING !!!    !!! WARNING !!!', 0, 0) WITH NOWAIT;
         RAISERROR(N'Even the procedure is using @tableName for partition dropping, it merges partitions in Partition Function,', 0, 0) WITH NOWAIT;
-        RAISERROR(N'thuss affecting all parition schemes and table usin corresponding partition function', 0, 0) WITH NOWAIT;
-        RAISERROR(N'If partition function is used specified table is used by multiple tables, all tables are affected but', 0, 0) WITH NOWAIT;
+        RAISERROR(N'thuss affecting all parition schemes and table using corresponding partition function', 0, 0) WITH NOWAIT;
+        RAISERROR(N'If partition function is used by multiple tables, all tables are affected but', 0, 0) WITH NOWAIT;
         RAISERROR(N'partition truncation or switching is done only on the table specified thus on other tables it is very costly operation', 0, 0) WITH NOWAIT;
         RAISERROR(N'', 0, 0) WITH NOWAIT;
         RAISERROR(N'It is recomended that the partition function is used by single table.', 0, 0) WITH NOWAIT;
