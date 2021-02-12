@@ -1,7 +1,14 @@
+/* *****************************************************************************************
+                                      AZURE SQL DB Notice
+
+   Comment-out the unsupported USE [master] when running in Azure SQL DB/Synapse Analytics
+   or ignore error caused by unsupported USE statement
+******************************************************************************************** */
+
 USE [master]
 GO
 IF NOT EXISTS (SELECT 1 FROM sys.all_objects WHERE object_id = OBJECT_ID('[dbo].[sp_tblScriptIndexes]') AND TYPE = 'P')
-	EXECUTE ('CREATE PROCEDURE [dbo].[sp_tblScriptIndexes] AS BEGIN PRINT ''Container'' END')
+    EXECUTE ('CREATE PROCEDURE [dbo].[sp_tblScriptIndexes] AS BEGIN PRINT ''Container'' END')
 GO
 /* ****************************************************
 sp_tblScriptIndexes v  0.65 (2018-07-30)
@@ -32,21 +39,21 @@ SOFTWARE.
     written consent.
 
 Description: 
-	Scripts indexes for specifed table
+    Scripts indexes for specifed table
 
 
 Parameters:
 
-	@tableName                      nvarchar(261)   = NULL                  --Table which indexes should be scripted
-	,@newTableName                  nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
-	,@partitionID                   int             = 0                     --Specifies how the ON [FileGroup] is being scripted
-	,@scriptPrimaryKey              bit             = 1		                --Specifies whether Primary key should be scripted
-	,@scriptUniqueConstraints       bit             = 1		                --Specifies whether Unique Constraints should be scripted
-	,@scriptIndexes                 bit             = 1		                --Specifies wheteher Indexes should be scripted
-	,@scriptDisabledIndexes         bit             = 0		                --Specifies whether to script disabled indexes
-	,@scriptAlterIndexDisable       bit             = 1		                --For Disabled indexes scripts the ALTER INDEX DISABLE
+    @tableName                      nvarchar(261)   = NULL                  --Table which indexes should be scripted
+    ,@newTableName                  nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
+    ,@partitionID                   int             = 0                     --Specifies how the ON [FileGroup] is being scripted
+    ,@scriptPrimaryKey              bit             = 1                        --Specifies whether Primary key should be scripted
+    ,@scriptUniqueConstraints       bit             = 1                        --Specifies whether Unique Constraints should be scripted
+    ,@scriptIndexes                 bit             = 1                        --Specifies wheteher Indexes should be scripted
+    ,@scriptDisabledIndexes         bit             = 0                        --Specifies whether to script disabled indexes
+    ,@scriptAlterIndexDisable       bit             = 1                        --For Disabled indexes scripts the ALTER INDEX DISABLE
     ,@scriptDropExisting            bit             = 1                     --Scripts DROP_EXISTING = ON or DROP_EXISTING = OFF
-	,@scriptIndexTypes              nvarchar(100)   = N'1,2,3,5,6'          --Bitmask of Index types to Script Currently 1,2,5,6
+    ,@scriptIndexTypes              nvarchar(100)   = N'1,2,3,5,6'          --Bitmask of Index types to Script Currently 1,2,5,6
     ,@indexNames                    nvarchar(max)   = '%'                   --Comma Separated List of Index Names to Script. Supports LIKE wildcards
     ,@noInfoMsg                     bit             = 0                     --Disbles printing of header and informational messages
     ,@outputScript                  nvarchar(max)   = NULL          OUTPUT  --Outputs script to the @outputScript parameters. Allows utilization of the script in other stored procedures
@@ -58,26 +65,26 @@ Parameters:
     
 
 Index types and corresponding bit positions
-	1 = Clustered
-	2 = Nonclustered
-	3 = XML
-	4 = Spatial
-	5 = Clustered columnstore index - Applies to: SQL Server 2014 and above
-	6 = Nonclustered columnstore index - Applies to: SQL Server 2012 and above
-	7 = Nonclustered hash index - Applies to: SQL Server 2014 and above
+    1 = Clustered
+    2 = Nonclustered
+    3 = XML
+    4 = Spatial
+    5 = Clustered columnstore index - Applies to: SQL Server 2014 and above
+    6 = Nonclustered columnstore index - Applies to: SQL Server 2012 and above
+    7 = Nonclustered hash index - Applies to: SQL Server 2014 and above
  
 * ***************************************************** */ 
 ALTER PROCEDURE [dbo].[sp_tblScriptIndexes]
-	@tableName                      nvarchar(261)   = NULL                  --Table which indexes should be scripted
-	,@newTableName                  nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
-	,@partitionID                   int             = 0                     --Specifies how the ON [FileGroup] is being scripted
-	,@scriptPrimaryKey              bit             = 1		                --Specifies whether Primary key should be scripted
-	,@scriptUniqueConstraints       bit             = 1		                --Specifies whether Unique Constraints should be scripted
-	,@scriptIndexes                 bit             = 1		                --Specifies wheteher Indexes should be scripted
-	,@scriptDisabledIndexes         bit             = 0		                --Specifies whether to script disabled indexes
-	,@scriptAlterIndexDisable       bit             = 1		                --For Disabled indexes scripts the ALTER INDEX DISABLE
+    @tableName                      nvarchar(261)   = NULL                  --Table which indexes should be scripted
+    ,@newTableName                  nvarchar(261)   = NULL                  --New table Name. If NULL then Indexes are scripted for original table
+    ,@partitionID                   int             = 0                     --Specifies how the ON [FileGroup] is being scripted
+    ,@scriptPrimaryKey              bit             = 1                        --Specifies whether Primary key should be scripted
+    ,@scriptUniqueConstraints       bit             = 1                        --Specifies whether Unique Constraints should be scripted
+    ,@scriptIndexes                 bit             = 1                        --Specifies wheteher Indexes should be scripted
+    ,@scriptDisabledIndexes         bit             = 0                        --Specifies whether to script disabled indexes
+    ,@scriptAlterIndexDisable       bit             = 1                        --For Disabled indexes scripts the ALTER INDEX DISABLE
     ,@scriptDropExisting            bit             = 1                     --Scripts DROP_EXISTING = ON or DROP_EXISTING = OFF
-	,@scriptIndexTypes              nvarchar(100)   = N'1,2,3,5,6'          --Bitmask of Index types to Script Currently 1,2,5,6
+    ,@scriptIndexTypes              nvarchar(100)   = N'1,2,3,5,6'          --Bitmask of Index types to Script Currently 1,2,5,6
     ,@indexNames                    nvarchar(max)   = '%'                   --Comma Separated List of Index Names to Script. Supports LIKE wildcards
     ,@noInfoMsg                     bit             = 0                     --Disbles printing of header and informational messages
     ,@outputScript                  nvarchar(max)   = NULL          OUTPUT  --Outputs script to the @outputScript parameters. Allows utilization of the script in other stored procedures
@@ -87,7 +94,7 @@ ALTER PROCEDURE [dbo].[sp_tblScriptIndexes]
     ,@dataCompression               nvarchar(5)     = NULL                  --When specified the overrides the current index data compression
     ,@columnstoreDataCompression    nvarchar(50)    = NULL                  --When specified then overrides the current columnstore data compression type
 AS
-BEGIN	
+BEGIN    
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
@@ -186,7 +193,7 @@ BEGIN
         RAISERROR(N'', 0, 0) WITH NOWAIT;
         RAISERROR(N'Udage:
 sp_tblScriptIndexes <parameters>', 0,0) WITH NOWAIT;
-		RAISERROR(N'', 0, 0);
+        RAISERROR(N'', 0, 0);
         RAISERROR(N'Script is returned as XML processing-instruction to allow easy complete script retrieval.', 0, 0) WITH NOWAIT;
         RAISERROR(N'If not a complete script is returned, check "Maximum Characters Retrieved" for XML in the Query Options of SSMS', 0, 0) WITH NOWAIT;
         RAISERROR(N'', 0, 0) WITH NOWAIT;
@@ -203,11 +210,11 @@ sp_tblScriptIndexes <parameters>', 0,0) WITH NOWAIT;
                                                                                    For Non-Partitioned indexes script ON [FileGroupName]
                                                                               >0 - For Partitioned Indexes script ON [FileGroupOfPartitionID]
                                                                                    For Non-Partitioned indexes is the same as 0
-    ,@scriptPrimaryKey              bit             = 1		                --Specifies whether Primary key should be scripted
-    ,@scriptUniqueConstraints       bit             = 1		                --Specifies whether Unique Constraints should be scripted
-    ,@scriptIndexes                 bit             = 1		                --Specifies wheteher Indexes should be scripted',0, 0) WITH NOWAIT;
-RAISERROR(N'    ,@scriptDisabledIndexes         bit             = 0		                --Specifies whether to script disabled indexes
-    ,@scriptAlterIndexDisable       bit             = 1		                --For Disabled indexes scripts the ALTER INDEX DISABLE
+    ,@scriptPrimaryKey              bit             = 1                        --Specifies whether Primary key should be scripted
+    ,@scriptUniqueConstraints       bit             = 1                        --Specifies whether Unique Constraints should be scripted
+    ,@scriptIndexes                 bit             = 1                        --Specifies wheteher Indexes should be scripted',0, 0) WITH NOWAIT;
+RAISERROR(N'    ,@scriptDisabledIndexes         bit             = 0                        --Specifies whether to script disabled indexes
+    ,@scriptAlterIndexDisable       bit             = 1                        --For Disabled indexes scripts the ALTER INDEX DISABLE
     ,@scriptDropExisting            bit             = 1                     --Scripts DROP_EXISTING = ON or DROP_EXISTING = OFF
     ,@scriptIndexTypes              nvarchar(100)   = N''1,2,3,5,6''          --Bitmask of Index types to Script Currently 1,2,5,6
     ,@indexNames                    nvarchar(max)   = ''%%''                   --Comma Separated List of Index Names to Script. Supports LIKE wildcards
@@ -225,21 +232,21 @@ RAISERROR(N'    ,@noXml                         bit             = 0             
 ', 0, 0) WITH NOWAIT;
         RAISERROR(N'', 0, 0) WITH NOWAIT;
         RAISERROR(N'Supported Index Types:
-	1 = Clustered
-	2 = Nonclustered
-	3 = XML
-	4 = Spatial
-	5 = Clustered columnstore index - Applies to: SQL Server 2014 and above
-	6 = Nonclustered columnstore index - Applies to: SQL Server 2012 and above
-	7 = Nonclustered hash index - Applies to: SQL Server 2014 and above', 0, 0) WITH NOWAIT;
+    1 = Clustered
+    2 = Nonclustered
+    3 = XML
+    4 = Spatial
+    5 = Clustered columnstore index - Applies to: SQL Server 2014 and above
+    6 = Nonclustered columnstore index - Applies to: SQL Server 2012 and above
+    7 = Nonclustered hash index - Applies to: SQL Server 2014 and above', 0, 0) WITH NOWAIT;
         
         RETURN
     END
 
-	--Split @newTableName into Schema and Table
-	SELECT
-		@newTbName          = PARSENAME(@newTableName, 1)
-		,@newTableSchema    = PARSENAME(@newTableName,2)
+    --Split @newTableName into Schema and Table
+    SELECT
+        @newTbName          = PARSENAME(@newTableName, 1)
+        ,@newTableSchema    = PARSENAME(@newTableName,2)
 
     SELECT
         @newTable = QUOTENAME(ISNULL(@newTableSchema, SCHEMA_NAME(t.schema_id))) + N'.' + QUOTENAME(ISNULL(@newTbName, t.name))
@@ -253,7 +260,7 @@ RAISERROR(N'    ,@noXml                         bit             = 0             
 
     INSERT INTO @scripts(IndexScript)
     SELECT
-        CASE	--Script CREATE INDES or APPROPRIATE ALTER TABLE for CONSTRAINTS
+        CASE    --Script CREATE INDES or APPROPRIATE ALTER TABLE for CONSTRAINTS
             WHEN i.is_primary_key = 1 THEN N'ALTER TABLE ' + @newTable + N' ADD CONSTRAINT ' + QUOTENAME(ISNULL(@newTbName + '_', '') + i.name) + N' PRIMARY KEY ' + CASE WHEN i.[type] = 1 THEN N'CLUSTERED' ELSE N'NONCLUSTERED' END
             WHEN i.is_unique_constraint = 1 THEN N'ALTER TABLE ' + @newTable + N' ADD CONSTRAINT ' + QUOTENAME(ISNULL(@newTbName + '_', '') + i.name) + N' UNIQUE ' + CASE WHEN i.[type] = 1 THEN N'CLUSTERED' ELSE N'NONCLUSTERED' END
             ELSE N'CREATE ' + CASE WHEN i.is_unique = 1 THEN N'UNIQUE ' ELSE N'' END 
@@ -267,10 +274,10 @@ RAISERROR(N'    ,@noXml                         bit             = 0             
             END + ' INDEX ' + QUOTENAME(ISNULL(@newTbName + '_', '') + i.name) + N' ON ' + @newTable
         END + CASE WHEN i.type <> 5 THEN N' ('  + NCHAR(13) + NCHAR(10) ELSE N'' END
         +
-        ISNULL(	--Script Key columns for INDEX or CONSTRAINT
+        ISNULL(    --Script Key columns for INDEX or CONSTRAINT
             STUFF((
                     SELECT
-                        (	
+                        (    
                             SELECT 
                                 N'    ,' + QUOTENAME(c.name) + CASE WHEN ic.is_descending_key = 1 THEN N' DESC' ELSE '' END  + NCHAR(13)-- + NCHAR(10)
                             FROM sys.index_columns ic 
@@ -294,7 +301,7 @@ RAISERROR(N'    ,@noXml                         bit             = 0             
                  + N' FOR ' + CASE xi.secondary_type WHEN 'P' THEN N'PATH' WHEN 'V' THEN N'VALUE' WHEN 'R' THEN N'PROPERTY' END
             ELSE N''
           END
-        + ISNULL(	--Script Included columns for INDEXES
+        + ISNULL(    --Script Included columns for INDEXES
             CASE WHEN i.type NOT IN (3, 5, 6) THEN N' INCLUDE (' + NCHAR(13) ELSE N'' END + 
             STUFF((
                 SELECT
@@ -319,11 +326,11 @@ RAISERROR(N'    ,@noXml                         bit             = 0             
             + N')'
             ,N''
         ) + NCHAR(13) + NCHAR(10)
-        + ISNULL(N'WHERE ' + i.filter_definition + NCHAR(13) + NCHAR(10), '')	--Script filter ondition for INDEX
-        + N'WITH ('		--Script Options for INDEXES AND CONSTRAINTS
+        + ISNULL(N'WHERE ' + i.filter_definition + NCHAR(13) + NCHAR(10), '')    --Script filter ondition for INDEX
+        + N'WITH ('        --Script Options for INDEXES AND CONSTRAINTS
         + CASE 
             WHEN i.[type] IN (5, 6) THEN N'DROP_EXISTING = OFF'
-            ELSE		
+            ELSE        
                 N'PAD_INDEX = ' + CASE WHEN i.is_padded = 1 THEN N'ON' ELSE N'OFF' END
                 + N', SORT_IN_TEMPDB = OFF' 
                 + CASE WHEN i.is_primary_key = 1 OR i.is_unique_constraint = 1 THEN N'' ELSE CASE WHEN @scriptDropExisting = 1 THEN N', DROP_EXISTING = ON' ELSE  N', DROP_EXISTING = OFF' END END
@@ -379,17 +386,17 @@ RAISERROR(N'    ,@noXml                         bit             = 0             
         + N';'
         + CASE
             WHEN i.is_disabled = 1 AND @scriptAlterIndexDisable = 1 
-                THEN NCHAR(13) + NCHAR(10) + N'ALTER INDEX '  + QUOTENAME(ISNULL(@newTbName + '_', '') + i.name) + N' ON ' + @newTable + N' DISABLE'				
+                THEN NCHAR(13) + NCHAR(10) + N'ALTER INDEX '  + QUOTENAME(ISNULL(@newTbName + '_', '') + i.name) + N' ON ' + @newTable + N' DISABLE'                
             ELSE N''
           END AS IndexScript
     FROM sys.indexes i
     INNER JOIN #indexNames ixn ON i.name = ixn.IndexName
     LEFT JOIN sys.xml_indexes xi ON xi.object_id = i.object_id and xi.index_id = i.index_id
-    LEFT JOIN sys.stats s ON s.object_id = i.object_id AND s.stats_id = i.index_id	--Statistics to get the NO RECOMPUTE information
-    INNER JOIN sys.data_spaces ds ON i.data_space_id = ds.data_space_id	AND ds.type <> 'FX'	--dsta_spaces to find out the FileGroup/partition scheme informaiton (exclude MEMORY OPTIMIZED data Spaces
-    LEFT JOIN sys.partition_schemes ps ON i.data_space_id = ps.data_space_id		--details of partition scheme
+    LEFT JOIN sys.stats s ON s.object_id = i.object_id AND s.stats_id = i.index_id    --Statistics to get the NO RECOMPUTE information
+    INNER JOIN sys.data_spaces ds ON i.data_space_id = ds.data_space_id AND ds.type <> 'FX'    --dsta_spaces to find out the FileGroup/partition scheme informaiton (exclude MEMORY OPTIMIZED data Spaces
+    LEFT JOIN sys.partition_schemes ps ON i.data_space_id = ps.data_space_id        --details of partition scheme
     LEFT JOIN sys.destination_data_spaces dds ON dds.partition_scheme_id = i.data_space_id AND ds.[type] = N'PS' AND dds.destination_id = @partitionID --Partitions and destinations
-    LEFT JOIN sys.filegroups dfg ON dfg.data_space_id = dds.data_space_id			--Destination file groups for partitioned index
+    LEFT JOIN sys.filegroups dfg ON dfg.data_space_id = dds.data_space_id            --Destination file groups for partitioned index
     LEFT JOIN sys.partitions p ON p.object_id = i.object_id AND p.index_id = i.index_id AND (p.partition_number = @partitionID OR (ds.[type] = N'FG' AND p.partition_number = 1)) --To determine compression
     WHERE
         i.object_id = OBJECT_ID(@tableName)
@@ -400,11 +407,11 @@ RAISERROR(N'    ,@noXml                         bit             = 0             
         AND 
         i.type IN (SELECT IndexType FROM @indexes) --Script only supported indexes
         AND
-        (@scriptPrimaryKey = 1 OR i.is_primary_key = 0)	--Script Primary Key
+        (@scriptPrimaryKey = 1 OR i.is_primary_key = 0)    --Script Primary Key
         AND
-        (@scriptUniqueConstraints = 1 OR i.is_unique_constraint = 0)	--Script Unique Constraints
+        (@scriptUniqueConstraints = 1 OR i.is_unique_constraint = 0)    --Script Unique Constraints
         AND
-        (@scriptIndexes = 1 OR i.is_primary_key = 1 OR i.is_unique_constraint = 1)	--Script Indexes
+        (@scriptIndexes = 1 OR i.is_primary_key = 1 OR i.is_unique_constraint = 1)    --Script Indexes
 
         SET @xml = (
             SELECT
@@ -432,5 +439,8 @@ RAISERROR(N'    ,@noXml                         bit             = 0             
                 
 END
 GO
-EXECUTE sp_ms_marksystemobject 'dbo.sp_tblScriptIndexes'
+
+--Mark Stored Procedure as system object, so it executes in the context of current database.
+IF SERVERPROPERTY('EngineEdition') IN (1, 2, 3, 4, 8)
+    EXEC(N'EXECUTE sp_ms_marksystemobject ''dbo.sp_tblScriptIndexes''');
 GO
