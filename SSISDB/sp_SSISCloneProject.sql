@@ -351,6 +351,9 @@ sp_SSISCloneProject                         - Clones all projects from all folde
         SELECT
             @data                   = NULL
 
+        --delete any previous project data
+        DELETE FROM @project_data
+
         SET @msg = CONVERT(nvarchar(30), SYSDATETIME(), 121)
         RAISERROR(N'%s - Processing [%s]\[%s]', 0, 0,@msg, @folder_name, @project_name) WITH NOWAIT;
 
