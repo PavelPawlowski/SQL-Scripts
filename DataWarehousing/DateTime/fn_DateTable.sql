@@ -893,7 +893,7 @@ RETURN (
         ,[MonthOfTrimester]                                                                                                             AS [MonthOfTrimester]
         ,[MonthOfSemester]                                                                                                              AS [MonthOfSemester]
         ,D.[DayOfMonth]                                                                                                                 AS [DayOfMonth]
-        ,LTRIM(RTRIM(CONVERT(nvarchar(30), FORMAT(D.[Date], @monthDayNameFormatString))))                                               AS [DayOfMonthName]
+        ,LTRIM(RTRIM(CONVERT(nvarchar(30), FORMAT(D.[Date], @monthDayNameFormatString, @culture))))                                     AS [DayOfMonthName]
         ,D.[MonthDay]                                                                                                                   AS [MonthDay]
 
         ,D.[CalendarQuarter]                                                                                                            AS [CalendarQuarter]
