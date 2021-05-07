@@ -103,3 +103,7 @@ Procedure also lists depended partition schemes and tables/indexed views/indexes
 Provides information about the partition scheme including the partition function it is based on and partition boundary values.
 Procedure also lists depended tables and indexes using the partition scheme.
 
+#### sp_tblCleanupRetentionWindow
+
+Cleans retention window for all tables associated with partition function.
+It Truncates any partition prior the partition containing retention window and then merges all those partitions into the first (leftmost) one.
