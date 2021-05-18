@@ -52,7 +52,7 @@ Parameters:
 ALTER PROCEDURE [dbo].[sp_tblCleanupRetentionWindow]
     @pfName             nvarchar(128)   = NULL --Name of the partition function
     ,@retentionWindow   sql_variant     = NULL --RetentionWindow Value. All partitons prior partition containing @retentionWindow will be cleared and merged.
-    ,@infoOnly          bit             = 0    --When 1, prints only information about affected tables and affected partitions
+    ,@infoOnly          bit             = 1    --When 1, prints only information about affected tables and affected partitions
 AS
 BEGIN
     RAISERROR(N'
