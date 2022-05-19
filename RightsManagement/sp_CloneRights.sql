@@ -404,8 +404,6 @@ BEGIN
     END
     ELSE
     BEGIN
-        TRUNCATE TABLE #output;
-
         --Cursor for users
         DECLARE usr CURSOR FAST_FORWARD FOR
             SELECT

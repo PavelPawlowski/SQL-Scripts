@@ -122,7 +122,7 @@ DECLARE @dateTable TABLE (
     ,[DayOfFiscalYear]                  smallint        -- Day number in fiscal year
     ,[StartOfFiscalYear]                date            -- Date representing start of fiscal year
     ,[EndOfFiscalYear]                  date            -- Date representing end of fiscal year
-    ,[Month]                            int             -- Unique identification of year in format yyyyMM
+    ,[Month]                            int             -- Unique identification of month in format yyyyMM
     ,[MonthName]                        nvarchar(30)    -- Unique month name
     ,[MonthOfYear]                      tinyint         -- Month number within year
     ,[MonthOfYearName]                  nvarchar(30)    -- Month name
@@ -218,7 +218,7 @@ DECLARE @dateTable TABLE (
     ,[DaysInFiscalMonth]                tinyint         -- Number of days in fiscal month
     ,[WeeksInFiscalMonth]               tinyint         -- Number of weeks in fiscal month
     ,[DaysInFiscalQuarter]              tinyint         -- Number of days in fiscal quarter
-    ,[WeeksInFiscalQuarter]             tinyint         -- Number of week sin fiscal quarter
+    ,[WeeksInFiscalQuarter]             tinyint         -- Number of weeks in fiscal quarter
     ,[DaysInFiscalSemester]             tinyint         -- Number of days in fiscal semester
     ,[WeeksInFiscalSemester]            tinyint         -- Number of weeks in fiscal semester
     ,[IsLeapYear]                       bit             -- Identifies whether the year of current day is leap year
@@ -241,7 +241,7 @@ DECLARE @dateTable TABLE (
     ,[IsFirstDayOfFiscalSemester]       bit             -- Identifies whether current day is first day of fiscal semester
     ,[IsLastDayOfFiscalSemester]        bit             -- Identifies whether current day is last day of fiscal semester
     ,[IsFirstDayOfFiscalYear]           bit             -- Identifies whether current day is first day of fiscal year
-    ,[IsFirstDayOfFiscalYear]           bit             -- Identifies whether current day is last day of fiscal year
+    ,[IsLastDayOfFiscalYear]           bit             -- Identifies whether current day is last day of fiscal year
     ,PRIMARY KEY CLUSTERED ([DateKey])
 )
 
@@ -268,7 +268,7 @@ SELECT
     ,[DayOfFiscalYear]                  -- Day number in fiscal year
     ,[StartOfFiscalYear]                -- Date representing start of fiscal year
     ,[EndOfFiscalYear]                  -- Date representing end of fiscal year
-    ,[Month]                            -- Unique identification of year in format yyyyMM
+    ,[Month]                            -- Unique identification of month in format yyyyMM
     ,[MonthName]                        -- Unique month name
     ,[MonthOfYear]                      -- Month number within year
     ,[MonthOfYearName]                  -- Month name
@@ -368,25 +368,26 @@ SELECT
     ,[DaysInFiscalSemester]             -- Number of days in fiscal semester
     ,[WeeksInFiscalSemester]            -- Number of weeks in fiscal semester
     ,[IsLeapYear]                       -- Identifies whether the year of current day is leap year
-    ,[IsFirstDayOfWeek]                -- Identifies whether current day is first day of week
-    ,[IsLastDayOfWeek]                 -- Identifies whether current day is last day of week
-    ,[IsFirstDayOfCalendarMonth]       -- Identifies whether current day is first day of calendar month
-    ,[IsLastDayOfCalendarMonth]        -- Identifies whether current day is last day of calendar month
-    ,[IsFirstDayOfCalendarQuarter]     -- Identifies whether current day is first day of calendar quarter
-    ,[IsLastDayOfCalendarQuarter]      -- Identifies whether current day is last day of calendar quarter
-    ,[IsFirstDayOfCalendarTrimester]   -- Identifies whether current day is first day of calendar trimester
-    ,[IsLastDayOfCalendarTrimester]    -- Identifies whether current day is last day of calendar trimester
-    ,[IsFirstDayOfCalendarSemester]    -- Identifies whether current day is first day of calendar semester
-    ,[IsLastDayOfCalendarSemester]     -- Identifies whether current day is last day of calendar semester
-    ,[IsFirstDayOfCalendarYear]        -- Identifies whether current day is first  day of calendar year
-    ,[IsLastDayOfCalendarYear]         -- Identifies whether current day is last day of calendar year
-    ,[IsFirstDayOfFiscalMonth]         -- Identifies whether current day is first day of fiscal month
-    ,[IsLastDayOfFiscalMonth]          -- Identifies whether current day is last day of fiscal month
-    ,[IsFirstDayOfFiscalQuarter]       -- Identifies whether current day is fist day of fiscal quarter
-    ,[IsLastDayOfFiscalQuarter]        -- Identifies whether current day is last day of fiscal quarter
-    ,[IsFirstDayOfFiscalSemester]      -- Identifies whether current day is first day of fiscal semester
-    ,[IsLastDayOfFiscalSemester]       -- Identifies whether current day is last day of fiscal semester
-    ,[IsFirstDayOfFiscalYear]          -- Identifies whether current day is first day of fiscal year
+    ,[IsFirstDayOfWeek]                 -- Identifies whether current day is first day of week
+    ,[IsLastDayOfWeek]                  -- Identifies whether current day is last day of week
+    ,[IsFirstDayOfCalendarMonth]        -- Identifies whether current day is first day of calendar month
+    ,[IsLastDayOfCalendarMonth]         -- Identifies whether current day is last day of calendar month
+    ,[IsFirstDayOfCalendarQuarter]      -- Identifies whether current day is first day of calendar quarter
+    ,[IsLastDayOfCalendarQuarter]       -- Identifies whether current day is last day of calendar quarter
+    ,[IsFirstDayOfCalendarTrimester]    -- Identifies whether current day is first day of calendar trimester
+    ,[IsLastDayOfCalendarTrimester]     -- Identifies whether current day is last day of calendar trimester
+    ,[IsFirstDayOfCalendarSemester]     -- Identifies whether current day is first day of calendar semester
+    ,[IsLastDayOfCalendarSemester]      -- Identifies whether current day is last day of calendar semester
+    ,[IsFirstDayOfCalendarYear]         -- Identifies whether current day is first  day of calendar year
+    ,[IsLastDayOfCalendarYear]          -- Identifies whether current day is last day of calendar year
+    ,[IsFirstDayOfFiscalMonth]          -- Identifies whether current day is first day of fiscal month
+    ,[IsLastDayOfFiscalMonth]           -- Identifies whether current day is last day of fiscal month
+    ,[IsFirstDayOfFiscalQuarter]        -- Identifies whether current day is fist day of fiscal quarter
+    ,[IsLastDayOfFiscalQuarter]         -- Identifies whether current day is last day of fiscal quarter
+    ,[IsFirstDayOfFiscalSemester]       -- Identifies whether current day is first day of fiscal semester
+    ,[IsLastDayOfFiscalSemester]        -- Identifies whether current day is last day of fiscal semester
+    ,[IsFirstDayOfFiscalYear]           -- Identifies whether current day is first day of fiscal year
+    ,[IsLastDayOfFiscalYear]            -- Identifies whether current day is last day of fiscal year
 FROM dbo.fn_DateTable(
      /*                           @startDate*/ '20120101'
     ,/*                             @endDate*/ '20151231'
