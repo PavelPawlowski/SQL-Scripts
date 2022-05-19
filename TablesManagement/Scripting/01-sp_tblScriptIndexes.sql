@@ -170,14 +170,14 @@ BEGIN
         SELECT DISTINCT
             i.name
         FROM sys.indexes i
-        INNER JOIN @names n ON i.object_id = OBJECT_ID(@tableName) AND i.name LIKE n.indexName AND LEFT(n.indexName, 1) <> N'-'
+        INNER JOIN @names n ON i.object_id = OBJECT_ID(@tableName) AND i.name LIKE n.indexName COLLATE DATABASE_DEFAULT AND LEFT(n.indexName, 1) <> N'-'
         
         EXCEPT
             
         SELECT
             i.name
         FROM sys.indexes i
-        INNER JOIN @names n ON i.object_id = OBJECT_ID(@tableName) AND i.name LIKE RIGHT(n.indexName, LEN(n.indexName) -1) AND LEFT(n.indexName, 1) = N'-'
+        INNER JOIN @names n ON i.object_id = OBJECT_ID(@tableName) AND i.name LIKE RIGHT(n.indexName, LEN(n.indexName) -1) COLLATE DATABASE_DEFAULT AND LEFT(n.indexName, 1) = N'-'
 
         --Get Default FileGroup
         SELECT 
@@ -186,7 +186,6 @@ BEGIN
         WHERE 
             fg.is_default = 1 AND fg.type = 'FG'
     END
-
 
     IF @printHelp = 1
     BEGIN
@@ -390,7 +389,7 @@ RAISERROR(N'    ,@noXml                         bit             = 0             
             ELSE N''
           END AS IndexScript
     FROM sys.indexes i
-    INNER JOIN #indexNames ixn ON i.name = ixn.IndexName
+    INNER JOIN #indexNames ixn ON i.name = ixn.IndexName COLLATE DATABASE_DEFAULT
     LEFT JOIN sys.xml_indexes xi ON xi.object_id = i.object_id and xi.index_id = i.index_id
     LEFT JOIN sys.stats s ON s.object_id = i.object_id AND s.stats_id = i.index_id    --Statistics to get the NO RECOMPUTE information
     INNER JOIN sys.data_spaces ds ON i.data_space_id = ds.data_space_id AND ds.type <> 'FX'    --dsta_spaces to find out the FileGroup/partition scheme informaiton (exclude MEMORY OPTIMIZED data Spaces
